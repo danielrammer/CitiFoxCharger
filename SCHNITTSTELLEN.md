@@ -1,6 +1,6 @@
 # Verifikation der Schnittstellen
 
-Stand: **16.10.2026**, Version 1.5.0. Primärquellen und die tatsächlich installierte Geräteoberfläche wurden geprüft. Die ältere Chat-Unterhaltung wurde nicht als Schnittstellennachweis übernommen.
+Stand: **16.10.2026**, Version 1.6.0. Primärquellen und die tatsächlich installierte Geräteoberfläche wurden geprüft. Die ältere Chat-Unterhaltung wurde nicht als Schnittstellennachweis übernommen.
 
 ## SMARTFOX Pro 2 / Charger Pro 1
 
@@ -123,3 +123,13 @@ Der offizielle Vertrag wurde erneut auf alle Pfade geprüft: kein Wake-up-/Force
 Die Windows-API [PowerCreateRequest](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-powercreaterequest) erstellt ein begründetes Request-Objekt. Während einer aktiven Zielüberwachung fordert [PowerSetRequest](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-powersetrequest) SystemRequired (1) und ExecutionRequired (3) an. DisplayRequired und AwayModeRequired werden nicht angefordert. PowerClearRequest und CloseHandle geben Anforderungen nach Ende der Sitzung und beim Prozessabbau frei.
 
 Laut Microsoft enden diese Anforderungen auf Modern-Standby-Systemen im Akkubetrieb fünf Minuten nach Ablauf des System-Schlafzeitlimits; ein explizit ausgelöster Standby beendet sie ebenfalls. Das Verhalten am konkreten Tablet muss daher im Netzbetrieb mit dessen Windows-Energiepolitik geprüft werden. Die App zeigt eine angeforderte Wachhaltung und die Netzversorgung an, behauptet keine Fähigkeit, während echten Schlafs oder bei ausgeschaltetem PC zu arbeiten.
+
+## Optionaler Heimnetz-Zugang (1.6.0)
+
+Ein weiterer Listener teilt denselben Service und Monitor; Standard bleibt ausschließlich Loopback. Aktivierung erst durch lokale Einrichtung mit konkreter RFC1918-IPv4, eigenem Passwort und TLS. Port 8766 ist Standard. Netzwerkzugang über HTTP und Bindung an 0.0.0.0 sind nicht vorgesehen. Basic Authentication wird nur über HTTPS akzeptiert. PBKDF2-HMAC-SHA256 mit 600000 Iterationen und 128-Bit-Salz; fehlgeschlagene Versuche werden pro Client begrenzt. Kurzzeit-Cache enthält nur einen Hash des Authentifizierungsheaders.
+
+Die Anmeldung schützt sämtliche Netzwerkressourcen einschließlich statischer Dateien, Sitzung und Health. Host und HTTPS-Origin sind fest geprüft; Netzwerksitzung hat zusätzlich Secure-Cookie. POST-Whitelist umfasst nur kombinierte Ladesteuerung, Zieländerung, Refresh und die freigegebenen Verbraucher. Geräte-/Schlüsseländerung und Backend-Lifecycle sind am Netzwerklistener gesperrt. Neustart/Beenden schließen beide Listener und beenden den gemeinsamen Monitor einmal. Bereits angekündigter Neustart sperrt neue Starts, Stopps und Refreshes.
+
+Zertifikate werden mit [Windows/.NET CertificateRequest](https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.x509certificates.certificaterequest?view=netframework-4.8.1) erzeugt, ohne zusätzlichen Download und ohne Installation in einen Vertrauensspeicher. SHA256/RSA2048, IP-SAN, Server-EKU, KeyUsage, BasicConstraints und Subject/AuthorityKeyIdentifier sind gesetzt. Der private Leaf-Schlüssel wird nur DPAPI-verschlüsselt gespeichert; zum SSL-Laden entsteht kurzzeitig eine Datei in der auf Windows-Benutzer/SYSTEM beschränkten Ablage und wird im finally-Block entfernt. Der CA-Signierschlüssel wird nicht als Datei gespeichert. Nach zwei Jahren oder IP-Wechsel erneute Einrichtung und bewusster Zertifikatsimport nötig.
+
+Die getrennte, vom Benutzer als Administrator ausgeführte Firewall-Einrichtung erlaubt nur Python-Programmpfad, konkrete lokale IP, HTTPS-Port, LocalSubnet und Profil Private. Keine automatische Öffnung an diesem PC. Ablauf und geprüfte Grenzen: [NETZWERK.md](NETZWERK.md).

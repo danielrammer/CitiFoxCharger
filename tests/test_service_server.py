@@ -300,6 +300,16 @@ class ServerTests(unittest.TestCase):
         self.assertFalse(self.service.stopping)
         self.service.charging.save(status="complete")
         self.assertEqual(self.call("/api/app/quit", {})[0],200)
+
+    def test_quit_can_close_locally_stopped_session_without_claiming_car_confirmation(self):
+        from test_charging import FakeWeb
+        effects=[]
+        self.service.web=FakeWeb(effects)
+        self.service.charging.save(status='stop_pending',stop_requested=True,auto_restored=True,stop_intent_epoch=time.time()-10)
+        self.assertEqual(self.call('/api/app/quit',{})[0],200)
+        self.assertEqual(self.service.charging.value['status'],'closed')
+        self.assertFalse(self.service.charging.value['vehicle_stop_confirmed'])
+        self.assertEqual(effects,[])
         self.assertTrue(self.service.stopping)
         self.assertFalse(self.service.can_command("start"))
 

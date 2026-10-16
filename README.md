@@ -1,4 +1,4 @@
-# CitiFoxCharger für Windows · 1.5.0
+# CitiFoxCharger für Windows · 1.6.0
 
 Für Škoda Citigo e iV, SMARTFOX Pro 2 mit Firmware EM3 00.01.16.08 und Charger Pro an Ladeplatz 1.
 
@@ -8,9 +8,9 @@ Den gesamten ZIP-Inhalt entpacken und **Start.cmd** doppelklicken. Voraussetzung
 
 Die Betriebsansicht ist für ein Tablet mit einem 1280 × 800-Panel **im Hochformat (800 × 1280)** angepasst: große Schrift, große Tasten und ein breiter Slider mit großem Griff. Auch Querformat und kleinere Fenster bleiben bedienbar. Die App dreht den Windows-Bildschirm nicht selbst.
 
-**Start.cmd** und der gleichwertige Einstieg **Start-Hintergrund.cmd** starten das Backend ohne dauerhaft offenes Konsolenfenster und öffnen Brave im Vollbild. Ein erneuter Aufruf öffnet die bereits laufende Instanz. Der Browser darf anschließend geschlossen oder der Bildschirm ausgeschaltet werden. Unter **Einstellungen → App beenden** lässt sich das Hintergrundprogramm beenden; während einer aktiven Zielüberwachung ist diese Taste gesperrt.
+**Start.cmd** und der gleichwertige Einstieg **Start-Hintergrund.cmd** starten das Backend ohne dauerhaft offenes Konsolenfenster und öffnen Brave im Vollbild. Ein erneuter Aufruf öffnet die bereits laufende Instanz. Der Browser darf anschließend geschlossen oder der Bildschirm ausgeschaltet werden. Unter **Einstellungen → App beenden** lässt sich das Hintergrundprogramm beenden; während einer aktiven Ladung ist diese Taste gesperrt. Nach lokal bestätigtem Ladestillstand und Stoppwunsch ist sie auch ohne neue Fahrzeugmeldung verfügbar.
 
-**Stoppen.cmd** beendet das Backend geordnet über die lokale, geschützte Verbindung. Bei laufender Ladeüberwachung bleibt das Beenden gesperrt; zuerst in der Oberfläche **Stoppen** drücken und die Bestätigung abwarten. Das Skript beendet keine fremden Python-Prozesse und schließt den Browser nicht.
+**Stoppen.cmd** beendet das Backend geordnet. Bei laufender Ladung oder fehlendem Stoppwunsch bleibt das Beenden gesperrt. Nach angefordertem Stopp ist es auch ohne neue Fahrzeugmeldung möglich, sobald mindestens fünf Sekunden vergangen sind und frisch von Smartfox A+ oder Aus, ein nicht ladender Wallboxstatus und höchstens 0,1 kW bestätigt sind. Dafür liest das Skript über das Backend die lokale Anzeige erneut; es sendet keinen weiteren Fahrzeugbefehl. Die Sitzung wird als bewusst geschlossen gespeichert, ohne eine bestätigte Fahrzeugantwort vorzutäuschen. Bei fehlenden/alten lokalen Daten, M+, Fehler oder weiterer Ladeleistung bleibt Beenden gesperrt. Fremde Prozesse und der Browser werden nicht beendet.
 
 **Neustarten.cmd** startet das Backend geordnet neu und öffnet Brave im Vollbild. Das funktioniert auch während einer Ladeüberwachung, wenn der API-Schlüssel mit Windows verschlüsselt gespeichert ist. Ziel, Sitzung, ausstehende Datenfrist und API-Abfragepausen bleiben erhalten. Es wird kein neuer Ladestart gesendet. Der Browser wird erst nach Bestätigung einer neuen Backend-Instanz geöffnet; bei nicht bestätigtem Neustart nennt das Skript den Fehler. Läuft die App noch nicht, wird sie gestartet. Für einen anderen Port: `Neustarten.cmd --port 8766`; ohne Browser: `Neustarten.cmd --no-browser`. Bei laufender Instanz verwendet deren Backend seinen bisherigen Datenordner und Port weiter. Bei einem Kaltstart kann `--data-dir "C:\Pfad\zum\Datenordner"` angegeben werden.
 
@@ -132,11 +132,15 @@ Der SOC-Abruf wurde für das Fahrzeug des Benutzers praktisch bestätigt. Der Be
 
 Die ausführliche technische Herleitung steht in [SCHNITTSTELLEN.md](SCHNITTSTELLEN.md), der Teststand in [PRUEFBERICHT.md](PRUEFBERICHT.md).
 
+## Zugriff von anderen Geräten im Heimnetz
+
+Optionaler, mit Passwort geschützter HTTPS-Zugang zum Anzeigen und Bedienen ist vorbereitet. Das Tablet betreibt weiterhin genau eine Ladeüberwachung. Zur Einrichtung auf dem Tablet **Netzwerk-Einrichten.cmd**, anschließend **Netzwerk-Firewall.cmd** als Administrator ausführen und das erzeugte öffentliche Zertifikat auf den zugreifenden Geräten übernehmen. Erst danach ist die angezeigte `https://Tablet-IP:8766/`-Adresse nutzbar. Der Zugang bleibt bis zur lokalen Einrichtung ausgeschaltet. Vollständige Schritte: **[NETZWERK.md](NETZWERK.md)**.
+
 ## Speicherung und Zugriffsschutz
 
-Der Dienst bindet ausschließlich an 127.0.0.1. Origin-/Host-Prüfung, lokale Sitzung, HttpOnly-/SameSite-Cookie, CSRF und feste Škoda-HTTPS-Domain mit Zertifikatsprüfung bleiben aktiv. Kein LAN-Zugriff oder Portforwarding vorgesehen. Die Oberfläche hat keine externen Skripte, Schriften oder Analysezugriffe.
+Die lokale Verwaltung bindet an 127.0.0.1. Der optionale zusätzliche HTTPS-Listener bindet nur an eine konfigurierte private Tablet-IPv4-Adresse und verlangt ein eigenes Netzwerkpasswort. Origin-/Host-Prüfung, lokale Sitzung, HttpOnly-/SameSite-Cookie, CSRF und feste Škoda-HTTPS-Domain mit Zertifikatsprüfung bleiben aktiv. Geräte- und Schlüsseleinrichtung sowie Backend-Beenden/Neustart bleiben ausschließlich lokal. Es wird keine Router-Portweiterleitung eingerichtet. Die Oberfläche hat keine externen Skripte, Schriften oder Analysezugriffe.
 
-Dateien im Datenordner: `config.json` mit FIN und Einstellungen, optional `skoda-key.dpapi`, `charging-session.json` mit Ziel und Sitzungsstatus sowie `vehicle-cache.json` und `rate-limits.json` für geordneten Neustart. Die Sitzung enthält eine FIN-Zuordnung, keinen API-Schlüssel. Beim Weitergeben des Datenordners personenbezogene Angaben berücksichtigen.
+Dateien im Datenordner: `config.json` mit FIN und Einstellungen, optional `skoda-key.dpapi`, `charging-session.json` mit Ziel und Sitzungsstatus sowie `vehicle-cache.json` und `rate-limits.json` für geordneten Neustart. Bei optionaler Netzwerkeinrichtung kommen `network.json` mit Passwort-Hash und die Zertifikatsablage `network/` hinzu; der private TLS-Schlüssel ist benutzergebunden mit Windows-DPAPI verschlüsselt. Die Sitzung enthält eine FIN-Zuordnung, keinen API-Schlüssel. Beim Weitergeben des Datenordners personenbezogene Angaben berücksichtigen.
 
 Ein eigener Datenordner kann mit `--data-dir "C:\MeinOrdner\Ladezentrale-Daten"` gesetzt werden. Das Beenden des Backends stoppt eine reale Ladung nicht automatisch. Nach Prozessende kann die App auch keine Zielabschaltung ausführen.
 
@@ -148,8 +152,12 @@ Ein eigener Datenordner kann mit `--data-dir "C:\MeinOrdner\Ladezentrale-Daten"`
 py -3 -m unittest discover -s tests -v
 ```
 
-153 Tests, ohne reale Fahrzeug- oder Wallboxbefehle. Geprüft sind Protokolle, Sicherheit, verschlüsselte Schlüsselablage, kombinierte Abläufe, Fehler, neue Sitzungen nach einem Stopp, Neustartzustände, Hintergrundüberwachung ohne Browser, Kontingentsteuerung, Instanzsperre, Brave-Start, getrennter Hintergrundprozess, sichere Beendigung und Freigabe der Windows-Energieanforderungen nach dem 90-%-Ziel. Zusätzlich geprüft: ausdrücklicher Start mit älterem SOC, eng begrenzte Freigabe, persistente Fünf-Minuten-Frist, neue SOC-Meldungen, A+-Rückstellung bei abgelehntem/gesperrtem Cloud-Stopp, Energieeinheiten/Vorzeichen/Sensorzuordnung, Zieländerungen ohne Start und geschützter Neustart mit erhaltenem Zustand.
+174 Tests, ohne reale Fahrzeug- oder Wallboxbefehle. Geprüft sind Protokolle, Sicherheit, verschlüsselte Schlüsselablage, kombinierte Abläufe, Fehler, neue Sitzungen nach einem Stopp, Neustartzustände, Hintergrundüberwachung ohne Browser, Kontingentsteuerung, Instanzsperre, Brave-Start, getrennter Hintergrundprozess, sichere Beendigung und Freigabe der Windows-Energieanforderungen nach dem 90-%-Ziel. Zusätzlich geprüft: ausdrücklicher Start mit älterem SOC, eng begrenzte Freigabe, persistente Fünf-Minuten-Frist, neue SOC-Meldungen, A+-Rückstellung bei abgelehntem/gesperrtem Cloud-Stopp, Energieeinheiten/Vorzeichen/Sensorzuordnung, Zieländerungen ohne Start und geschützter Neustart mit erhaltenem Zustand.
 
 ## Repository
 
 Privates GitHub-Repository: [danielrammer/CitiFoxCharger](https://github.com/danielrammer/CitiFoxCharger). Lokale Arbeitskopie: `D:\Repositories\CitiFoxCharger`. Konfiguration, Schlüssel, Fahrzeugcache, Kontingentdaten und Ladesitzungen gehören nicht ins Repository; die Laufzeitdaten liegen weiterhin separat im oben genannten Windows-Datenordner.
+
+## Kompakte Tabletfläche
+
+Die Betriebsansicht passt sich der nutzbaren Browserfläche an. Für 1280 × 800 im Querformat stehen Laden und Energie nebeneinander; für 800 × 1280 im Hochformat untereinander. Bei üblichen Windows-Skalierungen werden Abstände reduziert, die vier Verbraucher in einer Reihe gehalten und dekorative Symbole/zusätzliche Normalhinweise ausgeblendet. Die Aktionstasten bleiben mindestens 48 Pixel, Modusauswahlen mindestens 44 Pixel hoch. Fahrzeug- und Abrufzeit bleiben sichtbar. Erfolgsnachrichten verändern die Seitenhöhe nicht. Bei sehr kleinen Flächen oder langen Fehlermeldungen kann weiterhin Scrollen erforderlich sein; Einstellungen bleiben eine eigene, scrollbar bedienbare Seite.

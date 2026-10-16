@@ -186,6 +186,59 @@ class ChargingTests(unittest.TestCase):
         self.service.charging.next_attempt = 0
         self.service.command_after = 0
 
+    def test_no_device_effects_or_new_reads_after_restart_intent(self):
+        self.force()
+        before=copy.deepcopy(self.service.charging.value)
+        self.effects.clear()
+        self.service.stopping=True
+        for action in (lambda:self.force(),lambda:self.service.stop_charge('stop-during-restart-001'),
+                       lambda:self.service.command('start','start-during-restart-001'),self.service.refresh_now):
+            with self.assertRaises(IntegrationError):action()
+        self.assertEqual(self.effects,[])
+        self.assertEqual(self.service.charging.value,before)
+
+    def stopped_without_cloud_confirmation(self):
+        self.force()
+        self.service.command_after=0
+        self.service.stop_charge('stop-before-quit-00001')
+        self.service.charging.save(stop_intent_epoch=time.time()-10)
+
+    def test_shutdown_after_zero_power_stop_does_not_wait_forever_for_cloud_confirmation(self):
+        self.stopped_without_cloud_confirmation()
+        self.assertEqual(self.service.charging.value['status'],'stop_pending')
+        self.assertTrue(self.service.charging.state()['can_shutdown'])
+        before=list(self.effects)
+        self.service.prepare_shutdown()
+        self.assertEqual(self.effects,before)
+        self.assertTrue(self.service.stopping)
+        self.assertEqual(self.service.charging.value['status'],'closed')
+        self.assertFalse(self.service.charging.value['vehicle_stop_confirmed'])
+        self.assertEqual(self.service.last_command['status'],'accepted')
+        recovered=ChargingSession(self.service,self.web)
+        self.assertFalse(recovered.active)
+        self.assertEqual(recovered.value['target_percent'],80)
+
+    def test_shutdown_still_rejects_charge_mplus_errors_and_old_local_telemetry(self):
+        self.stopped_without_cloud_confirmation()
+        from unittest.mock import patch
+        normal=self.web.read(self.config.value['smartfox'])
+        for change in ({'mode':'M+'},{'power_kw':.2},{'status_code':3},{'status_code':4},
+                       {'telemetry_available':False},{'available':False},{'power_kw':float('nan')},
+                       {'read_at':(datetime.now(timezone.utc)-timedelta(minutes=2)).isoformat()}):
+            with self.subTest(change=change),patch.object(self.web,'read',return_value={**normal,**change}):
+                with self.assertRaises(ValueError):self.service.prepare_shutdown()
+                self.assertFalse(self.service.stopping)
+
+    def test_shutdown_requires_stop_intent_and_a_short_settling_period(self):
+        self.force()
+        self.assertFalse(self.service.charging.state()['can_shutdown'])
+        with self.assertRaises(ValueError):self.service.prepare_shutdown()
+        self.service.command_after=0
+        self.service.stop_charge('stop-before-quit-00002')
+        with self.assertRaises(ValueError):self.service.prepare_shutdown()
+        self.service.charging.save(stop_intent_epoch=time.time()-10,auto_restored=False)
+        with self.assertRaises(ValueError):self.service.prepare_shutdown()
+
     def test_mplus_is_confirmed_before_vehicle_start(self):
         result = self.force()
         self.assertEqual(self.effects, ["M+", "start"])

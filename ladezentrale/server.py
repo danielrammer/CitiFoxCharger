@@ -14,6 +14,7 @@ from .secrets_store import SecretStore
 from .service import Service
 from .skoda import IntegrationError
 from .instance import InstanceLock
+from .network import NetworkAuth,private_host,read_network,tls_context
 from . import __version__
 
 STATIC = Path(__file__).with_name("web")
@@ -26,22 +27,37 @@ class LocalServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False
 
-    def __init__(self, port, service):
-        # Intentionally not configurable: no unauthenticated LAN exposure.
-        super().__init__(("127.0.0.1", port), Handler)
+    def __init__(self, port, service, *, address="127.0.0.1", network_auth=None, tls=None):
+        if bool(network_auth) != bool(tls):
+            raise ValueError("Netzwerkzugriff erfordert Anmeldung und HTTPS gemeinsam.")
+        if address != "127.0.0.1":
+            private_host(address)
+            if not network_auth:raise ValueError("Kein ungeschützter Netzwerkzugriff.")
+        self.network_auth,self.tls = network_auth,tls
+        self.scheme = "https" if tls else "http"
+        self.remote_server,self.remote_thread = None,None
+        super().__init__((address, port), Handler)
         self.service = service
         self.session = secrets.token_urlsafe(32)
         self.csrf = secrets.token_urlsafe(32)
         self.instance_id = secrets.token_urlsafe(12)
         self.restart_requested = False
-        self.hosts = {f"127.0.0.1:{self.server_port}", f"localhost:{self.server_port}"}
+        self.hosts = {f"{address}:{self.server_port}"} if network_auth else {f"127.0.0.1:{self.server_port}", f"localhost:{self.server_port}"}
 
     def server_close(self):
-        if hasattr(self, "service"):
+        if self.remote_server is not None:
+            self.remote_server.shutdown()
+            self.remote_server.server_close()
+            self.remote_thread.join(3)
+            self.remote_server = None
+        if hasattr(self, "service") and not self.network_auth:
             self.service.stop_worker()
         super().server_close()
         if hasattr(self, "instance_lock"):
             self.instance_lock.close()
+
+    def handle_error(self, request, client_address):
+        if not self.network_auth:super().handle_error(request,client_address)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -49,9 +65,20 @@ class Handler(BaseHTTPRequestHandler):
     sys_version = ""
 
     def setup(self):
+        if self.server.tls:
+            self.request.settimeout(5)
+            try:self.request = self.server.tls.wrap_socket(self.request,server_side=True)
+            except OSError:
+                self.request.close()
+                raise
         super().setup()
         self.connection.settimeout(15)
         self.body_consumed = False
+
+    def finish(self):
+        try:super().finish()
+        finally:
+            if self.server.tls:self.request.close()
 
     def log_message(self, _format, *args):
         # No access logs containing FINs, credentials, request bodies or query strings.
@@ -78,7 +105,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
         if cookie:
-            self.send_header("Set-Cookie", f"lz_session={self.server.session}; HttpOnly; SameSite=Strict; Path=/")
+            secure = "; Secure" if self.server.tls else ""
+            self.send_header("Set-Cookie", f"lz_session={self.server.session}; HttpOnly; SameSite=Strict; Path=/{secure}")
+        if self.server.network_auth and code == 401:
+            self.send_header("WWW-Authenticate", 'Basic realm="CitiFoxCharger", charset="UTF-8"')
+        if self.server.network_auth and code == 429:
+            self.send_header("Retry-After", "60")
         self.end_headers()
         self.wfile.write(body)
 
@@ -88,12 +120,22 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(403, {"error": "Host nicht erlaubt."})
             return False
         origin = self.headers.get("Origin")
-        if (origin and origin != f"http://{host}") or (mutation and origin != f"http://{host}"):
+        if (origin and origin != f"{self.server.scheme}://{host}") or (mutation and origin != f"{self.server.scheme}://{host}"):
             self.reply(403, {"error": "Anfrage stammt nicht aus der lokalen Oberfläche."})
             return False
         if self.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "none"):
             self.reply(403, {"error": "Fremde Webseite darf nicht zugreifen."})
             return False
+        if self.server.network_auth:
+            if self.client_address[0] != "127.0.0.1":
+                try:private_host(self.client_address[0])
+                except ValueError:
+                    self.reply(403,{"error":"Nur private Netzwerkgeräte sind zugelassen."})
+                    return False
+            code = self.server.network_auth.check(self.headers.get("Authorization"),self.client_address[0])
+            if code != 200:
+                self.reply(code,{"error":"Netzwerkanmeldung erforderlich." if code==401 else "Zu viele Anmeldeversuche. Eine Minute warten."})
+                return False
         return True
 
     def authenticated(self, mutation=False):
@@ -136,7 +178,8 @@ class Handler(BaseHTTPRequestHandler):
         service = self.server.service
         if path == "/api/config":
             with service.lock:
-                self.reply(200, {"config": service.config.value, "key": service.secrets.status()})
+                self.reply(200, {"config": service.config.value, "key": service.secrets.status(),
+                                 "access":{"local_admin":self.server.network_auth is None},"network":service.network})
         elif path == "/api/status":
             try:
                 self.reply(200, service.status())
@@ -147,6 +190,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not self.valid_request(mutation=True) or not self.authenticated(mutation=True):
+            return
+        remote_actions = {"/api/refresh","/api/charging/start","/api/charging/stop","/api/charging/target",
+                          "/api/smartfox/heater","/api/smartfox/charger-mode"}
+        if self.server.network_auth and urlsplit(self.path).path not in remote_actions:
+            self.reply(403,{"error":"Gerätezugang und Backend bitte direkt am Tablet einrichten."})
             return
         if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
             self.reply(415, {"error": "JSON erforderlich."})
@@ -249,6 +297,18 @@ def make_server(port, data_dir):
         config = ConfigStore(data_dir)
         server = LocalServer(port, Service(config, SecretStore(config.directory)))
         server.instance_lock = instance_lock
+        try:
+            network = read_network(data_dir)
+            if network:
+                remote = LocalServer(network["port"],server.service,address=network["host"],
+                                     network_auth=NetworkAuth(network),tls=tls_context(data_dir))
+                server.remote_server = remote
+                server.remote_thread = threading.Thread(target=remote.serve_forever,kwargs={"poll_interval":.25},daemon=True)
+                server.remote_thread.start()
+                server.service.network = {"enabled":True,"url":f'https://{network["host"]}:{remote.server_port}/',
+                                          "certificate_expires":network["certificate_expires"],"message":"Heimnetz-Zugang mit Anmeldung und HTTPS aktiv."}
+        except (OSError,ValueError,TypeError,KeyError):
+            server.service.network = {"enabled":False,"message":"Heimnetz-Zugang konnte nicht starten. Private Tablet-IP, Zertifikat und Netzwerk-Einrichten.cmd prüfen. Lokale Überwachung läuft weiter."}
         server.service.start_worker()
         return server
     except Exception:

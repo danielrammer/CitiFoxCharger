@@ -1,4 +1,4 @@
-"""Start the loopback-only charging dashboard, Python 3.11+."""
+"""Local charging dashboard with optional authenticated LAN HTTPS, Python 3.11+."""
 import argparse
 import os
 import sys

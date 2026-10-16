@@ -5,6 +5,9 @@ __pycache__/
 config.json
 rate-limits.json
 vehicle-cache.json
+network.json
+network/
+CitiFoxCharger-Heimnetz.cer
 *.tmp
 charging-session.json
 .instance.lock

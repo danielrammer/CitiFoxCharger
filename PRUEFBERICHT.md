@@ -1,10 +1,10 @@
-# Prüfbericht · Version 1.5.0
+# Prüfbericht · Version 1.6.0
 
 Stand: **16.10.2026**, Windows / Python 3.14.
 
 ## Automatisierte Prüfung
 
-**153 Tests erfolgreich**, zusätzlich JavaScript-Syntaxprüfung. Geräte und Fahrzeugbefehle sind in Tests simuliert. Lokale Testserver prüfen echte HTTP-/Sicherheitsabläufe; kein neuer realer Start/Stopp oder Wärmeschaltbefehl wird dafür gesendet.
+**174 Tests erfolgreich**, zusätzlich JavaScript-Syntaxprüfung. Geräte und Fahrzeugbefehle sind in Tests simuliert. Lokale Testserver prüfen echte HTTP-/Sicherheitsabläufe; kein neuer realer Start/Stopp oder Wärmeschaltbefehl wird dafür gesendet.
 
 Geprüft: Modbus-Leseregister, Protokollfehler, Wertebereiche, SOC-/FIN-/Fähigkeitsschema, Zeitstempel, Schlüsselablauf, Windows-DPAPI, RateLimit/Retry-After, Kontingentreserve, adaptive Abrufe, Host/Origin/CSRF/Sitzung, Loopback und keine Modbus-Schreibroute.
 
@@ -37,3 +37,19 @@ Pro 2 / EM3 00.01.16.08 und Charger 1 unter 192.168.0.81 sind lesend bestätigt.
 Am konkreten Citigo sind SOC, Start-/Stopp-Fähigkeiten und der durch den Benutzer bestätigte Ladestart belegt. Eine vollständige reale Sitzung bis zur automatischen Prozentabschaltung steht aus. Die offizielle API enthält weiterhin keinen dokumentierten Weckbefehl. Der Community-Weckweg benötigt eine andere Anmeldung und ist für diesen Citigo nicht bestätigt oder eingebaut. Eine neue Cloud-Abfrage garantiert keinen neuen SOC.
 
 Der Zielstopp ist eine lokale Überwachung, keine native Fahrzeuggrenze. Melde-/Befehlsverzögerungen können zum Überschreiten führen. Native M+-Zeit-/Energiegrenzen bleiben bestehen. Kein Langzeittest über Energiesparzustände oder Mobilfunkabschaltungen. Das Backend muss laufen; expliziter Standby oder Ausschalten wird nicht übergangen. Am Wandtablet sind Netzversorgung und passende Windows-Energieeinstellungen erforderlich. Kein Dienst oder Autostart eingerichtet.
+
+## Heimnetz-Zugang
+
+Zusätzlich geprüft: konkrete private IPv4 statt Wildcard, Passwort-Hash und Mindestlänge, fehlerhafte/abgelaufene Konfiguration, standardmäßig deaktivierter Listener, Sperre wiederholter falscher Anmeldung und Unicode-Passwort. Native Windows-PowerShell-5.1-/Framework-Zertifikate wurden in einer temporären Ablage erzeugt. Echte HTTPS-Tests mit strenger Zertifikatsketten- und IP-Prüfung bestätigen CA-Vertrauen ausschließlich im Testclient; die Prüfung wurde nicht abgeschaltet.
+
+Unangemeldete Netzwerkzugriffe sind auch auf HTML/JS, Sitzung und Health gesperrt. Secure-Cookie, HTTPS-Origin, CSRF und Host werden geprüft. Remote-Ziel-/Heizungsbefehle erreichen denselben simulierten Dienst; Schlüssel-/Geräteeinrichtung und Backend-Beenden/Neustart bleiben gesperrt. Schließen des Netzwerklisteners lässt den gemeinsamen Monitor bestehen, Schließen des Elternservers beendet beide Listener und den Monitor genau einmal. Ungültige Netzwerk-Konfiguration beeinträchtigt den lokalen Backendstart nicht. Nach Neustartabsicht sind keine neuen Hardwarewirkungen oder Abfragen erlaubt.
+
+Keine Netzwerkfreigabe, keine Firewalländerung und kein Zertifikatsimport am aktuellen PC. Kein Zugriff von einem zweiten physischen Gerät am späteren Wandtablet geprüft. Der Heimnetz-Zugang wird erst bei lokaler Einrichtung mit eigenem Passwort aktiviert; die öffentliche CER-Datei muss auf den Clients bewusst vertraut werden.
+
+## Programmende nach physischem Ladestopp
+
+Eine angeforderte, aber vom Auto noch nicht bestätigte Abschaltung blockiert das Programmende nicht unbegrenzt. Geprüft: mindestens fünf Sekunden alter Stoppwunsch, bestätigte Modusrückstellung, neuer lokaler XML-Abruf, A+/OFF, nicht ladender CP-Status und endliche Leistung zwischen 0 und 0,1 kW. Dann darf ein ausdrückliches lokales Beenden die Sitzung als `closed` markieren. Das ist von `complete` getrennt; `vehicle_stop_confirmed` bleibt false. Kein zusätzlicher Fahrzeug-/Wallboxbefehl, keine aufgegebene aktive Ladung. M+, Fehler, alte Daten, fehlende Verbindung, Leistungsfluss oder fehlender Stoppwunsch bleiben gesperrt. Auch die echte lokale HTTP-Beendenroute wurde damit erfolgreich geprüft. Neustart nimmt eine bewusst geschlossene Überwachung nicht wieder auf.
+
+## Verfügbare Bildschirmhöhe
+
+Die gerätefreie Browserprüfung mit sichtbarer TEST-Kennzeichnung bestätigte ohne vertikalen oder horizontalen Überlauf: 800 × 1280, 640 × 1024, gerundet 534 × 854 (150-%-Skalierung eines 800 × 1280-Panels) und 1280 × 800. Auch der längere Hinweis bei altem SOC passte. Hochformat behält die Verbraucher in einer Reihe; Querformat nutzt zwei Hauptspalten. Wichtige Schaltziele bleiben mindestens 44/48 Pixel hoch. Das konkrete Wandtablet ist weiterhin nicht angeschlossen; abweichende Windows-Skalierung und Browserleisten können die Fläche verändern.

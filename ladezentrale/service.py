@@ -25,6 +25,7 @@ class Service:
         self.last_command = None
         self.command_after = 0
         self.events = []
+        self.network = {"enabled":False,"message":"Heimnetz-Zugang ist ausgeschaltet. Auf dem Tablet Netzwerk-Einrichten.cmd ausführen."}
         self.charging = ChargingSession(self, self.web)
         self.worker_stop = threading.Event()
         self.worker = None
@@ -135,7 +136,18 @@ class Service:
     def prepare_shutdown(self):
         with self.lock:
             if self.charging.active:
-                raise ValueError("Eine Ladeüberwachung läuft. Bitte zuerst Laden stoppen und die Bestätigung abwarten.")
+                if not self.charging.value.get("stop_requested"):
+                    raise ValueError("Eine Ladeüberwachung läuft. Bitte zuerst Laden stoppen und die Bestätigung abwarten.")
+                if self.web is None:
+                    raise ValueError("Lokaler Smartfox-Zugriff für die Stoppprüfung fehlt.")
+                if self.web is not None:
+                    try:self.cache.setdefault("smartfox",{})["charger"] = self.web.read(self.config.value["smartfox"])
+                    except SmartfoxControlError:
+                        raise ValueError("Smartfox kann den Stillstand gerade nicht bestätigen. Bitte Verbindung prüfen.") from None
+                if not self.charging.local_stop_allows_shutdown():
+                    raise ValueError("Stopp wird noch geprüft. Beenden ist möglich, sobald Smartfox A+ oder Aus und keine Ladeleistung bestätigt. Bitte kurz warten.")
+                self.charging.save(status="closed",ended_by_user=True,vehicle_stop_confirmed=False,
+                                   message="Überwachung bewusst beendet: Smartfox meldet keine Ladeleistung. Fahrzeug-Stoppbestätigung steht noch aus.",closed_at=utcnow())
             self.save_rate_state()
             self.stopping = True
 
@@ -284,6 +296,7 @@ class Service:
 
     def force_charge(self, target, request_id, allow_stale=False):
         with self.lock:
+            if self.stopping:raise IntegrationError("blocked","Die App wird gerade neu gestartet oder beendet.")
             self.power.update(not self.stopping)
             try:
                 return self.charging.start(target, request_id, allow_stale)
@@ -292,6 +305,7 @@ class Service:
 
     def refresh_now(self):
         with self.lock:
+            if self.stopping:raise IntegrationError("blocked","Die App wird gerade neu gestartet oder beendet.")
             if not self.secrets.key or not self.config.value["skoda"]["vin"]:
                 return {"message": "Bitte zuerst den Fahrzeugzugang einrichten.", "status": self.status()}
             now = time.monotonic()
@@ -312,6 +326,7 @@ class Service:
 
     def stop_charge(self, request_id):
         with self.lock:
+            if self.stopping:raise IntegrationError("blocked","Die App wird gerade neu gestartet oder beendet.")
             self.update("skoda")
             self.update("smartfox")
             if self.web is None:
@@ -386,6 +401,7 @@ class Service:
 
     def command(self, action, request_id, allow_stale=False):
         with self.lock:
+            if self.stopping:raise IntegrationError("blocked","Die App wird gerade neu gestartet oder beendet.")
             if request_id in self.command_results:
                 return copy.deepcopy(self.command_results[request_id])
             self.update("skoda")

@@ -1,6 +1,7 @@
 """Persistent manual charging session; polled by the backend, never by browser timers."""
 import copy
 import json
+import math
 import time
 from .config import atomic_write
 from .modbus import utcnow
@@ -49,6 +50,7 @@ class ChargingSession:
 
     def state(self):
         value = copy.deepcopy(self.value)
+        value["can_shutdown"] = not self.active or self.local_stop_allows_shutdown()
         web = self.service.cache.get("smartfox", {}).get("charger", {})
         retry = self.can_retry_start()
         value["can_retry_start"] = retry
@@ -76,6 +78,20 @@ class ChargingSession:
             elif self.active and not self.value.get("stop_requested"):
                 value["force_reason"] = "Der vorherige Start ist noch nicht abschließend geprüft oder die Wallbox meldet keine frische Ladebereitschaft."
         return value
+
+    def local_stop_allows_shutdown(self):
+        """User may close a stopped session without claiming cloud confirmation."""
+        if not self.value.get("stop_requested") or not self.value.get("auto_restored"):
+            return False
+        intent = self.value.get("stop_intent_epoch")
+        if type(intent) not in (int,float) or not math.isfinite(intent) or time.time()-intent<5:
+            return False
+        charger = self.service.cache.get("smartfox",{}).get("charger",{})
+        captured,power = timestamp(charger.get("read_at")),charger.get("power_kw")
+        return bool(charger.get("available") and charger.get("telemetry_available") is True
+                    and charger.get("mode") in ("A+","OFF") and charger.get("status_code") in (0,1,2,5,6,255)
+                    and type(power) in (int,float) and math.isfinite(power) and 0<=power<=.1
+                    and captured is not None and captured>=intent and -5<=time.time()-captured<=30)
 
     def wallbox_ready(self):
         charger = self.service.cache.get("smartfox", {}).get("charger", {})

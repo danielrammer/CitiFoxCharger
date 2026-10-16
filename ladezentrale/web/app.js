@@ -1,6 +1,6 @@
 "use strict";
 const $ = id => document.getElementById(id);
-let csrf="", refreshing=false, mutating=false, latest=null, targetInitialized=false, appStopped=false, refreshTimer=null, consentFor="", targetEditing=false;
+let csrf="", refreshing=false, mutating=false, latest=null, targetInitialized=false, appStopped=false, refreshTimer=null, consentFor="", targetEditing=false, localAdmin=true;
 const activeStates=new Set(["starting","monitoring","stop_pending","restore_pending","paused","interrupted"]);
 const themeMedia=window.matchMedia("(prefers-color-scheme: dark)");
 let themeChoice="system";
@@ -54,7 +54,7 @@ function updateEta(){
  else if(target<=soc)text="Gewünschter Ladestand bereits erreicht";
  else if(!charger.available||charger.telemetry_available!==true||!Number.isFinite(powerAge)||powerAge< -5||powerAge>30||typeof power!=="number"||power<=.1)text="Restzeit: bei laufender Ladung verfügbar";
  else{const minutes=Math.ceil((32.3*(target-soc)/100/(power*.9)*60)/5)*5,hours=Math.floor(minutes/60),rest=minutes%60,duration=[hours?hours+" Std.":null,rest?rest+" Min.":null].filter(Boolean).join(" ");text=`Geschätzte Restzeit: ca. ${duration} bei ${number(power)} kW`;}
- $("charge-eta").textContent=text;
+ $("charge-eta").textContent=text;$("charge-eta").dataset.estimate=String(text.startsWith("Geschätzte")||text.startsWith("Gewünschter"));
 }
 const number=(value,digits=2)=>typeof value==="number"&&Number.isFinite(value)?value.toLocaleString("de-AT",{minimumFractionDigits:digits,maximumFractionDigits:digits}):"—";
 function updateHeaterControls(){
@@ -114,7 +114,8 @@ function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=
  const active=activeStates.has(session?.status),power=data.monitoring?.power;
  $("monitoring-note").hidden=!active;
  $("monitoring-note").textContent=active?(power?.warning||(!data.monitoring?.running?"Hintergrundüberwachung nicht bestätigt. Bitte App prüfen.":power?.requested&&power.on_ac_power===true?"Überwachung läuft im Hintergrund · Bildschirm darf ausgehen.":"Überwachung läuft. Tablet am Netzteil betreiben und automatisches Einschlafen verhindern.")):"";
- $("quit-app").disabled=active||mutating;
+ $("quit-app").disabled=!localAdmin||!session?.can_shutdown||mutating;
+ $("session-status").classList.toggle("session-quiet",session?.status==="monitoring"&&isCharging&&!session?.awaiting_fresh_soc&&!session?.stop_requested);
  $("normal-mode-note").textContent=session?.user_charger_mode==="OFF"?(charger.available&&charger.mode==="OFF"?"Ladestation bewusst auf Aus gestellt.":"Aus gewählt · Umschaltung noch nicht bestätigt."):"Normalbetrieb A+ · Schaltzeiten bleiben erhalten.";
  $("session-status").hidden=!session?.message;$("session-status").textContent=session?.message||"";
  $("car-message").textContent=car.message||"";$("sf-notice").textContent=sf.notice||"";$("sf-control-reason").textContent=charger.control_reason||charger.message||"";
@@ -123,7 +124,14 @@ function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=
  $("register-rows").replaceChildren(...(sf.registers||[]).map(row=>{const tr=document.createElement("tr");[String(row.address),row.words?.join(" · ")??"—",row.candidate??"—",row.error||"Gelesen"].forEach(text=>{const td=document.createElement("td");td.textContent=text;tr.append(td);});return tr;}));
  $("events").replaceChildren(...(data.events.length?data.events:[{message:"Noch keine Aktionen."}]).map(event=>{const li=document.createElement("li");li.textContent=(event.at?date(event.at)+" · ":"")+event.message;return li;}));updateControls();}
 async function refresh(){if(refreshing||appStopped)return;refreshing=true;$("refresh").setAttribute("aria-busy","true");try{render(await api("/api/status"));$("global-error").hidden=true;}catch(e){$("force").disabled=true;$("stop").disabled=true;error(e.message||"Die lokale App ist nicht erreichbar.");}finally{refreshing=false;$("refresh").removeAttribute("aria-busy");}}
-async function loadConfig(){const result=await api("/api/config"),sf=result.config.smartfox,car=result.config.skoda;for(const [id,value]of Object.entries({host:sf.host,port:sf.port,unit:sf.unit_id,firmware:sf.firmware,"sf-poll":sf.poll_seconds,"sf-timeout":sf.timeout_seconds,profile:sf.profile,"word-order":sf.word_order,vin:car.vin,"car-poll":car.poll_seconds,"car-stale":car.stale_seconds}))$(id).value=value;$("interpretation").checked=sf.interpretation_confirmed;$("persist").disabled=!result.key.persistence_available;$("persist").checked=result.key.persisted;$("clear-key").hidden=!result.key.configured;$("key-status").textContent=result.key.warning||(result.key.configured?(result.key.persisted?"Zugang mit Windows verschlüsselt gespeichert.":"Zugang bis zum Beenden der App hinterlegt."):"Kein Schlüssel hinterlegt.");$("sf-meta").textContent=`Pro 2 · ${sf.host} · ${sf.firmware}`;$("device-link").href=`http://${sf.host}/`;}
+function renderAccess(result){
+ localAdmin=result.access?.local_admin!==false;
+ const network=result.network||{},link=$("network-url");
+ $("network-status").textContent=network.message||"Heimnetz-Zugang ist ausgeschaltet.";
+ link.hidden=!network.enabled;link.textContent=network.url||"";if(network.url)link.href=network.url;
+ if(!localAdmin){$("location-label").textContent="Zugriff übers Heimnetz";$("key-form").hidden=true;document.querySelector(".app-control").hidden=true;$("config-form").querySelectorAll("input,select,button").forEach(element=>element.disabled=true);}
+}
+async function loadConfig(){const result=await api("/api/config");renderAccess(result);const sf=result.config.smartfox,car=result.config.skoda;for(const [id,value]of Object.entries({host:sf.host,port:sf.port,unit:sf.unit_id,firmware:sf.firmware,"sf-poll":sf.poll_seconds,"sf-timeout":sf.timeout_seconds,profile:sf.profile,"word-order":sf.word_order,vin:car.vin,"car-poll":car.poll_seconds,"car-stale":car.stale_seconds}))$(id).value=value;$("interpretation").checked=sf.interpretation_confirmed;$("persist").disabled=!result.key.persistence_available;$("persist").checked=result.key.persisted;$("clear-key").hidden=!result.key.configured;$("key-status").textContent=result.key.warning||(result.key.configured?(result.key.persisted?"Zugang mit Windows verschlüsselt gespeichert.":"Zugang bis zum Beenden der App hinterlegt."):"Kein Schlüssel hinterlegt.");$("sf-meta").textContent=`Pro 2 · ${sf.host} · ${sf.firmware}`;$("device-link").href=`http://${sf.host}/`;}
 async function mutation(fn){if(mutating)return;mutating=true;updateControls();let failure=null;try{await fn();}catch(e){failure=e.message;}finally{mutating=false;await refresh();if(failure)error(failure);}}
 document.querySelectorAll("[data-tab]").forEach(button=>button.addEventListener("click",()=>{const tab=button.dataset.tab;for(const id of ["overview","settings"])$(id).hidden=tab!==id;document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b===button));}));
 for(const [device,id] of [["heater","heater"],["heater2","heater2"],["hot_water","hot-water"]])$(id+"-mode").addEventListener("change",event=>{const mode=event.target.value;mutation(async()=>{toast("Smartfox-Umschaltung wird geprüft.");const result=await api("/api/smartfox/heater",{device,mode,request_id:crypto.randomUUID()});if(result.status!=="confirmed")throw new Error(result.message);toast(result.message);});});
