@@ -283,6 +283,16 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status,409)
         self.assertEqual(json.loads(body)["code"],"blocked")
 
+    def test_stale_start_flag_is_optional_boolean_and_scoped_to_manual_start(self):
+        body={"target_percent":90,"request_id":"explicit-stale-test-0001"}
+        for value in ("true",1,None,[],{}):
+            with self.subTest(value=value):
+                self.assertEqual(self.call("/api/charging/start",{**body,"allow_stale":value})[0],400)
+        for value in (False,True):
+            self.assertEqual(self.call("/api/charging/start",{**body,"allow_stale":value})[0],409)
+        self.assertEqual(self.call("/api/charging/start",body)[0],409)
+        self.assertEqual(self.call("/api/skoda/command",{"action":"start","request_id":body["request_id"],"allow_stale":True})[0],400)
+
     def test_background_shutdown_requires_local_session_and_no_monitor(self):
         self.assertEqual(self.call("/api/app/quit", {}, **{"X-CSRF-Token":"wrong"})[0],403)
         self.service.charging.save(status="monitoring",target_percent=90)

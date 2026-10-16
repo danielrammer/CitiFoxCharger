@@ -182,9 +182,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(request_id, str) or not re.fullmatch(r"[a-zA-Z0-9-]{16,80}", request_id):
                     raise ValueError("Ungültige Befehlskennung.")
                 if path.endswith("/start"):
-                    if set(data) != {"target_percent", "request_id"}:
+                    if (set(data) not in ({"target_percent", "request_id"}, {"target_percent", "request_id", "allow_stale"})
+                            or type(data.get("allow_stale", False)) is not bool):
                         raise ValueError("Ziel-Ladestand und Befehlskennung erforderlich.")
-                    result = service.force_charge(data["target_percent"], request_id)
+                    result = service.force_charge(data["target_percent"], request_id, data.get("allow_stale", False))
                 else:
                     if set(data) != {"request_id"}:
                         raise ValueError("Nur eine Befehlskennung erforderlich.")

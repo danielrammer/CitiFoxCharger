@@ -1,4 +1,4 @@
-# CitiFoxCharger für Windows · 1.2.1
+# CitiFoxCharger für Windows · 1.3.0
 
 Für Škoda Citigo e iV, SMARTFOX Pro 2 mit Firmware EM3 00.01.16.08 und Charger Pro an Ladeplatz 1.
 
@@ -42,9 +42,19 @@ Ein angenommener Start kann ohne tatsächliche Ladung bleiben. **Start erneut fr
 
 Nur ein ausdrücklicher neuer Tastendruck sendet einen weiteren Start. Das bisherige Prozentziel bleibt fest. Doppelte Anfragen mit derselben Kennung lösen keinen weiteren Start aus. Bei tatsächlicher Ladung, alten Wallboxdaten oder laufendem Stopp bleibt der erneute Start gesperrt. Die Betriebsansicht nennt den Sperrgrund und verwendet bei frischen lokalen Daten „Eingesteckt · ladebereit“. Der Cloud-Status bleibt separat erhalten.
 
+### Mit älterem Ladestand starten
+
+Bei **Daten veraltet** erscheint unter dem Slider gegebenenfalls **Zuletzt gemeldeten Ladestand verwenden**. Erst nach bewusstem Anhaken wird **Manuell laden** bzw. **Start erneut freigeben** aktiv. Die Freigabe gilt für diesen einen Start; Prozentwert, Fahrzeugzeit und Veraltet-Markierung bleiben unverändert.
+
+Voraussetzungen: gültiger API-Zugang, innerhalb der letzten fünf Minuten erfolgreich abgefragte Start-/Stopp-Fähigkeiten, bekannter SOC mit Fahrzeugzeit höchstens 24 Stunden alt sowie frische lokale Smartfox-Daten mit Ladebereitschaft und höchstens 0,1 kW. Fehlende Daten, abgelaufener Schlüssel, Serverpause, tatsächliche Ladung oder laufender Stopp werden dadurch nicht übergangen. Beim erneuten Start bleiben zusätzlich die bestehende Wartezeit und das Prozentziel erhalten. Fehlt die Freigabe wegen einer älteren Cloud-Abfrage, kann **↻** im Rahmen des API-Kontingents erneut abfragen.
+
+Nach einem solchen Start wartet das Backend höchstens **fünf Minuten auf eine neue, nach dem Start erfasste SOC-Meldung**. Bleibt sie aus, fordert es einen Fahrzeugstopp an und versucht auch bei Cloud-Ausfall oder abgelehntem Stopp, Smartfox auf **A+** zurückzustellen. Eine fehlgeschlagene Rückstellung wird weiter versucht. Die Frist bleibt nach einem Backend-Neustart erhalten; Start wird nicht wiederholt. Ein neuer Fahrzeugwert beendet diese Sonderprüfung, anschließend gilt die normale Zielüberwachung. Ein unbestätigter Start mit unbekanntem Ausgang behält die Prüfung ebenfalls bei.
+
+Das ist keine garantierte Abschaltung des Ladestroms: Der Cloud-Stopp kann scheitern, und A+ erlaubt weiterhin das normale Überschuss-/Zeitprogramm. Der Status bleibt bis zur passenden neuen Fahrzeugmeldung unbestätigt. Bei alten Daten ist auch der angezeigte Prozentwert kein sicherer aktueller Wert.
+
 ### Stoppen
 
-**Stoppen** fordert einen Fahrzeugstopp an und stellt Smartfox auf **A+** zurück. Stopp ist auch direkt nach einem Start möglich. Ein veralteter Ladezeitstempel sperrt einen neuen Start; ein Stoppsignal bleibt bei bestätigter, zuletzt erfolgreich abgefragter Stopp-Fähigkeit und gültigem API-Zugang möglich.
+**Stoppen** fordert einen Fahrzeugstopp an und versucht auch bei einem Cloud-Fehler, Smartfox auf **A+** zurückzustellen. Stopp ist auch direkt nach einem Start möglich. Ein veralteter Ladezeitstempel sperrt einen neuen Start ohne die oben beschriebene ausdrückliche Freigabe; ein Stoppsignal bleibt bei bestätigter, zuletzt erfolgreich abgefragter Stopp-Fähigkeit und gültigem API-Zugang möglich.
 
 Ein angenommener Befehl ist noch keine bestätigte Ladungsänderung. Die App wartet auf einen passenden neueren Fahrzeugstatus. Wenn der Ausgang eines Stopps unklar bleibt, wird er nur bei neuerer Telemetrie mit weiterhin laufender Ladung erneut versucht, höchstens drei Mal. Der Fahrzeugstart wird niemals automatisch wiederholt.
 
@@ -89,7 +99,7 @@ Der SOC-Abruf wurde für das Fahrzeug des Benutzers praktisch bestätigt. Der Be
 ## Fehler und Diagnose
 
 - **Nicht eingerichtet:** FIN und API-Schlüssel hinterlegen.
-- **Daten veraltet:** Die App wartet auf neue Fahrzeug-Ladedaten. Die MyŠkoda-App kann einen anderen Zeitpunkt anzeigen als der Ladezeitstempel. Der Cloud-Cache kann zusätzlich bis zum nächsten Abfrageintervall verzögern.
+- **Daten veraltet:** Wenn angeboten, **Zuletzt gemeldeten Ladestand verwenden** bewusst anhaken und anschließend starten. Nach fünf Minuten ohne neue SOC-Meldung fordert die App Stopp und A+ an. Sonst mit **↻** neu abfragen und Sperrgrund prüfen. Die MyŠkoda-App kann einen anderen Zeitpunkt anzeigen als der Ladezeitstempel; eine Cloud-Abfrage erzwingt keine neue Messung im Fahrzeug.
 - **Smartfox-Umschaltung gesperrt:** Firmware, lokaler Zugriff oder Modusbestätigung passen nicht. Bei einer bewusst deaktivierten Adapterfreigabe bleibt der kombinierte Start ebenfalls gesperrt.
 - **Zielüberwachung eingeschränkt:** Neue verlässliche Fahrzeugdaten oder API-Zugriff fehlen; die Abschaltung kann nicht bestätigt werden.
 - **Rückkehr zu A+ steht aus:** Fahrzeugstopp und Smartfox-Modus werden separat geprüft. Die App behauptet keinen erfolgreichen Moduswechsel ohne Rückleseprüfung.
@@ -113,7 +123,7 @@ Ein eigener Datenordner kann mit `--data-dir "C:\MeinOrdner\Ladezentrale-Daten"`
 py -3 -m unittest discover -s tests -v
 ```
 
-100 Tests, ohne reale Fahrzeug- oder Wallboxbefehle. Geprüft sind Protokolle, Sicherheit, verschlüsselte Schlüsselablage, kombinierte Abläufe, Fehler, neue Sitzungen nach einem Stopp, Neustartzustände, Hintergrundüberwachung ohne Browser, Kontingentsteuerung, Instanzsperre, Brave-Start, getrennter Hintergrundprozess, sichere Beendigung und Freigabe der Windows-Energieanforderungen nach dem 90-%-Ziel.
+117 Tests, ohne reale Fahrzeug- oder Wallboxbefehle. Geprüft sind Protokolle, Sicherheit, verschlüsselte Schlüsselablage, kombinierte Abläufe, Fehler, neue Sitzungen nach einem Stopp, Neustartzustände, Hintergrundüberwachung ohne Browser, Kontingentsteuerung, Instanzsperre, Brave-Start, getrennter Hintergrundprozess, sichere Beendigung und Freigabe der Windows-Energieanforderungen nach dem 90-%-Ziel. Zusätzlich geprüft: ausdrücklicher Start mit älterem SOC, eng begrenzte Freigabe, persistente Fünf-Minuten-Frist, neue SOC-Meldungen und A+-Rückstellung bei abgelehntem/gesperrtem Cloud-Stopp.
 
 ## Repository
 

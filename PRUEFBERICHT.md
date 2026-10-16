@@ -1,6 +1,14 @@
-# Prüfbericht · Version 1.2.1
+# Prüfbericht · Version 1.3.0
 
 Stand: **16.10.2026**, Windows / Python 3.14.
+
+## Ausdrückliche Freigabe bei älterem SOC
+
+Der aktuelle reale Fehlerfall lieferte 26 % mit Fahrzeugzeit 20:35 Uhr, obwohl die API später erneut erfolgreich gelesen wurde. Die 15-Minuten-Sperre war eine Regel dieser App. Version 1.3.0 ergänzt einen einmaligen, ausdrücklich angehakten manuellen Start mit diesem unverändert als veraltet gekennzeichneten SOC, eng begrenzt durch API-Zugang, Fähigkeiten, Alter und frische lokale Ladebereitschaft.
+
+17 zusätzliche Tests prüfen Freigabepflicht, unveränderten Zeitstempel, fehlende/zu alte/zukünftige Daten, Fähigkeiten, Schlüsselablauf, Abfragealter, Befehlspause, lokale Ladung und Kommunikationsausfall, Wiederholung mit festem Ziel, persistente Fünf-Minuten-Frist, frischen SOC nach dem Start, Zielstopp, Cloud-Ausfall/-Ablehnung/-Limit, fehlgeschlagene A+-Rückstellung und unsicheren Startausgang. Eine veraltete Meldung bestätigt keinen Stopp.
+
+Die Browser-Vorschau mit ausschließlich simulierten Adaptern wurde bei 800 × 1280 geprüft: anfangs ungecheckte Freigabe und gesperrter Start, aktivierter Start nach Anhaken und zurückgesetzte Freigabe nach simuliertem Start. Kein echter Fahrzeugbefehl wurde bei dieser Prüfung ausgelöst. Der reale neue Ablauf ist bis zur Bedienung durch den Benutzer und neuen Fahrzeugmeldungen unbestätigt. Cloud-Stopp und A+-Rückstellung sind Versuche; A+ kann weiterhin normales Laden erlauben.
 
 ## Korrektur nach unbestätigtem Start
 
@@ -12,7 +20,7 @@ Neue Tests prüfen frische Geräteverbindung, Status/Stromvorgabe und Anlaufzeit
 
 ## Automatisierte Prüfung
 
-**100 Tests erfolgreich**, zusätzlich JavaScript-Syntaxprüfung. Automatisierte Tests verwenden simulierte Geräte und lokale Test-Sockets, keine echten Fahrzeug- oder Wallboxbefehle.
+**117 Tests erfolgreich**, zusätzlich JavaScript-Syntaxprüfung. Automatisierte Tests verwenden simulierte Geräte und lokale Test-Sockets, keine echten Fahrzeug- oder Wallboxbefehle.
 
 Geprüft sind Modbus-Protokoll und Fehlerantworten, genaue PDU-Adressen, verlustfreie uint64-Darstellung, ungültige Registerlesebereiche, Škoda-Schema und FIN-Zuordnung, fehlende oder ungültige SOC-Werte und Zeitstempel, fehlende Fähigkeiten, API-Fehler, RateLimit und Retry-After, zwei reservierte Befehlsaufrufe, Abfrageabstände beim Laden und im Leerlauf sowie manuelle Neuabfrage.
 

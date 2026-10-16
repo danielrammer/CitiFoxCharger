@@ -1,6 +1,6 @@
 # Verifikation der Schnittstellen
 
-Stand: **16.10.2026**, Version 1.2.1. Primärquellen und die tatsächlich installierte Geräteoberfläche wurden geprüft. Die ältere Chat-Unterhaltung wurde nicht als Schnittstellennachweis übernommen.
+Stand: **16.10.2026**, Version 1.3.0. Primärquellen und die tatsächlich installierte Geräteoberfläche wurden geprüft. Die ältere Chat-Unterhaltung wurde nicht als Schnittstellennachweis übernommen.
 
 ## SMARTFOX Pro 2 / Charger Pro 1
 
@@ -77,6 +77,10 @@ Eine allgemeine Modellbeschreibung ersetzt keine Prüfung des konkreten API-Zuga
 Die geprüfte Dokumentation nennt 20 Anfragen pro Stunde und FIN; maßgeblich sind die RateLimit-Header und Serverantworten. Status und Befehle teilen sich das Kontingent. Der Adapter berücksichtigt Reset-Zeitpunkt und Retry-After. Die Abfrageplanung reserviert zwei Aufrufe für Befehle, verteilt übrige Aufrufe während des Ladens und fragt im Leerlauf seltener ab. Die manuelle Neuabfrage hat mindestens 60 Sekunden Abstand und umgeht weder Serverpause noch Befehlsreserve.
 
 Ein neuer Cloud-Abruf ist keine neue Fahrzeugmessung. Im geprüften Vertrag wurde **kein zusätzlicher Wake-up- oder Force-Refresh-Endpunkt** gefunden. Die App behauptet daher keine erzwungene Aktualisierung im Auto. Die frische lokale Smartfox-Leistung zeigt eine aktuelle Ladung an, ersetzt aber keinen gemessenen SOC.
+
+Die reguläre Startsperre bei älterem SOC ist eine App-Regel. Seit 1.3.0 kann ausschließlich der kombinierte manuelle Start durch `allow_stale: true` ausdrücklich freigegeben werden. Dafür gelten maximal 24 Stunden Fahrzeugalter, höchstens fünf Minuten seit erfolgreicher API-Abfrage mit Start-/Stopp-Fähigkeiten und höchstens 30 Sekunden alte lokale Ladebereitschaft ohne Ladeleistung. Der Standard bleibt gesperrt. Die generische Fahrzeug-Befehlsroute akzeptiert diese Ausnahme nicht. SOC und Zeitstempel werden nicht als frisch ausgegeben.
+
+Die Sitzung speichert eine Fünf-Minuten-Frist für einen neuen SOC nach dem Start. Ohne passende neue Meldung wird einmal ein Stopp angefordert und unabhängig vom Cloud-Ergebnis A+ versucht; weitere Stopps erfordern neue CHARGING-Telemetrie. Neustart erhält die Frist und wiederholt keinen Start. A+ ist kein garantierter Strom-Aus-Zustand. Diese Prüfung ist keine neue Škoda-Funktion und erzwingt keine Übertragung durch das Auto.
 
 HTTP 202 bedeutet Annahme eines Befehls, keine Zustandsbestätigung. Erst eine neuere passende Fahrzeugmeldung bestätigt den Ausgang. Start wird nie automatisch wiederholt; unsichere Stopps werden nur nach neuerer CHARGING-Telemetrie und begrenzt erneut versucht. Eine neuere gestoppte Meldung kann den Stopp ohne erneuten Befehl bestätigen.
 

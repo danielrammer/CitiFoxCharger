@@ -144,7 +144,7 @@ class Service:
                 self.next_due[source] = time.monotonic() + error.retry_seconds
         self.next_due[source] = max(self.next_due.get(source, 0), time.monotonic() + self.poll_interval(source))
 
-    def can_command(self, action):
+    def can_command(self, action, allow_stale=False):
         current = self.cache.get("skoda", {})
         if self.stopping:
             return False
@@ -157,10 +157,18 @@ class Service:
             return False
         captured = timestamp(current.get("captured_at"))
         age = time.time() - captured if captured is not None else None
-        if action == "start" and (current.get("stale", True) or age is None or not -300 <= age <= self.config.value["skoda"]["stale_seconds"]):
-            return False
-        if action == "start" and time.monotonic() - self.last_success.get("skoda", 0) > max(1200, 2 * self.config.value["skoda"]["poll_seconds"]):
-            return False
+        if action == "start":
+            if allow_stale:
+                # Explicit manual-session exception; never extend the displayed freshness.
+                if age is None or not -300 <= age <= 86400 or type(current.get("soc")) is not int or not 0 <= current["soc"] <= 100:
+                    return False
+                max_read_age = 300
+            else:
+                if current.get("stale", True) or age is None or not -300 <= age <= self.config.value["skoda"]["stale_seconds"]:
+                    return False
+                max_read_age = max(1200, 2 * self.config.value["skoda"]["poll_seconds"])
+            if time.monotonic() - self.last_success.get("skoda", 0) > max_read_age:
+                return False
         if time.monotonic() < self.car.blocked_until:
             return False
         if time.monotonic() < self.command_after and (action == "start" or (self.last_command and self.last_command["action"] == "stop")):
@@ -204,11 +212,11 @@ class Service:
                                    "power": self.power.state()},
                     "server_at": utcnow(), "next_skoda_seconds": max(0, int(self.next_due.get("skoda", 0) - time.monotonic()))}
 
-    def force_charge(self, target, request_id):
+    def force_charge(self, target, request_id, allow_stale=False):
         with self.lock:
             self.power.update(not self.stopping)
             try:
-                return self.charging.start(target, request_id)
+                return self.charging.start(target, request_id, allow_stale)
             finally:
                 self.power.update(self.charging.active and not self.worker_stop.is_set())
 
@@ -240,12 +248,12 @@ class Service:
                 raise IntegrationError("blocked", "Smartfox-Anbindung ist nicht eingerichtet.")
             return self.charging.stop(request_id)
 
-    def command(self, action, request_id):
+    def command(self, action, request_id, allow_stale=False):
         with self.lock:
             if request_id in self.command_results:
                 return copy.deepcopy(self.command_results[request_id])
             self.update("skoda")
-            if not self.can_command(action):
+            if not self.can_command(action, allow_stale):
                 raise IntegrationError("blocked", "Befehl gesperrt: aktuelle Fahrzeugdaten, unterstützte Aktion und gültiger API-Zugriff erforderlich. Nach einem Befehl gilt eine Pause von 30 Sekunden.")
             self.command_after = time.monotonic() + 30
             command = {"action": action, "requested_at": utcnow(), "requested_epoch": time.time(),

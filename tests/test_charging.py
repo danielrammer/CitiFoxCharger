@@ -345,6 +345,214 @@ class ChargingTests(unittest.TestCase):
         self.assertEqual(self.service.charging.value["status"], "paused")
         self.assertNotIn("stop", self.effects)
 
+    def stale_soc(self, minutes=30):
+        captured = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+        self.data["vehicle"]["charging"]["carCapturedTimestamp"] = captured
+        self.data["vehicle"]["charging"]["status"]["state"] = "CHARGING_INTERRUPTED"
+        self.service.next_due["skoda"] = 0
+        self.service.status()
+
+    def stale_start(self):
+        self.stale_soc()
+        return self.service.force_charge(90, "explicit-stale-start-0001", allow_stale=True)
+
+    def expire_freshness_deadline(self):
+        self.service.command_after = 0
+        self.service.charging.save(fresh_soc_deadline=time.time()-1)
+        self.service.charging.next_attempt = 0
+
+    def test_stale_start_requires_explicit_consent_and_preserves_old_timestamp(self):
+        self.stale_soc()
+        before = self.service.cache["skoda"]["captured_at"]
+        self.assertTrue(self.service.charging.state()["can_force_with_stale"])
+        self.assertFalse(self.service.charging.state()["can_force"])
+        with self.assertRaises(IntegrationError): self.force(90)
+        self.assertEqual(self.effects, [])
+        result = self.service.force_charge(90, "explicit-stale-start-0001", allow_stale=True)
+        self.assertTrue(result["awaiting_fresh_soc"])
+        self.assertAlmostEqual(result["fresh_soc_deadline"]-result["last_start_epoch"], 300)
+        self.assertEqual(self.effects, ["M+", "start"])
+        self.assertTrue(self.service.cache["skoda"]["stale"])
+        self.assertEqual(self.service.cache["skoda"]["captured_at"], before)
+        self.service.force_charge(90, "explicit-stale-start-0001", allow_stale=True)
+        self.assertEqual(self.effects.count("start"), 1)
+
+    def test_stale_exception_never_overrides_missing_old_future_or_unsupported_data(self):
+        self.stale_soc()
+        baseline = copy.deepcopy(self.service.cache["skoda"])
+        for changes in ({"captured_at":None}, {"captured_at":(datetime.now(timezone.utc)-timedelta(days=2)).isoformat()},
+                        {"captured_at":(datetime.now(timezone.utc)+timedelta(minutes=10)).isoformat()},
+                        {"available":False}, {"soc":None}, {"operations":["stopCharging"]},
+                        {"operations":["startCharging"]}):
+            self.service.cache["skoda"] = {**baseline, **changes}
+            with self.subTest(changes=changes):
+                self.assertFalse(self.service.charging.can_start_with_stale())
+                with self.assertRaises(IntegrationError):
+                    self.service.force_charge(90,"blocked-stale-start-0001",allow_stale=True)
+                self.assertEqual(self.effects, [])
+
+    def test_stale_exception_requires_recent_api_read_valid_key_and_no_cooldown(self):
+        self.stale_soc()
+        self.service.last_success["skoda"] -= 301
+        self.assertFalse(self.service.charging.can_start_with_stale())
+        self.service.last_success["skoda"] = time.monotonic()
+        self.service.car.key_expires_at = (datetime.now(timezone.utc)-timedelta(seconds=1)).isoformat()
+        self.assertFalse(self.service.charging.can_start_with_stale())
+        self.service.car.key_expires_at = None
+        self.service.car.blocked_until = time.monotonic()+60
+        self.assertFalse(self.service.charging.can_start_with_stale())
+        self.service.car.blocked_until = 0
+        self.service.command_after = time.monotonic()+30
+        self.assertFalse(self.service.charging.can_start_with_stale())
+
+    def test_stale_exception_requires_live_noncharging_wallbox(self):
+        self.stale_soc()
+        baseline = copy.deepcopy(self.service.cache["smartfox"]["charger"])
+        for changes in ({"power_kw":2.1}, {"status_code":3}, {"telemetry_available":False},
+                        {"control_available":False}, {"available":False},
+                        {"read_at":(datetime.now(timezone.utc)-timedelta(seconds=60)).isoformat()}):
+            self.service.cache["smartfox"]["charger"] = {**baseline, **changes}
+            with self.subTest(changes=changes):
+                self.assertFalse(self.service.charging.can_start_with_stale())
+                with self.assertRaises(IntegrationError):
+                    self.service.force_charge(90,"blocked-wallbox-start-01",allow_stale=True)
+        self.assertEqual(self.effects, [])
+
+    def test_explicit_retry_with_old_soc_retains_target_and_starts_once(self):
+        self.prepare_retry()
+        self.stale_soc()
+        self.assertTrue(self.service.charging.state()["can_retry_start_with_stale"])
+        with self.assertRaises(IntegrationError):
+            self.service.force_charge(95,"different-stale-target-01",allow_stale=True)
+        result = self.service.force_charge(90,"explicit-stale-retry-001",allow_stale=True)
+        self.assertTrue(result["awaiting_fresh_soc"])
+        self.assertEqual(self.effects.count("start"),2)
+        self.service.command_after=0
+        self.service.charging.value["last_start_epoch"]-=601
+        self.assertFalse(self.service.charging.can_retry_start(allow_stale=True))
+
+    def test_five_minute_deadline_requests_stop_and_restores_a_plus(self):
+        self.stale_start()
+        self.service.charging.next_attempt=0
+        self.service.status()
+        self.assertNotIn("stop",self.effects)
+        self.expire_freshness_deadline()
+        result = self.service.status()
+        self.assertEqual(self.effects,["M+","start","stop","A+"])
+        self.assertEqual(result["charging"]["status"],"stop_pending")
+        self.assertFalse(result["charging"]["awaiting_fresh_soc"])
+        self.assertIn("unbestätigt",result["charging"]["message"])
+        self.service.charging.next_attempt=0
+        self.service.status()
+        self.assertEqual(self.effects.count("stop"),1)
+
+    def test_fresh_post_start_soc_clears_deadline_and_target_still_stops(self):
+        self.stale_start()
+        self.update_soc(45)
+        result = self.service.status()
+        self.assertFalse(result["charging"]["awaiting_fresh_soc"])
+        self.expire_freshness_deadline()
+        self.service.status()
+        self.assertNotIn("stop",self.effects)
+        self.update_soc(90)
+        self.service.status()
+        self.assertEqual(self.effects[-2:],["stop","A+"])
+
+    def test_pre_start_report_cannot_clear_freshness_deadline(self):
+        self.stale_start()
+        self.update_soc(45)
+        self.data["vehicle"]["charging"]["carCapturedTimestamp"]=(datetime.now(timezone.utc)-timedelta(seconds=60)).isoformat()
+        self.service.status()
+        self.assertTrue(self.service.charging.value["awaiting_fresh_soc"])
+        self.expire_freshness_deadline()
+        self.service.status()
+        self.assertIn("stop",self.effects)
+
+    def test_stop_rejection_at_deadline_still_restores_a_plus_without_replay(self):
+        self.stale_start()
+        self.post_code=503
+        self.expire_freshness_deadline()
+        result=self.service.status()
+        self.assertEqual(self.effects[-2:],["stop","A+"])
+        self.assertEqual(result["charging"]["status"],"paused")
+        self.assertTrue(result["charging"]["stop_requested"])
+        self.assertFalse(result["charging"]["can_force_with_stale"])
+        self.service.charging.next_attempt=0
+        self.service.status()
+        self.assertEqual(self.effects.count("stop"),1)
+
+    def test_rate_blocked_stop_at_deadline_still_restores_a_plus(self):
+        self.stale_start()
+        self.expire_freshness_deadline()
+        self.service.car.blocked_until=time.monotonic()+60
+        result=self.service.status()
+        self.assertEqual(self.effects,["M+","start","A+"])
+        self.assertTrue(result["charging"]["stop_requested"])
+        self.assertIn("unbestätigt",result["charging"]["message"])
+
+    def test_offline_vehicle_at_deadline_still_ends_mplus(self):
+        self.stale_start()
+        self.expire_freshness_deadline()
+        self.service.cache["skoda"]["available"]=False
+        result=self.service.status()
+        self.assertEqual(self.effects,["M+","start","A+"])
+        self.assertTrue(result["charging"]["stop_requested"])
+        self.assertTrue(result["charging"]["auto_restored"])
+
+    def test_failed_a_plus_restoration_is_retried_without_repeating_stop(self):
+        self.stale_start()
+        self.expire_freshness_deadline()
+        self.web.allow_control=False
+        result=self.service.status()
+        self.assertFalse(result["charging"]["auto_restored"])
+        self.assertIn("Rückkehr zu A+ steht aus",result["charging"]["message"])
+        self.web.allow_control=True
+        self.service.charging.next_attempt=0
+        result=self.service.status()
+        self.assertTrue(result["charging"]["auto_restored"])
+        self.assertEqual(self.effects.count("stop"),1)
+        self.assertEqual(self.web.mode,"A+")
+
+    def test_uncertain_stale_start_keeps_deadline_after_rollback(self):
+        self.post_code=503
+        result=self.stale_start()
+        self.assertEqual(result["status"],"paused")
+        self.assertTrue(result["awaiting_fresh_soc"])
+        self.assertEqual(self.effects,["M+","start","A+"])
+        self.expire_freshness_deadline()
+        self.service.status()
+        self.assertTrue(self.service.charging.value["stop_requested"])
+        self.assertEqual(self.effects.count("start"),1)
+
+    def test_restart_preserves_expired_deadline_without_replaying_start(self):
+        self.stale_start()
+        self.expire_freshness_deadline()
+        self.service.charging=ChargingSession(self.service,self.web)
+        self.assertTrue(self.service.charging.value["awaiting_fresh_soc"])
+        self.service.status()
+        self.assertEqual(self.effects,["M+","start","stop","A+"])
+
+    def test_stale_noncharging_report_never_confirms_stop(self):
+        self.stale_start()
+        self.expire_freshness_deadline()
+        self.service.status()
+        self.service.cache["skoda"].update(state="READY_FOR_CHARGING",stale=True,
+                                          captured_at=(datetime.now(timezone.utc)+timedelta(minutes=10)).isoformat())
+        self.service.charging.next_attempt=0
+        self.service.charging.tick()
+        self.assertEqual(self.service.charging.value["status"],"stop_pending")
+
+    def test_new_stale_session_after_previous_completed_stop_is_allowed(self):
+        self.force(80)
+        self.update_soc(80)
+        self.service.status()
+        self.update_soc(80,"READY_FOR_CHARGING")
+        self.service.status()
+        self.stale_soc()
+        self.assertTrue(self.service.charging.can_start_with_stale())
+        self.service.force_charge(90,"new-stale-session-00001",allow_stale=True)
+        self.assertFalse(self.service.charging.value.get("stop_requested",False))
+
     def test_restart_preserves_monitor_without_repeating_start(self):
         self.force()
         recovered = ChargingSession(self.service, self.web)
