@@ -1,0 +1,198 @@
+"""Persistent manual charging session; polled by the backend, never by browser timers."""
+import copy
+import json
+import time
+from .config import atomic_write
+from .modbus import utcnow
+from .skoda import IntegrationError, timestamp
+from .smartfox_web import SmartfoxControlError
+
+ACTIVE = {"starting", "monitoring", "stop_pending", "restore_pending", "paused", "interrupted"}
+
+
+class ChargingSession:
+    def __init__(self, service, web):
+        self.service, self.web = service, web
+        self.path = service.config.directory / "charging-session.json"
+        self.next_attempt = 0
+        self.value = {"status": "idle", "target_percent": 80, "message": None}
+        if self.path.exists():
+            try:
+                data = json.loads(self.path.read_text(encoding="utf-8"))
+                if not isinstance(data, dict) or type(data.get("target_percent")) is not int or not 1 <= data["target_percent"] <= 100:
+                    raise ValueError()
+                self.value = data
+                # Restart never repeats a start. Recover through current telemetry and stop/restore only.
+                if data.get("status") == "starting":
+                    self.value.update(status="interrupted", message="Startstatus nach Neustart wird geprüft. Kein erneuter Startbefehl.")
+                elif data.get("status") in ACTIVE:
+                    self.value["message"] = "Überwachung nach Neustart wird wieder aufgenommen."
+            except (ValueError, UnicodeError):
+                self.value.update(status="error", message="Gespeicherte Ladeüberwachung ist ungültig. Bitte prüfen.")
+
+    @property
+    def active(self):
+        return self.value.get("status") in ACTIVE
+
+    def save(self, replace=False, **changes):
+        candidate = {**({} if replace else self.value), **changes}
+        atomic_write(self.path, json.dumps(candidate, ensure_ascii=False, indent=2).encode("utf-8"))
+        self.value = candidate
+
+    def state(self):
+        value = copy.deepcopy(self.value)
+        web = self.service.cache.get("smartfox", {}).get("charger", {})
+        value["can_force"] = (not self.active and web.get("available", False)
+                              and web.get("control_available", False)
+                              and self.service.can_command("start") and self.service.can_command("stop"))
+        value["force_reason"] = web.get("control_reason")
+        return value
+
+    def start(self, target, request_id):
+        if type(target) is not int or not 1 <= target <= 100:
+            raise ValueError("Ziel-Ladestand muss zwischen 1 und 100 % liegen.")
+        if self.active:
+            raise IntegrationError("session_active", "Eine manuelle Ladeüberwachung läuft bereits.")
+        self.service.update("skoda")
+        if not self.service.can_command("start") or not self.service.can_command("stop"):
+            raise IntegrationError("blocked", "Aktuelle Fahrzeugdaten und Start/Stopp-Zugriff erforderlich.")
+        soc = self.service.cache.get("skoda", {}).get("soc")
+        if type(soc) is not int or soc >= target:
+            raise IntegrationError("target_reached", "Der Ziel-Ladestand muss über dem aktuellen Akkustand liegen.")
+        charger = self.web.read(self.service.config.value["smartfox"])
+        if not charger["control_available"]:
+            raise IntegrationError("smartfox_unverified", charger["control_reason"])
+        # Persist intent before any hardware effect, bound to this vehicle.
+        self.save(replace=True, status="starting", target_percent=target, vin=self.service.config.value["skoda"]["vin"],
+                  request_id=request_id, started_at=utcnow(), message="Manuelles Laden wird vorbereitet.")
+        try:
+            self.web.set_mode(self.service.config.value["smartfox"], "M+")
+            result = self.service.command("start", request_id)
+            if result["status"] != "accepted":
+                raise IntegrationError("start_failed", result["message"])
+            self.save(status="monitoring", message=f"Manuelles Laden bis {target} % wird überwacht.")
+        except (SmartfoxControlError, IntegrationError) as error:
+            # Try restoring normal mode; do not pretend rollback or the vehicle start succeeded.
+            try:
+                self.web.set_mode(self.service.config.value["smartfox"], "A+")
+                self.save(status="error", message=str(error))
+            except SmartfoxControlError:
+                self.save(status="restore_pending", message="Start fehlgeschlagen. Rückkehr zu A+ ist noch nicht bestätigt.")
+            raise IntegrationError("start_failed", str(error)) from None
+        return self.state()
+
+    def stop(self, request_id, automatic=False):
+        # Durable stop intent before the upstream call. Also protects a user-requested stop below target.
+        self.save(status="paused", stop_requested=True, stop_intent_epoch=time.time(),
+                  vin=self.service.config.value["skoda"]["vin"], message="Stopp wird angefordert.")
+        result = self.service.command("stop", request_id)
+        if result["status"] != "accepted":
+            self.save(status="paused", stop_failures=self.value.get("stop_failures", 0) + 1,
+                      last_stop_failure_epoch=time.time(), message="Stopp nicht bestätigt. Überwachung wartet auf neue Fahrzeugdaten.")
+            self.next_attempt = time.monotonic() + 60
+            raise IntegrationError("stop_unconfirmed", result["message"])
+        self.save(status="stop_pending", stop_id=request_id, stop_requested_at=result["requested_at"],
+                  stop_requested_epoch=result["requested_epoch"],
+                  message="Ziel erreicht. Laden wird beendet." if automatic else "Laden wird beendet.")
+        # Restore A+ immediately after accepted stop; completion still needs newer non-charging telemetry.
+        try:
+            self.web.set_mode(self.service.config.value["smartfox"], "A+")
+            self.save(auto_restored=True)
+        except SmartfoxControlError:
+            self.save(auto_restored=False, message="Stopp angefordert. Rückkehr zu A+ ist noch nicht bestätigt.")
+        return self.state()
+
+    def tick(self):
+        if time.monotonic() < self.next_attempt:
+            return
+        self.next_attempt = time.monotonic() + 10
+        if not self.active:
+            charger = self.service.cache.get("smartfox", {}).get("charger", {})
+            if charger.get("available") and charger.get("mode") != "A+":
+                if charger.get("control_available"):
+                    try:
+                        self.web.set_mode(self.service.config.value["smartfox"], "A+")
+                        self.value["normalization_pending"] = False
+                    except SmartfoxControlError:
+                        self.value["normalization_pending"] = True
+                else:
+                    self.value["normalization_pending"] = True
+            else:
+                self.value["normalization_pending"] = False
+            return
+        car = self.service.cache.get("skoda", {})
+        if self.value.get("vin") and self.value["vin"] != self.service.config.value["skoda"]["vin"]:
+            self.save(status="error", message="FIN wurde geändert. Überwachung wurde nicht auf ein anderes Fahrzeug übertragen.")
+            return
+        status = self.value["status"]
+        if status == "restore_pending":
+            try:
+                self.web.set_mode(self.service.config.value["smartfox"], "A+")
+                self.save(status="error", message="A+ wiederhergestellt. Fahrzeugstatus bitte prüfen.")
+            except SmartfoxControlError:
+                pass
+            return
+        if status == "stop_pending":
+            if not self.value.get("auto_restored"):
+                try:
+                    self.web.set_mode(self.service.config.value["smartfox"], "A+")
+                    self.save(auto_restored=True)
+                except SmartfoxControlError:
+                    pass
+            captured = timestamp(car.get("captured_at"))
+            state = car.get("state")
+            stopped = state in ("CONNECT_CABLE", "CONSERVING", "READY_FOR_CHARGING", "CHARGING_INTERRUPTED")
+            if car.get("available") and captured is not None and captured >= self.value.get("stop_requested_epoch", float("inf")) and stopped:
+                try:
+                    self.web.set_mode(self.service.config.value["smartfox"], "A+")
+                    self.save(status="complete", message="Laden beendet. Smartfox ist wieder auf A+.", completed_at=utcnow())
+                except SmartfoxControlError:
+                    self.save(message="Fahrzeug hat gestoppt. Rückkehr zu A+ steht aus.")
+            elif time.time() - self.value.get("stop_requested_epoch", time.time()) > 600:
+                self.save(status="paused", last_stop_failure_epoch=self.value.get("stop_requested_epoch"),
+                          stop_failures=self.value.get("stop_failures", 0) + 1,
+                          message="Stopp noch nicht bestätigt. Warte auf neuen Fahrzeugstatus.")
+            return
+        if not car.get("available") or car.get("stale", True) or type(car.get("soc")) is not int:
+            if status != "paused":
+                self.save(status="paused", message="Warte auf aktuelle Fahrzeugdaten. Zielüberwachung ist vorübergehend eingeschränkt.")
+            return
+        if status == "starting":
+            # A process/file error after a start may leave an uncertain result: do not resend a start.
+            self.save(status="interrupted", message="Startstatus wird anhand der Fahrzeugdaten geprüft.")
+            return
+        if status == "interrupted" and car.get("state") in ("CONNECT_CABLE", "CONSERVING", "READY_FOR_CHARGING", "CHARGING_INTERRUPTED"):
+            try:
+                self.web.set_mode(self.service.config.value["smartfox"], "A+")
+                self.save(status="error", message="Unterbrochener Start: Fahrzeug lädt nicht. Smartfox ist wieder auf A+.")
+            except SmartfoxControlError:
+                self.save(status="restore_pending", message="Unterbrochener Start. Rückkehr zu A+ steht aus.")
+            return
+        captured = timestamp(car.get("captured_at"))
+        failure_epoch = self.value.get("last_stop_failure_epoch")
+        if (failure_epoch and captured is not None and captured > failure_epoch and
+                car.get("state") in ("CONNECT_CABLE", "CONSERVING", "READY_FOR_CHARGING", "CHARGING_INTERRUPTED")):
+            try:
+                self.web.set_mode(self.service.config.value["smartfox"], "A+")
+                self.save(status="complete", message="Fahrzeugstopp bestätigt. Smartfox ist wieder auf A+.", completed_at=utcnow())
+            except SmartfoxControlError:
+                self.value["message"] = "Fahrzeug hat gestoppt. Rückkehr zu A+ steht aus."
+            return
+        if failure_epoch and (captured is None or captured <= failure_epoch or car.get("state") != "CHARGING"):
+            return  # Never blindly replay an uncertain command; fresh charging telemetry is required.
+        if self.value.get("stop_failures", 0) >= 3:
+            self.value["message"] = "Laden konnte nicht bestätigt gestoppt werden. Bitte Fahrzeug und Smartfox prüfen."
+            return
+        if car["soc"] >= self.value["target_percent"] or self.value.get("stop_requested"):
+            if self.service.can_command("stop"):
+                try:
+                    request_id = "limit-stop-" + self.value.get("request_id", "recovered-session") + "-" + str(self.value.get("stop_failures", 0))
+                    self.stop(request_id, automatic=True)
+                except IntegrationError:
+                    self.next_attempt = time.monotonic() + 60
+            return
+        charger = self.service.cache.get("smartfox", {}).get("charger", {})
+        if charger.get("available") and charger.get("mode") != "M+":
+            self.value["message"] = f"Ziel {self.value['target_percent']} % wird weiter überwacht. Smartfox ist auf {charger.get('mode') or 'unbekannt'} gewechselt."
+        if status in ("paused", "interrupted"):
+            self.save(status="monitoring", message=f"Manuelles Laden bis {self.value['target_percent']} % wird überwacht.")
