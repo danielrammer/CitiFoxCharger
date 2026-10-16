@@ -1,8 +1,10 @@
 import copy
 import math
+import json
+import hashlib
 import threading
 import time
-from .config import validate
+from .config import validate, atomic_write
 from .modbus import SmartfoxAdapter, utcnow
 from .skoda import SkodaAdapter, IntegrationError, timestamp
 from .smartfox_web import SmartfoxWeb, SmartfoxControlError
@@ -15,10 +17,11 @@ class Service:
         self.config, self.secrets = config, secrets
         self.sf, self.car = smartfox or SmartfoxAdapter(), skoda or SkodaAdapter()
         # User explicitly authorized the local vendor-web control on 2026-10-16.
-        self.web = web if web is not None else (SmartfoxWeb(allow_undocumented_control=True) if smartfox is None else None)
+        self.web = web if web is not None else (SmartfoxWeb(allow_undocumented_control=True, allow_heater_control=True) if smartfox is None else None)
         self.lock = threading.RLock()
         self.cache, self.next_due, self.last_success = {}, {}, {}
         self.command_results = {}
+        self.heater_results = {}
         self.last_command = None
         self.command_after = 0
         self.events = []
@@ -29,6 +32,60 @@ class Service:
         self.manual_refresh_after = 0
         self.power = power if power is not None else PowerGuard()
         self.stopping = False
+        self.restore_rate_state()
+        self.restore_vehicle_cache()
+
+    def restore_vehicle_cache(self):
+        try:
+            data = json.loads((self.config.directory / "vehicle-cache.json").read_text(encoding="utf-8"))
+            if (not self.secrets.key or data.get("vin") != self.config.value["skoda"]["vin"]
+                    or data.get("key_hash") != hashlib.sha256(self.secrets.key.encode()).hexdigest()):
+                return
+            car = data["status"]
+            read_at, captured = timestamp(car.get("read_at")), timestamp(car.get("captured_at"))
+            age = time.time()-read_at if read_at is not None else None
+            if (not car.get("available") or type(car.get("soc")) is not int or not 0 <= car["soc"] <= 100
+                    or age is None or not 0 <= age <= 86400 or captured is None
+                    or not isinstance(car.get("operations"), list)
+                    or any(action not in ("startCharging", "stopCharging") for action in car["operations"])):
+                return
+            car["stale"] = not -300 <= time.time()-captured <= self.config.value["skoda"]["stale_seconds"]
+            self.cache["skoda"] = car
+            self.last_success["skoda"] = time.monotonic()-age
+            self.car.key_expires_at = car.get("key_expires_at")
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            pass
+
+    def restore_rate_state(self):
+        try:
+            data = json.loads((self.config.directory / "rate-limits.json").read_text(encoding="utf-8"))
+            if data.get("vin") != self.config.value["skoda"]["vin"]:
+                return
+            now, clock = time.time(), self.car.clock()
+            for name in ("blocked_until", "quota_reset_at"):
+                deadline = data.get(name)
+                if type(deadline) in (int, float) and math.isfinite(deadline) and 0 <= deadline-now <= 7*86400:
+                    setattr(self.car, name, clock+deadline-now)
+            quota = data.get("quota_remaining")
+            if isinstance(quota, str) and quota.isdecimal() and len(quota) <= 6:
+                self.car.quota_remaining = quota
+            cooldown = data.get("command_after")
+            if type(cooldown) in (int, float) and math.isfinite(cooldown) and 0 <= cooldown-now <= 60:
+                self.command_after = time.monotonic()+cooldown-now
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+
+    def save_rate_state(self):
+        now, clock = time.time(), self.car.clock()
+        data = {"vin":self.config.value["skoda"]["vin"], "quota_remaining":self.car.quota_remaining,
+                "blocked_until":now+max(0,self.car.blocked_until-clock),
+                "quota_reset_at":now+max(0,self.car.quota_reset_at-clock),
+                "command_after":now+max(0,self.command_after-time.monotonic())}
+        atomic_write(self.config.directory / "rate-limits.json",json.dumps(data).encode())
+        snapshot = {"vin":self.config.value["skoda"]["vin"],
+                    "key_hash":hashlib.sha256(self.secrets.key.encode()).hexdigest(),
+                    "status":self.cache.get("skoda", {})}
+        atomic_write(self.config.directory / "vehicle-cache.json",json.dumps(snapshot).encode())
 
     def poll_interval(self, source):
         configured = self.config.value[source]["poll_seconds"]
@@ -79,6 +136,17 @@ class Service:
         with self.lock:
             if self.charging.active:
                 raise ValueError("Eine Ladeüberwachung läuft. Bitte zuerst Laden stoppen und die Bestätigung abwarten.")
+            self.save_rate_state()
+            self.stopping = True
+
+    def prepare_restart(self):
+        with self.lock:
+            if self.stopping:
+                raise ValueError("Die App wird bereits beendet.")
+            if (self.secrets.key or self.charging.active) and not self.secrets.persisted:
+                raise ValueError("Vor dem Neustart den API-Schlüssel unter Einstellungen mit Windows verschlüsselt speichern.")
+            self.charging.save()
+            self.save_rate_state()
             self.stopping = True
 
     def event(self, message):
@@ -194,17 +262,19 @@ class Service:
 
     def status(self):
         with self.lock:
-            self.update("smartfox")
-            self.update("skoda")
-            car = self.cache["skoda"]
+            if not self.stopping:
+                self.update("smartfox")
+                self.update("skoda")
+            car = self.cache.get("skoda", {"available":False,"stale":True})
             captured = timestamp(car.get("captured_at"))
             if captured is None or not -300 <= time.time() - captured <= self.config.value["skoda"]["stale_seconds"]:
                 car["stale"] = True
             self.check_command_observation()
-            self.charging.tick()
-            self.power.update(self.charging.active and not self.worker_stop.is_set())
-            return {"smartfox": copy.deepcopy(self.cache["smartfox"]),
-                    "skoda": copy.deepcopy(self.cache["skoda"]),
+            if not self.stopping:
+                self.charging.tick()
+            self.power.update(self.charging.active and not self.worker_stop.is_set() and not self.stopping)
+            return {"smartfox": copy.deepcopy(self.cache.get("smartfox", {"available":False})),
+                    "skoda": copy.deepcopy(car),
                     "controls": {a: self.can_command(a) for a in ("start", "stop")},
                     "last_command": copy.deepcopy(self.last_command), "events": copy.deepcopy(self.events),
                     "charging": self.charging.state(),
@@ -247,6 +317,72 @@ class Service:
             if self.web is None:
                 raise IntegrationError("blocked", "Smartfox-Anbindung ist nicht eingerichtet.")
             return self.charging.stop(request_id)
+
+    def change_target(self, target):
+        with self.lock:
+            if self.stopping:
+                raise IntegrationError("blocked", "Die App wird gerade neu gestartet oder beendet.")
+            result = self.charging.change_target(target)
+            self.event(f"Manuelles Ladeziel auf {target} % geändert.")
+            return result
+
+    def set_heater_mode(self, device, mode, request_id):
+        with self.lock:
+            if device not in ("heater", "heater2", "hot_water") or mode not in ("auto", "manual", "off"):
+                raise ValueError("Ungültiger Heizstab-Modus.")
+            if request_id in self.heater_results:
+                previous = self.heater_results[request_id]
+                if (previous["device"],previous["mode"]) != (device,mode):
+                    raise ValueError("Befehlskennung bereits anderweitig verwendet.")
+                return copy.deepcopy(previous)
+            if self.stopping or self.web is None:
+                raise IntegrationError("blocked", "Heizstab-Steuerung ist gerade nicht verfügbar.")
+            # Keep even uncertain outcomes idempotent; a repeat requires a deliberate new request.
+            result = {"device":device,"mode":mode,"status":"unconfirmed","message":"Heizstab-Umschaltung noch unbestätigt."}
+            self.heater_results[request_id] = result
+            if len(self.heater_results) > 100:
+                del self.heater_results[next(iter(self.heater_results))]
+            try:
+                self.cache.setdefault("smartfox", {})["charger"] = self.web.set_heater_mode(self.config.value["smartfox"],device,mode)
+            except SmartfoxControlError as error:
+                self.next_due["smartfox"] = 0
+                result["message"] = str(error)
+                raise IntegrationError("heater_unconfirmed", str(error)) from None
+            name = {"heater":"Heizstab","heater2":"Heizstab 2","hot_water":"Warmwasser"}[device]
+            result.update(status="confirmed",message=name+" ist auf "+{"auto":"Automatik.","manual":"Manuell.","off":"Aus."}[mode])
+            self.event(result["message"])
+            return copy.deepcopy(result)
+
+    def set_charger_mode(self, mode, request_id):
+        with self.lock:
+            if mode not in ("OFF","A+","M+"):
+                raise ValueError("Nur Aus, A+ und M+ sind vorgesehen.")
+            if self.stopping or self.web is None:
+                raise IntegrationError("blocked","Ladestation-Steuerung ist gerade nicht verfügbar.")
+            if mode == "M+" and (not self.charging.active or self.charging.value.get("stop_requested")):
+                raise IntegrationError("blocked","M+ bitte über Manuell laden mit aktivem Prozentziel starten.")
+            if mode == "M+" and (not self.can_command("start") or not self.can_command("stop")):
+                raise IntegrationError("blocked","Für M+ sind aktuelle Fahrzeugdaten und Start/Stopp-Zugriff erforderlich.")
+            if request_id in self.heater_results:
+                result = self.heater_results[request_id]
+                if (result["device"],result["mode"]) != ("charger",mode):
+                    raise ValueError("Befehlskennung bereits anderweitig verwendet.")
+                return copy.deepcopy(result)
+            result = {"device":"charger","mode":mode,"status":"unconfirmed","message":"Wallbox-Modus unbestätigt."}
+            self.heater_results[request_id] = result
+            if len(self.heater_results)>100:
+                del self.heater_results[next(iter(self.heater_results))]
+            # Explicit OFF must survive the ordinary A+ normalization and a pending target stop.
+            self.charging.save(user_charger_mode="OFF" if mode == "OFF" else None)
+            try:
+                self.cache.setdefault("smartfox",{})["charger"] = self.web.set_charger_mode(self.config.value["smartfox"],mode)
+            except SmartfoxControlError as error:
+                self.next_due["smartfox"] = 0
+                result["message"] = str(error)
+                raise IntegrationError("charger_unconfirmed",str(error)) from None
+            result.update(status="confirmed",message="Ladestation ist auf "+("Aus." if mode == "OFF" else mode+"."))
+            self.event(result["message"])
+            return copy.deepcopy(result)
 
     def command(self, action, request_id, allow_stale=False):
         with self.lock:

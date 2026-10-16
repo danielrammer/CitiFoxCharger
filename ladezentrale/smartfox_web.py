@@ -11,6 +11,7 @@ import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from .modbus import utcnow
+from .smartfox_energy import energy_display
 
 FIRMWARE = "EM3 00.01.16.08"
 MODES = {0: "A", 1: "M", 2: "A+", 3: "OFF", 4: "M+"}
@@ -39,9 +40,10 @@ def request_local(host, path, timeout):
 
 class SmartfoxWeb:
     # Deliberate gate: do not silently replace the user's manufacturer-documentation requirement.
-    def __init__(self, request=None, allow_undocumented_control=False, clock=None, sleep=None):
+    def __init__(self, request=None, allow_undocumented_control=False, clock=None, sleep=None, allow_heater_control=False):
         self.request = request or request_local
         self.allow_control = allow_undocumented_control
+        self.allow_heater_control = allow_heater_control
         self.clock, self.sleep = clock or time.monotonic, sleep or time.sleep
 
     def read(self, config):
@@ -80,8 +82,20 @@ class SmartfoxWeb:
                      and current is not None and current >= 6)
             # Existing M+ timers are never changed or inferred from a SOC target.
             mplus_modes = json.loads(fields.get("hidCcMplusMode", "[]"))
+            read_at = utcnow()
+            energy = energy_display(fields, read_at)
+            # These exact installed outputs were requested by the user; do not control reassigned relays.
+            for device, mapped in (("heater", fields.get("hidAoutName", "").strip().casefold() == "heizstab"),
+                                   ("heater2", fields.get("hidR1Type") == "0" and
+                                    "".join(fields.get("hidR1Name", "").casefold().split()) == "heizstab2"),
+                                   ("hot_water", fields.get("hidR2Type") == "2" and
+                                    fields.get("hidR2Name", "").strip().casefold() == "warmwasser")):
+                value = energy[device]
+                value["control_available"] = bool(self.allow_heater_control and mapped and value["enabled"] and value["mode"])
+                value["control_reason"] = None if value["control_available"] else "Heizstab-Steuerung nicht freigegeben oder Zuordnung nicht bestätigt."
             return {"available": True, "mode": MODES.get(raw_mode), "mode_code": raw_mode,
-                    "power_kw": power, "read_at": utcnow(), "firmware": firmware,
+                    "power_kw": power, "read_at": read_at, "firmware": firmware,
+                    "energy": energy,
                     "status_code": state_code, "status_text": states.get(state_code, "Status unbekannt"),
                     "info_code": info_code, "offered_current_a": current, "telemetry_available": telemetry,
                     "connected": connected, "ready_for_start": ready,
@@ -95,13 +109,18 @@ class SmartfoxWeb:
     def set_mode(self, config, mode):
         if mode not in ("M+", "A+"):
             raise ValueError("Nur M+ und A+ sind vorgesehen.")
+        return self.set_charger_mode(config, mode)
+
+    def set_charger_mode(self, config, mode):
+        if mode not in ("OFF", "A+", "M+"):
+            raise ValueError("Nur Aus, A+ und M+ sind vorgesehen.")
         # Reading back an already selected A+ requires no write and works even with the gate closed.
         before = self.read(config)
         if before["mode"] == mode:
             return before
         if not self.allow_control:
             raise SmartfoxControlError(before["control_reason"])
-        number = 4 if mode == "M+" else 2
+        number = {"M+":4,"A+":2,"OFF":3}[mode]
         self.request(config["host"], f"/setswcc.cgi?num=0&mode={number}&value=100", config["timeout_seconds"])
         after = self.read(config)
         if after["mode"] != mode:
@@ -125,3 +144,31 @@ class SmartfoxWeb:
             if elapsed >= timeout:
                 raise SmartfoxControlError("Smartfox-Ladefreigabe noch nicht bestätigt. Fahrzeugstart wurde nicht gesendet.")
             self.sleep(min(1, timeout - elapsed))
+
+    def set_heater_mode(self, config, device, mode):
+        if device not in ("heater", "heater2", "hot_water") or mode not in ("auto", "manual", "off"):
+            raise ValueError("Nur Aus/Automatik/Manuell für die bestätigten Wärmeausgänge ist vorgesehen.")
+        before = self.read(config)
+        value = before["energy"][device]
+        if not value.get("control_available"):
+            raise SmartfoxControlError(value["control_reason"])
+        desired = {"auto":"A","manual":"M","off":"OFF"}[mode]
+        if value["mode"] == desired:
+            return before
+        if device == "heater":
+            percent = value.get("manual_percent")
+            if mode == "manual" and percent is None:
+                raise SmartfoxControlError("Die eingestellte manuelle Heizleistung fehlt. Bitte in Smartfox prüfen.")
+            path = f"/setswaout.cgi?mode=1&power={percent}" if mode == "manual" else "/setswaout.cgi?mode=" + ("2" if mode == "auto" else "0")
+        else:
+            relay = 1 if device == "heater2" else 2
+            if mode in ("manual","off"):
+                # The vendor cancels an existing timer before steady manual ON or OFF.
+                self.request(config["host"], f"/setswrel.cgi?rel={relay}&state=3&duration=0", config["timeout_seconds"])
+            path = f"/setswrel.cgi?rel={relay}&state=" + {"auto":"0","manual":"1","off":"2"}[mode]
+        self.request(config["host"], path, config["timeout_seconds"])
+        after = self.read(config)
+        if (after["energy"][device].get("mode") != desired
+                or (device == "heater" and mode == "manual" and after["energy"][device].get("manual_percent") != percent)):
+            raise SmartfoxControlError("Smartfox hat den gewünschten Heizstab-Modus noch nicht bestätigt.")
+        return after

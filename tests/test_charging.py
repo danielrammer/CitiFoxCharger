@@ -122,6 +122,7 @@ class FakeWeb:
         self.mode, self.effects, self.allow_control = "A+", effects, True
         self.fail_mplus = False
         self.ready_calls, self.fail_ready = 0, False
+        self.fail_heater = False
     def read(self, config):
         return {"available": True, "mode": self.mode, "control_available": self.allow_control,
                 "control_reason": None if self.allow_control else "Nicht freigegeben",
@@ -137,6 +138,12 @@ class FakeWeb:
         self.ready_calls += 1
         if self.fail_ready:
             raise SmartfoxControlError("Ladebereitschaft fehlt")
+        return self.read(config)
+    def set_charger_mode(self,config,mode):
+        return self.set_mode(config,mode)
+    def set_heater_mode(self,config,device,mode):
+        self.effects.append(device+"-"+mode)
+        if self.fail_heater: raise SmartfoxControlError("Heizstab-Modus unbestätigt")
         return self.read(config)
 
 
@@ -560,12 +567,124 @@ class ChargingTests(unittest.TestCase):
         self.assertEqual(recovered.value["target_percent"], 80)
         self.assertEqual(self.effects.count("start"), 1)
 
+    def test_target_can_be_raised_during_charging_without_another_start(self):
+        self.force(80)
+        result=self.service.change_target(95)
+        self.assertEqual(result["target_percent"],95)
+        self.assertTrue(result["can_adjust_target"])
+        self.assertEqual(self.effects,["M+","start"])
+        self.assertEqual(ChargingSession(self.service,self.web).value["target_percent"],95)
+
+    def test_lower_target_reached_by_fresh_soc_requests_stop(self):
+        self.force(90)
+        result=self.service.change_target(35)
+        self.assertEqual(result["status"],"stop_pending")
+        self.assertEqual(self.effects,["M+","start","stop","A+"])
+        self.assertFalse(result["can_adjust_target"])
+
+    def test_target_change_with_old_soc_keeps_deadline_and_waits_for_new_soc(self):
+        self.stale_start()
+        deadline=self.service.charging.value["fresh_soc_deadline"]
+        result=self.service.change_target(35)
+        self.assertEqual(result["fresh_soc_deadline"],deadline)
+        self.assertEqual(self.effects,["M+","start"])
+        self.update_soc(41)
+        self.service.status()
+        self.assertEqual(self.effects[-2:],["stop","A+"])
+
+    def test_target_validation_and_stopping_session_cannot_be_reopened(self):
+        with self.assertRaises(IntegrationError): self.service.change_target(90)
+        self.force(90)
+        for value in (True,0,101,"95"):
+            with self.subTest(value=value),self.assertRaises(ValueError): self.service.change_target(value)
+        self.service.stop_charge("manual-stop-target-0001")
+        with self.assertRaises(IntegrationError): self.service.change_target(95)
+        self.assertEqual(self.effects.count("start"),1)
+
+    def test_restart_requires_persisted_key_and_resumes_same_target_without_start(self):
+        self.stale_start()
+        with self.assertRaises(ValueError): self.service.prepare_restart()
+        self.secrets.set("test-key-for-local-tests",persist=True)
+        deadline=self.service.charging.value["fresh_soc_deadline"]
+        self.service.car.quota_remaining="1"
+        self.service.car.quota_reset_at=self.service.car.clock()+900
+        self.service.car.blocked_until=self.service.car.clock()+30
+        self.service.prepare_restart()
+        self.assertTrue(self.service.stopping)
+        self.service.next_due["skoda"]=0
+        def unexpected_read(*args): raise AssertionError("No reads while shutting down")
+        self.service.car.read=unexpected_read
+        self.service.status()
+        recovered=Service(self.config,self.secrets,self.service.sf,SkodaAdapter(),self.web,PowerGuard(FakePower()))
+        self.addCleanup(recovered.stop_worker)
+        self.assertEqual(recovered.charging.value["target_percent"],90)
+        self.assertEqual(recovered.charging.value["fresh_soc_deadline"],deadline)
+        self.assertEqual(recovered.car.quota_remaining,"1")
+        self.assertGreater(recovered.car.blocked_until,recovered.car.clock())
+        self.assertGreater(recovered.car.quota_reset_at,recovered.car.clock()+890)
+        self.assertEqual(recovered.cache["skoda"]["captured_at"],self.service.cache["skoda"]["captured_at"])
+        self.assertTrue(recovered.cache["skoda"]["stale"])
+        recovered.car.blocked_until=0
+        result=recovered.status()
+        self.assertEqual(result["skoda"]["soc"],40)
+        self.assertTrue(result["controls"]["stop"])
+        self.assertEqual(self.effects,["M+","start"])
+
     def test_config_and_key_removal_blocked_during_monitoring(self):
         self.force()
         with self.assertRaises(ValueError): self.service.save_config(self.config.value)
         with self.assertRaises(ValueError): self.service.clear_key()
         self.service.set_key("replacement-test-key", False)
         self.assertEqual(self.service.charging.value["status"], "monitoring")
+
+    def test_explicit_charger_off_persists_and_is_not_normalized_to_a_plus(self):
+        self.service.set_charger_mode("OFF","charger-off-test-00001")
+        self.service.next_due["smartfox"]=0
+        self.service.charging.next_attempt=0
+        result=self.service.status()
+        self.assertEqual(self.web.mode,"OFF")
+        self.assertEqual(result["charging"]["user_charger_mode"],"OFF")
+        recovered=ChargingSession(self.service,self.web)
+        self.assertEqual(recovered.normal_mode,"OFF")
+        self.assertEqual(self.effects,["OFF"])
+
+    def test_explicit_off_during_session_survives_target_stop_and_completion(self):
+        self.force()
+        self.service.set_charger_mode("OFF","charger-off-test-00002")
+        self.update_soc(80)
+        self.service.status()
+        self.update_soc(80,"READY_FOR_CHARGING")
+        result=self.service.status()
+        self.assertEqual(result["charging"]["status"],"complete")
+        self.assertEqual(self.effects,["M+","start","OFF","stop"])
+        self.assertEqual(self.web.mode,"OFF")
+        self.assertIn("Aus",result["charging"]["message"])
+
+    def test_m_plus_requires_monitored_target_and_active_change_never_restarts_car(self):
+        with self.assertRaises(IntegrationError):self.service.set_charger_mode("M+","charger-mode-test-0001")
+        self.force(82)
+        self.service.command_after=0
+        self.service.set_charger_mode("A+","charger-mode-test-0002")
+        self.service.set_charger_mode("M+","charger-mode-test-0003")
+        self.service.set_charger_mode("M+","charger-mode-test-0003")
+        self.assertEqual(self.effects,["M+","start","A+","M+"])
+        self.assertEqual(self.service.charging.value["target_percent"],82)
+
+    def test_heater_command_is_idempotent_and_does_not_restart_vehicle(self):
+        self.force(90)
+        result=self.service.set_heater_mode("heater","manual","heater-change-id-00001")
+        self.assertEqual(result["status"],"confirmed")
+        self.service.set_heater_mode("heater","manual","heater-change-id-00001")
+        self.assertEqual(self.effects,["M+","start","heater-manual"])
+        self.assertEqual(self.web.mode,"M+")
+        with self.assertRaises(ValueError):self.service.set_heater_mode("heater2","manual","heater-change-id-00001")
+
+    def test_uncertain_heater_command_is_not_automatically_repeated(self):
+        self.web.fail_heater=True
+        with self.assertRaises(IntegrationError):self.service.set_heater_mode("heater2","manual","heater-uncertain-00001")
+        result=self.service.set_heater_mode("heater2","manual","heater-uncertain-00001")
+        self.assertEqual(result["status"],"unconfirmed")
+        self.assertEqual(self.effects,["heater2-manual"])
 
     def test_idle_a_is_normalized_to_a_plus(self):
         self.web.mode = "A"

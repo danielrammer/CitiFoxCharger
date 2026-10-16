@@ -1,6 +1,6 @@
 # Verifikation der Schnittstellen
 
-Stand: **16.10.2026**, Version 1.3.0. Primärquellen und die tatsächlich installierte Geräteoberfläche wurden geprüft. Die ältere Chat-Unterhaltung wurde nicht als Schnittstellennachweis übernommen.
+Stand: **16.10.2026**, Version 1.5.0. Primärquellen und die tatsächlich installierte Geräteoberfläche wurden geprüft. Die ältere Chat-Unterhaltung wurde nicht als Schnittstellennachweis übernommen.
 
 ## SMARTFOX Pro 2 / Charger Pro 1
 
@@ -33,7 +33,7 @@ Die ausgelieferte Geräteoberfläche unter 192.168.0.81 liest `/values.xml`. Ver
 
 Die Herstelleroberfläche verwendet für Charger 1 `/setswcc.cgi?num=0&mode=<code>&value=100`. Dafür wurde keine öffentliche Hersteller-API-Spezifikation gefunden. Die Existenz des Pfads ist keine Freigabe von Modbus-Schreibregistern.
 
-Der Benutzer hat am 16.10.2026 ausdrücklich geantwortet: **„Ja, lokale Websteuerung freigeben“**. Deshalb aktiviert diese auf sein Gerät zugeschnittene Anwendung den eng begrenzten Webadapter. Die Klasse selbst bleibt ohne explizite Aktivierung gesperrt. Erlaubt sind nur M+ und A+ an Charger 1, nur bei exakt passender Firmware und privater IPv4-Adresse, ohne Umleitungen oder Systemproxy. XML-Größe und Schema werden geprüft. Nach einer Änderung muss der zurückgelesene Modus passen; andernfalls startet die App das Auto nicht.
+Der Benutzer hat am 16.10.2026 ausdrücklich geantwortet: **„Ja, lokale Websteuerung freigeben“**. Deshalb aktiviert diese auf sein Gerät zugeschnittene Anwendung den eng begrenzten Webadapter. Die Klasse selbst bleibt ohne explizite Aktivierung gesperrt. Erlaubt sind Aus, A+ und M+ an Charger 1 und die nachfolgend beschriebenen angeforderten Wärmeausgänge, nur bei exakt passender Firmware und privater IPv4-Adresse, ohne Umleitungen oder Systemproxy. XML-Größe und Schema werden geprüft. Nach einer Änderung muss der zurückgelesene Modus passen; andernfalls startet die App das Auto nicht.
 
 **Realer Nachweis:** A+ → M+ → A+ mit Rücklesebestätigung erfolgreich; Endzustand A+. Kein neuer Fahrzeugbefehl während dieses Tests.
 
@@ -84,7 +84,35 @@ Die Sitzung speichert eine Fünf-Minuten-Frist für einen neuen SOC nach dem Sta
 
 HTTP 202 bedeutet Annahme eines Befehls, keine Zustandsbestätigung. Erst eine neuere passende Fahrzeugmeldung bestätigt den Ausgang. Start wird nie automatisch wiederholt; unsichere Stopps werden nur nach neuerer CHARGING-Telemetrie und begrenzt erneut versucht. Eine neuere gestoppte Meldung kann den Stopp ohne erneuten Befehl bestätigen.
 
-## Brave-Start
+## Weitere lokale Funktionen
+
+### Lokale Energieanzeige und Zieländerung
+
+Die gelesene Firmware-Oberfläche berechnet den Gesamtverbrauch aus `hidProduction` (kW) + `hidPower` (W, /1000) − `batteryPower` (kW). Positive Netzleistung ist Bezug, negative Einspeisung. Verifiziert sind außerdem `analogOutPower`, `analogOutPercent`, `analogOutTemp`, Sensorzuordnung `hidAoutTemperatureSensors` / `hidR1TempSensor` / `hidR2TempSensor`, Aktivierungen, `hidAoutStatus` sowie `hidR1Status`/`hidR2Status` und deren `Info`-Codes. Sensor 0 ist unzugeordnet, 850 °C ein fehlender Sensorwert. Die App übernimmt nur endliche Werte mit passender Einheit und passendem Bereich; Relaisleistung wird nicht geschätzt. Diese Werte kommen aus dem bereits vorhandenen `/values.xml`-Abruf.
+
+`POST /api/charging/target` ändert nur das lokale Sitzungsziel. Ein dadurch erreichter Grenzwert wird über die bestehende Stopp-Überwachung geprüft. Es wird weder erneut gestartet noch die native Škoda-Ladegrenze ungeprüft beschrieben.
+
+### Wärmeausgänge und begrenzte Wallbox-Auswahl
+
+Die aktuellen Herstellerfunktionen `setswaout` und `setswrel` wurden direkt im ausgelieferten HTML/JavaScript geprüft. Analog: `hidAoutMode` 0=Aus, 1=Manuell, 2=Auto; bestehender `hidAoutPercentage` bleibt erhalten. Befehle: `/setswaout.cgi?mode=0`, `?mode=2` bzw. `?mode=1&power=<bestehender Prozentwert>`. Fehlender manueller Sollwert sperrt Manuell.
+
+Relais: `hidR1Mode`/`hidR2Mode` x=Aus, m=Manuell, 0=Auto. `/setswrel.cgi?rel=N&state=0` für Auto. Manuell/Aus: zuerst `?rel=N&state=3&duration=0` zum Beenden des manuellen Timers, danach `?rel=N&state=1` bzw. `state=2`. N ist fest 1 für Heizstab 2 und 2 für Warmwasser. Die Zuordnung wird anhand Aktivierung, Name und Typ geprüft: Heizstab am Analogausgang, Heizstab 2/Typ 0 an Relais 1, Warmwasser/Typ 2 an Relais 2. Bestätigung nur durch zurückgelesenen Modus; Relaisstatus und Modus bleiben getrennte Werte. Kein Temperatur-/Timer-Konfigurationseditor.
+
+Wallbox-Auswahl begrenzt auf OFF=3, A+=2 und M+=4. M+ ohne aktive Sitzung erfolgt über den überwachten kombinierten Start; die reine Modusroute verlangt für M+ eine aktive Sitzung und aktuellen Start-/Stopp-Zugriff. Aus wird lokal als ausdrücklicher Wunsch gespeichert und verhindert die normale A+-Rückstellung. Alle Änderungen verlangen lokale Sitzung, passende Origin, CSRF und eine eindeutige Befehlskennung; unbestätigte Ergebnisse werden mit gleicher Kennung nicht erneut geschaltet. Die Modbus-Schreibroute bleibt gesperrt. Neue Wärme-/Aus-Schaltwege sind simuliert, nicht an den realen Verbrauchern geprüft.
+
+### Sichtbare Frische und Restzeitmodell
+
+Das Frontend zeigt den unveränderten `carCapturedTimestamp` als Fahrzeugmeldung und den erfolgreichen HTTP-Abruf als eigene Zeit. API-Fehler schreiben keine neue erfolgreiche Abrufzeit. Das Veraltet-Alter bezieht sich auf die Fahrzeugmeldung.
+
+Restzeit: `ceil((32.3 * (Ziel-SOC)/100 / (Wallbox-kW * 0.9) * 60)/5)*5` Minuten. 32,3 kWh nutzbare Kapazität laut [Škoda](https://www.skoda-storyboard.com/en/press-kits/skoda-citigo%E1%B5%89-iv-skoda-superb-iv-press-kit/skoda-citigo%E1%B5%89-iv-zero-emission-range-of-up-to-260-km/). 90 % Wirkungsgrad sind eine ausdrücklich dokumentierte Annahme. Kein Hochrechnen des angezeigten SOC. Fehlender/veralteter SOC oder fehlende/ältere lokale Leistung (>30 Sekunden) sperrt die Schätzung; ein Sliderwechsel berechnet neu. Keine native Ladezeit aus der API und keine garantierte Fertigstellungszeit.
+
+### Direkter Fahrzeug-Refresh
+
+Der offizielle Vertrag wurde erneut auf alle Pfade geprüft: kein Wake-up-/Force-Refresh-Pfad. Die separate Community-Bibliothek [myskoda/rest_api.py](https://github.com/skodaconnect/myskoda/blob/main/myskoda/rest_api.py) enthält `wakeup` über `/v1/vehicle-wakeup/{vin}?applyRequestLimiter=true`, einen anderen Authentifizierungsweg und einen Hinweis auf maximal drei Aufrufe pro Tag. Die [HA-Integration](https://github.com/skodaconnect/homeassistant-myskoda/blob/main/docs/entities.md#wake-up-car) warnt zusätzlich vor fahrzeugabhängigen Grenzen bis zur nächsten Fahrt. Das ist kein Nachweis für diesen Citigo und nicht mit dem öffentlichen API-Schlüssel nutzbar. Kein solcher Befehl wurde ausprobiert. Die dortigen `refresh_*`-Methoden allein sind wiederum Datenabrufe, keine verifizierte neue Messung im Fahrzeug.
+
+### Lokale Prozesssteuerung
+
+`Stoppen.cmd` und `Neustarten.cmd` nutzen ausschließlich Loopback, ohne Proxy/Redirects, mit Produktprüfung, Sitzung und CSRF. Der Neustart-Endpunkt verlangt gespeicherten Zugang, wenn ein Schlüssel oder eine aktive Sitzung vorliegt. Er persistiert Sitzung und Abfragepausen, beendet Worker, Server, Energieanforderungen und Instanzsperre und startet dann dasselbe Profil. Ein neuer zufälliger Instanzbezeichner im Health-Status bestätigt den Prozesswechsel. Es gibt kein pauschales Beenden von Python-Prozessen. Normales Beenden bleibt bei aktiver Überwachung gesperrt.
 
 [Brave dokumentiert Kommandozeilenflags unter Windows](https://support.brave.app/hc/en-us/articles/360044860011-How-Do-I-Use-Command-Line-Flags-in-Brave). Das Chromium-Startflag `--start-fullscreen` ist im [offiziellen Quellcode](https://chromium.googlesource.com/chromium/src.git/+/2eee6cb90276be4e16fe7f2cf898ec558863a2d1/content/public/common/content_switches.cc) definiert. Der Launcher startet ein neues Fenster mit diesem Flag, ohne Shell-Auswertung. Bereits laufende Browserprozesse können Startflags übergehen; F11 bleibt der manuelle Weg zum Vollbild. Fehlt Brave oder schlägt der Prozessstart fehl, wird der Standardbrowser verwendet.
 

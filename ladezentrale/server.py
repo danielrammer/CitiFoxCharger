@@ -32,6 +32,8 @@ class LocalServer(ThreadingHTTPServer):
         self.service = service
         self.session = secrets.token_urlsafe(32)
         self.csrf = secrets.token_urlsafe(32)
+        self.instance_id = secrets.token_urlsafe(12)
+        self.restart_requested = False
         self.hosts = {f"127.0.0.1:{self.server_port}", f"localhost:{self.server_port}"}
 
     def server_close(self):
@@ -49,12 +51,23 @@ class Handler(BaseHTTPRequestHandler):
     def setup(self):
         super().setup()
         self.connection.settimeout(15)
+        self.body_consumed = False
 
     def log_message(self, _format, *args):
         # No access logs containing FINs, credentials, request bodies or query strings.
         pass
 
     def reply(self, code, value, content_type="application/json; charset=utf-8", cookie=False):
+        # Drain small rejected POSTs so Windows can deliver the error before socket close.
+        # No request content is acted on before Host/Origin/session/CSRF validation.
+        if code >= 400 and self.command == "POST" and not self.body_consumed:
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not self.headers.get("Transfer-Encoding") and 0 < length <= 16384:
+                    self.rfile.read(length)
+            except (ValueError, OSError):
+                pass
+            self.body_consumed = True
         body = value if isinstance(value, bytes) else json.dumps(value, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", content_type)
@@ -116,7 +129,7 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, {"csrf": self.server.csrf}, cookie=True)
             return
         if path == "/health":
-            self.reply(200, {"app": "CitiFoxCharger", "status": "ok", "version": __version__})
+            self.reply(200, {"app": "CitiFoxCharger", "status": "ok", "version": __version__, "instance_id": self.server.instance_id})
             return
         if not self.authenticated():
             return
@@ -144,11 +157,20 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             if not 1 <= length <= 16384:
                 raise ValueError("Ungültige Nachrichtengröße.")
+            self.body_consumed = True
             data = json.loads(self.rfile.read(length))
             if not isinstance(data, dict):
                 raise ValueError("JSON-Objekt erforderlich.")
             path = urlsplit(self.path).path
             service = self.server.service
+            if path == "/api/app/restart":
+                if data:
+                    raise ValueError("Keine Parameter erforderlich.")
+                service.prepare_restart()
+                self.server.restart_requested = True
+                self.reply(200, {"message":"CitiFoxCharger startet neu; kein neuer Fahrzeugstart."})
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                return
             if path == "/api/app/quit":
                 if data:
                     raise ValueError("Keine Parameter erforderlich.")
@@ -177,6 +199,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(data["request_id"], str) or not re.fullmatch(r"[a-zA-Z0-9-]{16,80}", data["request_id"]):
                     raise ValueError("Ungültige Befehlskennung.")
                 result = service.command(data["action"], data["request_id"])
+            elif path == "/api/charging/target":
+                if set(data) != {"target_percent"}:
+                    raise ValueError("Nur Ziel-Ladestand erforderlich.")
+                result = service.change_target(data["target_percent"])
             elif path in ("/api/charging/start", "/api/charging/stop"):
                 request_id = data.get("request_id")
                 if not isinstance(request_id, str) or not re.fullmatch(r"[a-zA-Z0-9-]{16,80}", request_id):
@@ -190,6 +216,16 @@ class Handler(BaseHTTPRequestHandler):
                     if set(data) != {"request_id"}:
                         raise ValueError("Nur eine Befehlskennung erforderlich.")
                     result = service.stop_charge(request_id)
+            elif path == "/api/smartfox/charger-mode":
+                if (set(data) != {"mode","request_id"} or not isinstance(data["request_id"],str)
+                        or not re.fullmatch(r"[a-zA-Z0-9-]{16,80}",data["request_id"])):
+                    raise ValueError("Ungültige Ladestation-Anfrage.")
+                result = service.set_charger_mode(data["mode"],data["request_id"])
+            elif path == "/api/smartfox/heater":
+                if (set(data) != {"device","mode","request_id"} or not isinstance(data["request_id"],str)
+                        or not re.fullmatch(r"[a-zA-Z0-9-]{16,80}",data["request_id"])):
+                    raise ValueError("Ungültige Heizstab-Anfrage.")
+                result = service.set_heater_mode(data["device"],data["mode"],data["request_id"])
             elif path == "/api/smartfox/command":
                 self.reply(409, {"error": WRITE_BLOCK, "code": "unverified_write"})
                 return

@@ -1,14 +1,20 @@
-# CitiFoxCharger für Windows · 1.3.0
+# CitiFoxCharger für Windows · 1.5.0
 
 Für Škoda Citigo e iV, SMARTFOX Pro 2 mit Firmware EM3 00.01.16.08 und Charger Pro an Ladeplatz 1.
 
 ## Start und Update
 
-Den gesamten ZIP-Inhalt entpacken und **Start.cmd** doppelklicken. Voraussetzung: Python 3.11 oder neuer. Keine Zusatzpakete erforderlich. Das Startskript öffnet **Brave im Vollbild** unter **http://127.0.0.1:8765/**. Brave wird an den üblichen Windows-Installationsorten und im Suchpfad gesucht; fehlt Brave oder schlägt dessen Start fehl, öffnet sich der Standardbrowser. **F11** verlässt das Vollbild. Bei bereits laufendem Brave kann dessen Fensterverwaltung das Startflag übergehen; dann F11 drücken oder Brave einmal vollständig schließen.
+Den gesamten ZIP-Inhalt entpacken und **Start.cmd** doppelklicken. Voraussetzung: Python 3.11 oder neuer. Keine Zusatzpakete erforderlich. Die Skripte prüfen `py -3` und verwenden sonst `python` aus dem Suchpfad. Das Startskript öffnet **Brave im Vollbild** unter **http://127.0.0.1:8765/**. Brave wird an den üblichen Windows-Installationsorten und im Suchpfad gesucht; fehlt Brave oder schlägt dessen Start fehl, öffnet sich der Standardbrowser. **F11** verlässt das Vollbild. Bei bereits laufendem Brave kann dessen Fensterverwaltung das Startflag übergehen; dann F11 drücken oder Brave einmal vollständig schließen.
 
 Die Betriebsansicht ist für ein Tablet mit einem 1280 × 800-Panel **im Hochformat (800 × 1280)** angepasst: große Schrift, große Tasten und ein breiter Slider mit großem Griff. Auch Querformat und kleinere Fenster bleiben bedienbar. Die App dreht den Windows-Bildschirm nicht selbst.
 
 **Start.cmd** und der gleichwertige Einstieg **Start-Hintergrund.cmd** starten das Backend ohne dauerhaft offenes Konsolenfenster und öffnen Brave im Vollbild. Ein erneuter Aufruf öffnet die bereits laufende Instanz. Der Browser darf anschließend geschlossen oder der Bildschirm ausgeschaltet werden. Unter **Einstellungen → App beenden** lässt sich das Hintergrundprogramm beenden; während einer aktiven Zielüberwachung ist diese Taste gesperrt.
+
+**Stoppen.cmd** beendet das Backend geordnet über die lokale, geschützte Verbindung. Bei laufender Ladeüberwachung bleibt das Beenden gesperrt; zuerst in der Oberfläche **Stoppen** drücken und die Bestätigung abwarten. Das Skript beendet keine fremden Python-Prozesse und schließt den Browser nicht.
+
+**Neustarten.cmd** startet das Backend geordnet neu und öffnet Brave im Vollbild. Das funktioniert auch während einer Ladeüberwachung, wenn der API-Schlüssel mit Windows verschlüsselt gespeichert ist. Ziel, Sitzung, ausstehende Datenfrist und API-Abfragepausen bleiben erhalten. Es wird kein neuer Ladestart gesendet. Der Browser wird erst nach Bestätigung einer neuen Backend-Instanz geöffnet; bei nicht bestätigtem Neustart nennt das Skript den Fehler. Läuft die App noch nicht, wird sie gestartet. Für einen anderen Port: `Neustarten.cmd --port 8766`; ohne Browser: `Neustarten.cmd --no-browser`. Bei laufender Instanz verwendet deren Backend seinen bisherigen Datenordner und Port weiter. Bei einem Kaltstart kann `--data-dir "C:\Pfad\zum\Datenordner"` angegeben werden.
+
+Der letzte Fahrzeugwert wird beim geordneten Neustart mit seinem ursprünglichen Zeitstempel übernommen. Das verhindert, dass die für Stopp reservierten letzten Anfragen für einen Startabruf verbraucht werden. Übernommene Daten altern normal weiter und gelten nicht als neue Fahrzeugmeldung. Die Ablage ist an FIN und Schlüssel gebunden; der Schlüssel selbst steht dort nicht. Ein bereits offenes Browserfenster nach Neustart gegebenenfalls mit **F5** neu laden.
 
 Bei einem Update die alte App zuerst unter **Einstellungen → App beenden** schließen; bei einer alten oder manuell gestarteten Konsolenversion stattdessen Strg+C verwenden. Erst danach die Programmdateien ersetzen. Der Datenordner behält aus Kompatibilitätsgründen seinen bisherigen Namen. Einstellungen und optional verschlüsselter Schlüssel liegen separat unter **%LOCALAPPDATA%\Ladezentrale**. Ohne aktivierte Windows-Speicherung muss der API-Schlüssel nach einem Neustart erneut eingegeben werden.
 
@@ -28,13 +34,30 @@ Brave mit Vollbild aus der Konsole starten: `py -3 run.py --browser brave --full
 
 ## Betriebsansicht
 
-Die Startseite zeigt Akkustand, **aktuelle Ladeleistung in kW**, Ladestatus, Ziel-Slider und zwei Tasten. Bei gemessener Ladeleistung über 0,1 kW pulsieren Blitz und Statuspunkt, ein Licht läuft über den SOC-Balken. Der Balken bleibt auf dem tatsächlich gemeldeten Prozentwert. Ohne frische lokale Leistungsmessung kann ein frischer Fahrzeugstatus „CHARGING“ die Animation aktivieren. Veraltete oder fehlende Leistung erscheint als „— kW“. Die Animation berücksichtigt die Windows-Einstellung für reduzierte Bewegung. Technische Daten stehen unter **Einstellungen → Diagnose und Verbindungsdetails**.
+Die Startseite **Laden & Energie** zeigt Ladung und die kompakte Energieübersicht gemeinsam. Hell, Dunkel oder System lassen sich unter **Einstellungen → Darstellung** wählen; die Sonne/Mond-Taste schaltet direkt um. Die Auswahl bleibt in diesem Browser gespeichert.
+
+Oben stehen SOC, aktuelle Smartfox-Ladeleistung, Ladestatus, Ziel-Slider und die Tasten für Start/Stopp. Eine deutliche Pfeilanimation führt Energie zum Autosymbol, die Batterie zeigt bewegte Streifen und der Status pulsiert. Das läuft nur bei frischer lokaler Leistung über 0,1 kW, ersatzweise bei frischem Fahrzeugstatus CHARGING ohne aktuelle lokale Leistung. Der SOC-Balken bleibt auf dem wirklich gemeldeten Wert. Reduzierte Bewegung im Betriebssystem unterdrückt die Animationen.
+
+**Letzte Fahrzeugmeldung** nennt den ursprünglichen Ladezeitstempel des Autos; **Zuletzt erfolgreich abgerufen** nennt den letzten erfolgreichen Cloud-Abruf. Alle Zeiten erscheinen in der lokalen Windows-Zeitzone. „Veraltet“ zeigt zusätzlich das Alter der Fahrzeugmeldung. Ein neuer Abruf setzt deren Alter nicht zurück.
+
+Die **geschätzte Restzeit** zum Sliderziel wird nur mit frischem SOC und höchstens 30 Sekunden alter gemessener Ladeleistung über 0,1 kW gezeigt. Modell: 32,3 kWh nutzbare Akkukapazität × fehlende Prozent / aktuelle kW / angenommener Wirkungsgrad 90 %. Die Kapazität stammt aus der [offiziellen Citigo-e-iV-Beschreibung](https://www.skoda-storyboard.com/en/press-kits/skoda-citigo%E1%B5%89-iv-skoda-superb-iv-press-kit/skoda-citigo%E1%B5%89-iv-zero-emission-range-of-up-to-260-km/); der Wirkungsgrad ist eine Annahme, kein gemessener Fahrzeugwert. Auf fünf Minuten aufgerundet, bei gleichbleibender Leistung. Temperatur, Ladeverluste, Pausen und alte SOC-Meldungen innerhalb des Frischefensters begrenzen die Genauigkeit. Die Schätzung steuert keinen Stopp und verändert weder SOC noch Ziel.
+
+Darunter stehen Hausverbrauch, Netzbezug/Einspeisung und vier Verbraucherkacheln. Hausverbrauch folgt der Herstellerberechnung Erzeugung + Netzleistung − Batterieleistung und enthält auch die gesteuerten Verbraucher. Heizstab zeigt gemeldete kW, Prozent und Temperatur; Heizstab 2 und Warmwasser zeigen Relaiszustand und zugeordnete Temperatur, ohne erfundene elektrische Leistung. Fehlende Werte erscheinen als „—“. Diese Ansicht verwendet denselben lokalen XML-Abruf und erzeugt keine zusätzlichen Škoda-Anfragen.
+
+### Betriebsarten der Verbraucher
+
+- **Heizstab / Heizstab 2 / Warmwasser:** Aus, Automatik oder Manuell. Beim analogen Heizstab bleibt die in Smartfox konfigurierte manuelle Prozentleistung erhalten und wird in der Auswahl genannt. Keine Temperaturgrenze oder Gerätekonfiguration wird überschrieben. Bei Relais-Manuell bzw. Aus wird ein vorhandener manueller Timer wie in der Herstelleroberfläche beendet.
+- **Ladestation:** ausschließlich Aus, A+ oder M+. Aus bleibt als ausdrücklicher Wunsch auch nach Neustart und bei Abschluss einer Zielüberwachung erhalten. Mit A+ wird wieder der normale Betrieb gewählt. M+ im Leerlauf benutzt denselben kombinierten Start mit Prozentziel wie **Manuell laden**. Während einer aktiven Zielüberwachung ändert die Auswahl nur die Wallbox; sie sendet keinen weiteren Fahrzeugstart. Fehlender Fahrzeugzugriff oder laufender Stopp sperrt M+.
+
+Die Schaltwege wurden im ausgelieferten Hersteller-JavaScript dieser Firmware geprüft. Eine öffentliche CGI-API-Spezifikation fehlt. Es werden nur die konkret zugeordneten Ausgänge angeboten: Heizstab am Analogausgang, Heizstab 2 an Relais 1, Warmwasser an Relais 2 und Charger 1. Jede Umschaltung wird zurückgelesen. Fehlende Zuordnung, andere Firmware oder fehlende Bestätigung führen zu einem Fehler. Die neuen Wärme-/Aus-Befehle wurden ausschließlich mit simulierten Geräten getestet; reale Bedienung erfolgt durch den Benutzer.
 
 ### Manuell laden
 
 1. Einen Ziel-Ladestand zwischen 1 und 100 % wählen. Das Ziel muss über dem aktuellen Akkustand liegen.
 2. **Manuell laden** drücken. Die ausdrücklich freigegebene Smartfox-Websteuerung schaltet zuerst Charger 1 auf **M+** und liest den Modus zur Bestätigung zurück. Danach wartet die App bis zu 15 Sekunden auf frische Herstellerdaten mit Ladebereitschaft, aktivem M+ und mindestens 6 A Stromvorgabe; die Anlaufprüfung dauert mindestens drei Sekunden. Erst danach sendet sie genau einmal **Start** an den Citigo. Bei ausbleibender Freigabe erfolgt kein Fahrzeugstart, und die App versucht, zu A+ zurückzukehren.
 3. Das Backend überwacht den Škoda-Ladestand. Sobald eine aktuelle Fahrzeugmeldung das Ziel erreicht oder überschreitet, fordert es **Stopp** an und stellt Smartfox auf **A+** zurück.
+
+Der **Slider bleibt während des Ladens verstellbar**. Nach Loslassen wird das neue Prozentziel gespeichert, ohne einen weiteren Start zu senden. Liegt das Ziel bereits beim oder unter dem frisch gemeldeten SOC, fordert die App Stopp an. Bei alten Fahrzeugdaten wartet sie weiter auf eine frische Meldung; eine laufende Fünf-Minuten-Frist wird durch Zieländerungen nicht verlängert. Nach angefordertem Stopp ist das Ziel gesperrt, damit eine Erhöhung den Stopp nicht unbeabsichtigt aufhebt.
 
 ### Start erneut freigeben
 
@@ -80,13 +103,15 @@ Die lokale Ansicht und die Smartfox-Leistung aktualisieren sich standardmäßig 
 
 Die Taste **↻** fragt die verfügbaren Fahrzeugdaten ausdrücklich neu bei Škoda ab, frühestens 60 Sekunden nach der letzten Anfrage. Reservierte Befehlsaufrufe und Serverlimits werden dabei nicht aufgebraucht bzw. umgangen. Eine häufigere Cloud-Abfrage erzeugt keinen neuen Fahrzeugmesswert. Im geprüften [offiziellen API-Vertrag](https://public.api.connect.skoda-auto.cz/docs/myskoda-public-api.yaml) ist kein gesonderter Weck- oder Zwangsaktualisierungsbefehl dokumentiert. Maßgeblich für „Daten veraltet“ bleibt der Zeitstempel der Fahrzeugmeldung.
 
+Die separate [Community-Integration MySkoda](https://github.com/skodaconnect/homeassistant-myskoda/blob/main/docs/entities.md#wake-up-car) besitzt einen echten Weckbefehl über die nicht öffentliche App-Schnittstelle. Dessen Zugang verwendet eine andere Anmeldung als unseren öffentlichen API-Schlüssel; Home Assistant ist dafür technisch nicht zwingend. Die Bibliothek begrenzt das Wecken und warnt vor fahrzeugseitigem Schutz der 12-V-Batterie. Funktion und zulässiges Kontingent am konkreten Citigo sind nicht bestätigt. Dieser alternative Adapter ist daher **nicht eingebaut oder als verfügbar dargestellt**. Es werden weder Klimatisierung noch wiederholte Ladebefehle als vermeintlicher Daten-Refresh ausgelöst.
+
 ## Smartfox-Status und Steuerfreigabe
 
 Modbus TCP bleibt **ausschließlich lesend**: 192.168.0.81, Port 502, Unit ID 1, FC03. Die gewünschten PDU-Adressen 40999, 41015 und 42111 bleiben als Rohwerte in der Diagnose erhalten. 41015 ist laut älterer Herstellerliste kein bestätigtes Ladeleistungsregister; 42111 bleibt ungeklärt.
 
 Die tatsächliche Anzeige von **A+**, **M+** und Leistung wird ergänzend aus der lokalen Herstelleranzeige `values.xml` für genau **EM3 00.01.16.08** gelesen. Die Zuordnung wurde am ausgelieferten Hersteller-JavaScript geprüft. Die Register werden dafür nicht umgedeutet.
 
-Die Umschaltung verwendet einen eng begrenzten Adapter: ausschließlich Charger 1, ausschließlich M+ und A+, fester lokaler Pfad und anschließende Rückleseprüfung. Die CGI-Befehle werden von der Hersteller-Weboberfläche selbst verwendet, sind aber nicht öffentlich als API spezifiziert. **Der Benutzer hat diese lokale Websteuerung am 16.10.2026 ausdrücklich freigegeben. Sie ist in diesem Stand aktiviert.** Der reale Test A+ → M+ → A+ war mit Rückleseprüfung erfolgreich. Andere Firmware, nicht erreichbare Anzeige oder fehlende Modusbestätigung sperren den kombinierten Start.
+Die Umschaltung verwendet einen eng begrenzten Adapter: ausschließlich Charger 1, Aus/A+/M+ sowie die angeforderten drei Wärmeausgänge, feste lokale Pfade und anschließende Rückleseprüfung. Die CGI-Befehle werden von der Hersteller-Weboberfläche selbst verwendet, sind aber nicht öffentlich als API spezifiziert. **Der Benutzer hat diese lokale Websteuerung am 16.10.2026 ausdrücklich freigegeben. Sie ist in diesem Stand aktiviert.** Der reale Test A+ → M+ → A+ war mit Rückleseprüfung erfolgreich. Andere Firmware, nicht erreichbare Anzeige oder fehlende Modusbestätigung sperren den kombinierten Start.
 
 ## MyŠkoda einrichten
 
@@ -111,7 +136,7 @@ Die ausführliche technische Herleitung steht in [SCHNITTSTELLEN.md](SCHNITTSTEL
 
 Der Dienst bindet ausschließlich an 127.0.0.1. Origin-/Host-Prüfung, lokale Sitzung, HttpOnly-/SameSite-Cookie, CSRF und feste Škoda-HTTPS-Domain mit Zertifikatsprüfung bleiben aktiv. Kein LAN-Zugriff oder Portforwarding vorgesehen. Die Oberfläche hat keine externen Skripte, Schriften oder Analysezugriffe.
 
-Dateien im Datenordner: `config.json` mit FIN und Einstellungen, optional `skoda-key.dpapi`, sowie `charging-session.json` mit Ziel und Sitzungsstatus. Die Sitzung enthält eine FIN-Zuordnung, keinen API-Schlüssel. Beim Weitergeben des Datenordners personenbezogene Angaben berücksichtigen.
+Dateien im Datenordner: `config.json` mit FIN und Einstellungen, optional `skoda-key.dpapi`, `charging-session.json` mit Ziel und Sitzungsstatus sowie `vehicle-cache.json` und `rate-limits.json` für geordneten Neustart. Die Sitzung enthält eine FIN-Zuordnung, keinen API-Schlüssel. Beim Weitergeben des Datenordners personenbezogene Angaben berücksichtigen.
 
 Ein eigener Datenordner kann mit `--data-dir "C:\MeinOrdner\Ladezentrale-Daten"` gesetzt werden. Das Beenden des Backends stoppt eine reale Ladung nicht automatisch. Nach Prozessende kann die App auch keine Zielabschaltung ausführen.
 
@@ -123,8 +148,8 @@ Ein eigener Datenordner kann mit `--data-dir "C:\MeinOrdner\Ladezentrale-Daten"`
 py -3 -m unittest discover -s tests -v
 ```
 
-117 Tests, ohne reale Fahrzeug- oder Wallboxbefehle. Geprüft sind Protokolle, Sicherheit, verschlüsselte Schlüsselablage, kombinierte Abläufe, Fehler, neue Sitzungen nach einem Stopp, Neustartzustände, Hintergrundüberwachung ohne Browser, Kontingentsteuerung, Instanzsperre, Brave-Start, getrennter Hintergrundprozess, sichere Beendigung und Freigabe der Windows-Energieanforderungen nach dem 90-%-Ziel. Zusätzlich geprüft: ausdrücklicher Start mit älterem SOC, eng begrenzte Freigabe, persistente Fünf-Minuten-Frist, neue SOC-Meldungen und A+-Rückstellung bei abgelehntem/gesperrtem Cloud-Stopp.
+153 Tests, ohne reale Fahrzeug- oder Wallboxbefehle. Geprüft sind Protokolle, Sicherheit, verschlüsselte Schlüsselablage, kombinierte Abläufe, Fehler, neue Sitzungen nach einem Stopp, Neustartzustände, Hintergrundüberwachung ohne Browser, Kontingentsteuerung, Instanzsperre, Brave-Start, getrennter Hintergrundprozess, sichere Beendigung und Freigabe der Windows-Energieanforderungen nach dem 90-%-Ziel. Zusätzlich geprüft: ausdrücklicher Start mit älterem SOC, eng begrenzte Freigabe, persistente Fünf-Minuten-Frist, neue SOC-Meldungen, A+-Rückstellung bei abgelehntem/gesperrtem Cloud-Stopp, Energieeinheiten/Vorzeichen/Sensorzuordnung, Zieländerungen ohne Start und geschützter Neustart mit erhaltenem Zustand.
 
 ## Repository
 
-Privates GitHub-Repository: [danielrammer/CitiFoxCharger](https://github.com/danielrammer/CitiFoxCharger). Lokale Arbeitskopie: `D:\Repositories\CitiFoxCharger`. Konfiguration, Schlüssel und Ladesitzungen gehören nicht ins Repository; die Laufzeitdaten liegen weiterhin separat im oben genannten Windows-Datenordner.
+Privates GitHub-Repository: [danielrammer/CitiFoxCharger](https://github.com/danielrammer/CitiFoxCharger). Lokale Arbeitskopie: `D:\Repositories\CitiFoxCharger`. Konfiguration, Schlüssel, Fahrzeugcache, Kontingentdaten und Ladesitzungen gehören nicht ins Repository; die Laufzeitdaten liegen weiterhin separat im oben genannten Windows-Datenordner.

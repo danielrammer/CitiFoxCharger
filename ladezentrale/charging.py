@@ -34,6 +34,14 @@ class ChargingSession:
     def active(self):
         return self.value.get("status") in ACTIVE
 
+    @property
+    def normal_mode(self):
+        return "OFF" if self.value.get("user_charger_mode") == "OFF" else "A+"
+
+    @property
+    def normal_name(self):
+        return "Aus" if self.normal_mode == "OFF" else "A+"
+
     def save(self, replace=False, **changes):
         candidate = {**({} if replace else self.value), **changes}
         atomic_write(self.path, json.dumps(candidate, ensure_ascii=False, indent=2).encode("utf-8"))
@@ -44,6 +52,7 @@ class ChargingSession:
         web = self.service.cache.get("smartfox", {}).get("charger", {})
         retry = self.can_retry_start()
         value["can_retry_start"] = retry
+        value["can_adjust_target"] = self.value.get("status") in ("monitoring", "paused", "interrupted") and not self.value.get("stop_requested", False)
         value["can_force_with_stale"] = self.can_start_with_stale()
         value["can_retry_start_with_stale"] = self.active and value["can_force_with_stale"]
         value["can_force"] = ((not self.active or retry) and web.get("available", False)
@@ -163,8 +172,22 @@ class ChargingSession:
             raise IntegrationError("start_failed", str(error)) from None
         return self.state()
 
+    def change_target(self, target):
+        if type(target) is not int or not 1 <= target <= 100:
+            raise ValueError("Ziel-Ladestand muss zwischen 1 und 100 % liegen.")
+        if not self.state()["can_adjust_target"]:
+            raise IntegrationError("target_locked", "Das Ziel kann nur während einer laufenden Überwachung ohne angeforderten Stopp geändert werden.")
+        self.save(target_percent=target, message=f"Neues Ziel {target} % gespeichert.")
+        self.next_attempt = 0
+        self.tick()  # A lower target may request stop on fresh SOC; never starts the car.
+        return self.state()
+
     def restore_auto(self):
-        self.service.cache.setdefault("smartfox", {})["charger"] = self.web.set_mode(self.service.config.value["smartfox"], "A+")
+        if self.normal_mode == "OFF":
+            value = self.web.set_charger_mode(self.service.config.value["smartfox"], "OFF")
+        else:
+            value = self.web.set_mode(self.service.config.value["smartfox"], "A+")
+        self.service.cache.setdefault("smartfox", {})["charger"] = value
         self.save(auto_restored=True)
 
     def stop(self, request_id, automatic=False):
@@ -191,7 +214,7 @@ class ChargingSession:
                   message="Ziel erreicht. Laden wird beendet." if automatic else "Laden wird beendet.")
         # Restore A+ immediately after accepted stop; completion still needs newer non-charging telemetry.
         if not self.value.get("auto_restored"):
-            self.save(message="Stopp angefordert. Rückkehr zu A+ ist noch nicht bestätigt.")
+            self.save(message=f"Stopp angefordert. Rückkehr zu {self.normal_name} ist noch nicht bestätigt.")
         return self.state()
 
     def tick(self):
@@ -199,6 +222,9 @@ class ChargingSession:
             return
         self.next_attempt = time.monotonic() + 10
         if not self.active:
+            if self.value.get("user_charger_mode") == "OFF":
+                self.value["normalization_pending"] = False
+                return
             charger = self.service.cache.get("smartfox", {}).get("charger", {})
             if charger.get("available") and charger.get("mode") != "A+":
                 if charger.get("control_available"):
@@ -221,11 +247,11 @@ class ChargingSession:
             try:
                 self.restore_auto()
             except SmartfoxControlError:
-                self.value["message"] = "Stopp unbestätigt. Auch die Rückkehr zu A+ steht noch aus."
+                self.value["message"] = f"Stopp unbestätigt. Auch die Rückkehr zu {self.normal_name} steht noch aus."
         if status == "restore_pending":
             try:
-                self.web.set_mode(self.service.config.value["smartfox"], "A+")
-                self.save(status="error", message="A+ wiederhergestellt. Fahrzeugstatus bitte prüfen.")
+                self.restore_auto()
+                self.save(status="error", message=f"Modus {self.normal_name} bestätigt. Fahrzeugstatus bitte prüfen.")
             except SmartfoxControlError:
                 pass
             return
@@ -235,10 +261,10 @@ class ChargingSession:
             stopped = state in ("CONNECT_CABLE", "CONSERVING", "READY_FOR_CHARGING", "CHARGING_INTERRUPTED")
             if car.get("available") and not car.get("stale", True) and captured is not None and captured >= self.value.get("stop_requested_epoch", float("inf")) and stopped:
                 try:
-                    self.web.set_mode(self.service.config.value["smartfox"], "A+")
-                    self.save(status="complete", message="Laden beendet. Smartfox ist wieder auf A+.", completed_at=utcnow())
+                    self.restore_auto()
+                    self.save(status="complete", message=f"Laden beendet. Smartfox ist auf {self.normal_name}.", completed_at=utcnow())
                 except SmartfoxControlError:
-                    self.save(message="Fahrzeug hat gestoppt. Rückkehr zu A+ steht aus.")
+                    self.save(message=f"Fahrzeug hat gestoppt. Rückkehr zu {self.normal_name} steht aus.")
             elif time.time() - self.value.get("stop_requested_epoch", time.time()) > 600:
                 self.save(status="paused", last_stop_failure_epoch=self.value.get("stop_requested_epoch"),
                           stop_failures=self.value.get("stop_failures", 0) + 1,
@@ -255,7 +281,7 @@ class ChargingSession:
                     self.stop("stale-stop-" + self.value["request_id"])
                 except IntegrationError:
                     pass
-                restored = "Smartfox ist auf A+." if self.value.get("auto_restored") else "Rückkehr zu A+ steht aus."
+                restored = f"Smartfox ist auf {self.normal_name}." if self.value.get("auto_restored") else f"Rückkehr zu {self.normal_name} steht aus."
                 self.save(message="Keine neuen Fahrzeugdaten innerhalb von fünf Minuten. Stopp angefordert, noch unbestätigt. " + restored)
                 return
             else:
@@ -271,20 +297,20 @@ class ChargingSession:
             return
         if status == "interrupted" and car.get("state") in ("CONNECT_CABLE", "CONSERVING", "READY_FOR_CHARGING", "CHARGING_INTERRUPTED"):
             try:
-                self.web.set_mode(self.service.config.value["smartfox"], "A+")
-                self.save(status="error", message="Unterbrochener Start: Fahrzeug lädt nicht. Smartfox ist wieder auf A+.")
+                self.restore_auto()
+                self.save(status="error", message=f"Unterbrochener Start: Fahrzeug lädt nicht. Smartfox ist auf {self.normal_name}.")
             except SmartfoxControlError:
-                self.save(status="restore_pending", message="Unterbrochener Start. Rückkehr zu A+ steht aus.")
+                self.save(status="restore_pending", message=f"Unterbrochener Start. Rückkehr zu {self.normal_name} steht aus.")
             return
         captured = timestamp(car.get("captured_at"))
         failure_epoch = self.value.get("last_stop_failure_epoch")
         if (failure_epoch and captured is not None and captured > failure_epoch and
                 car.get("state") in ("CONNECT_CABLE", "CONSERVING", "READY_FOR_CHARGING", "CHARGING_INTERRUPTED")):
             try:
-                self.web.set_mode(self.service.config.value["smartfox"], "A+")
-                self.save(status="complete", message="Fahrzeugstopp bestätigt. Smartfox ist wieder auf A+.", completed_at=utcnow())
+                self.restore_auto()
+                self.save(status="complete", message=f"Fahrzeugstopp bestätigt. Smartfox ist auf {self.normal_name}.", completed_at=utcnow())
             except SmartfoxControlError:
-                self.value["message"] = "Fahrzeug hat gestoppt. Rückkehr zu A+ steht aus."
+                self.value["message"] = f"Fahrzeug hat gestoppt. Rückkehr zu {self.normal_name} steht aus."
             return
         if failure_epoch and (captured is None or captured <= failure_epoch or car.get("state") != "CHARGING"):
             return  # Never blindly replay an uncertain command; fresh charging telemetry is required.

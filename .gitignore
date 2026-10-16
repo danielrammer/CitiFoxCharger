@@ -3,6 +3,8 @@ __pycache__/
 .local/
 *.dpapi
 config.json
+rate-limits.json
+vehicle-cache.json
 *.tmp
 charging-session.json
 .instance.lock

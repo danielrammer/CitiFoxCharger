@@ -55,6 +55,14 @@ def main():
         pass
     finally:
         server.server_close()
+    if server.restart_requested:
+        # Closing the server releases the instance lock and energy handles first.
+        # Start the same data profile/port; browser control stays with the launcher.
+        try:
+            spawn_backend([*[arg for arg in sys.argv[1:] if arg not in ("--background", "--no-browser")], "--no-browser"], args.data_dir)
+        except OSError:
+            print("Neustart fehlgeschlagen. Bitte Start.cmd aufrufen.")
+            return 1
     return 0
 
 

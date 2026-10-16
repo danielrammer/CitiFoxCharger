@@ -303,5 +303,36 @@ class ServerTests(unittest.TestCase):
         self.assertTrue(self.service.stopping)
         self.assertFalse(self.service.can_command("start"))
 
+    def test_target_route_requires_csrf_valid_integer_and_active_session(self):
+        self.assertEqual(self.call("/api/charging/target",{"target_percent":90},**{"X-CSRF-Token":"wrong"})[0],403)
+        for value in (True,0,101,"90"):
+            self.assertEqual(self.call("/api/charging/target",{"target_percent":value})[0],400)
+        self.assertEqual(self.call("/api/charging/target",{"target_percent":90})[0],409)
+        self.assertEqual(self.call("/api/charging/target",{"target_percent":90,"extra":1})[0],400)
+
+    def test_restart_route_requires_session_and_keeps_exit_guard(self):
+        self.assertEqual(self.call("/api/app/restart",{},**{"X-CSRF-Token":"wrong"})[0],403)
+        self.service.charging.save(status="monitoring",target_percent=90)
+        self.assertEqual(self.call("/api/app/restart",{})[0],400)
+        self.assertFalse(self.server.restart_requested)
+        self.service.charging.save(status="complete")
+        self.assertEqual(self.call("/api/app/restart",{})[0],200)
+        self.assertTrue(self.server.restart_requested)
+        self.assertTrue(self.service.stopping)
+
+    def test_heater_route_is_scoped_and_csrf_protected(self):
+        body={"device":"heater","mode":"manual","request_id":"heater-mode-test-0001"}
+        self.assertEqual(self.call("/api/smartfox/heater",body,**{"X-CSRF-Token":"wrong"})[0],403)
+        self.assertEqual(self.call("/api/smartfox/heater",body)[0],409)
+        for change in ({"device":"relay4"},{"mode":"timer"},{"request_id":"short"}):
+            self.assertEqual(self.call("/api/smartfox/heater",{**body,**change})[0],400)
+
+    def test_charger_mode_route_rejects_other_modes_and_requires_csrf(self):
+        body={"mode":"OFF","request_id":"charger-mode-test-0001"}
+        self.assertEqual(self.call("/api/smartfox/charger-mode",body,**{"X-CSRF-Token":"wrong"})[0],403)
+        self.assertEqual(self.call("/api/smartfox/charger-mode",body)[0],409)
+        for mode in ("A","M","timer"):
+            self.assertEqual(self.call("/api/smartfox/charger-mode",{**body,"mode":mode})[0],400)
+
 
 if __name__ == "__main__": unittest.main()
