@@ -1,4 +1,4 @@
-# CitiFoxCharger für Windows · 1.2.0
+# CitiFoxCharger für Windows · 1.2.1
 
 Für Škoda Citigo e iV, SMARTFOX Pro 2 mit Firmware EM3 00.01.16.08 und Charger Pro an Ladeplatz 1.
 
@@ -33,8 +33,14 @@ Die Startseite zeigt Akkustand, **aktuelle Ladeleistung in kW**, Ladestatus, Zie
 ### Manuell laden
 
 1. Einen Ziel-Ladestand zwischen 1 und 100 % wählen. Das Ziel muss über dem aktuellen Akkustand liegen.
-2. **Manuell laden** drücken. Die ausdrücklich freigegebene Smartfox-Websteuerung schaltet zuerst Charger 1 auf **M+** und liest den Modus zur Bestätigung zurück. Erst danach sendet die App **Start** an den Citigo.
+2. **Manuell laden** drücken. Die ausdrücklich freigegebene Smartfox-Websteuerung schaltet zuerst Charger 1 auf **M+** und liest den Modus zur Bestätigung zurück. Danach wartet die App bis zu 15 Sekunden auf frische Herstellerdaten mit Ladebereitschaft, aktivem M+ und mindestens 6 A Stromvorgabe; die Anlaufprüfung dauert mindestens drei Sekunden. Erst danach sendet sie genau einmal **Start** an den Citigo. Bei ausbleibender Freigabe erfolgt kein Fahrzeugstart, und die App versucht, zu A+ zurückzukehren.
 3. Das Backend überwacht den Škoda-Ladestand. Sobald eine aktuelle Fahrzeugmeldung das Ziel erreicht oder überschreitet, fordert es **Stopp** an und stellt Smartfox auf **A+** zurück.
+
+### Start erneut freigeben
+
+Ein angenommener Start kann ohne tatsächliche Ladung bleiben. **Start erneut freigeben** wird angeboten, wenn die Wallbox frische Daten mit „ladebereit“ und höchstens 0,1 kW liefert, kein Stopp läuft und Škoda gültigen Start-/Stopp-Zugriff sowie einen ausreichend aktuellen SOC liefert. Zusätzlich müssen seit dem Versuch mindestens 30 Sekunden vergangen sein und entweder eine neuere nicht ladende Fahrzeugmeldung vorliegen oder der Versuch seit zehn Minuten unbestätigt sein.
+
+Nur ein ausdrücklicher neuer Tastendruck sendet einen weiteren Start. Das bisherige Prozentziel bleibt fest. Doppelte Anfragen mit derselben Kennung lösen keinen weiteren Start aus. Bei tatsächlicher Ladung, alten Wallboxdaten oder laufendem Stopp bleibt der erneute Start gesperrt. Die Betriebsansicht nennt den Sperrgrund und verwendet bei frischen lokalen Daten „Eingesteckt · ladebereit“. Der Cloud-Status bleibt separat erhalten.
 
 ### Stoppen
 
@@ -107,7 +113,7 @@ Ein eigener Datenordner kann mit `--data-dir "C:\MeinOrdner\Ladezentrale-Daten"`
 py -3 -m unittest discover -s tests -v
 ```
 
-92 Tests, ohne reale Fahrzeug- oder Wallboxbefehle. Geprüft sind Protokolle, Sicherheit, verschlüsselte Schlüsselablage, kombinierte Abläufe, Fehler, neue Sitzungen nach einem Stopp, Neustartzustände, Hintergrundüberwachung ohne Browser, Kontingentsteuerung, Instanzsperre, Brave-Start, getrennter Hintergrundprozess, sichere Beendigung und Freigabe der Windows-Energieanforderungen nach dem 90-%-Ziel.
+100 Tests, ohne reale Fahrzeug- oder Wallboxbefehle. Geprüft sind Protokolle, Sicherheit, verschlüsselte Schlüsselablage, kombinierte Abläufe, Fehler, neue Sitzungen nach einem Stopp, Neustartzustände, Hintergrundüberwachung ohne Browser, Kontingentsteuerung, Instanzsperre, Brave-Start, getrennter Hintergrundprozess, sichere Beendigung und Freigabe der Windows-Energieanforderungen nach dem 90-%-Ziel.
 
 ## Repository
 

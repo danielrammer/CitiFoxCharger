@@ -6,6 +6,7 @@ public vendor API contract. Writes require explicit separate opt-in; Modbus stay
 import json
 import math
 import re
+import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -38,9 +39,10 @@ def request_local(host, path, timeout):
 
 class SmartfoxWeb:
     # Deliberate gate: do not silently replace the user's manufacturer-documentation requirement.
-    def __init__(self, request=None, allow_undocumented_control=False):
+    def __init__(self, request=None, allow_undocumented_control=False, clock=None, sleep=None):
         self.request = request or request_local
         self.allow_control = allow_undocumented_control
+        self.clock, self.sleep = clock or time.monotonic, sleep or time.sleep
 
     def read(self, config):
         body = self.request(config["host"], "/values.xml", config["timeout_seconds"])
@@ -57,10 +59,32 @@ class SmartfoxWeb:
             power = float(power_match[1].replace(",", ".")) if power_match else None
             if power is not None and (not math.isfinite(power) or not 0 <= power <= 1000):
                 power = None
+            def integer(name):
+                value = fields.get(name, "")
+                return int(value) if re.fullmatch(r"[0-9]{1,3}", value) else None
+            state_code, info_code = integer("hidCcSt1"), integer("hidCc1Info")
+            connection = integer("hidCcConnTimeout1")
+            try:
+                currents = json.loads(fields.get("hidCcControlCurrent", "[]"))
+                current = currents[0] if isinstance(currents, list) and currents else None
+                if type(current) not in (int, float) or not math.isfinite(current) or not 0 <= current <= 100:
+                    current = None
+            except (ValueError, TypeError):
+                current = None
+            telemetry = connection is not None and connection > 3
+            connected = telemetry and state_code in (2, 3, 5, 6)
+            states = {0: "Kein Fahrzeug", 1: "Kein Fahrzeug", 2: "Ladebereit", 3: "Lädt",
+                      4: "Wallbox-Fehler", 5: "Laden unterbrochen", 6: "An Wallbox gestoppt", 255: "Kein Fahrzeug"}
+            # These codes are verified in the installed vendor JavaScript, not in Modbus 42111.
+            ready = (telemetry and state_code in (2, 3) and info_code in (2, 8, 10)
+                     and current is not None and current >= 6)
             # Existing M+ timers are never changed or inferred from a SOC target.
             mplus_modes = json.loads(fields.get("hidCcMplusMode", "[]"))
             return {"available": True, "mode": MODES.get(raw_mode), "mode_code": raw_mode,
                     "power_kw": power, "read_at": utcnow(), "firmware": firmware,
+                    "status_code": state_code, "status_text": states.get(state_code, "Status unbekannt"),
+                    "info_code": info_code, "offered_current_a": current, "telemetry_available": telemetry,
+                    "connected": connected, "ready_for_start": ready,
                     "mplus_configuration": mplus_modes[0] if mplus_modes else None,
                     "control_available": self.allow_control,
                     "control_reason": None if self.allow_control else
@@ -83,3 +107,21 @@ class SmartfoxWeb:
         if after["mode"] != mode:
             raise SmartfoxControlError(f"Smartfox hat {mode} noch nicht bestätigt. Fahrzeugstart wird nicht ausgelöst.")
         return after
+
+    def wait_ready(self, config, timeout=15, settle_seconds=3):
+        """Wait for the vendor's live readiness after M+, never send another mode or car command."""
+        began = self.clock()
+        while True:
+            value = self.read(config)
+            if value.get("mode") != "M+":
+                raise SmartfoxControlError("Smartfox bleibt nicht auf M+. Fahrzeugstart wurde nicht gesendet.")
+            if value.get("info_code") == 14:
+                raise SmartfoxControlError("Die Wallbox verlangt eine lokale Ladefreigabe. Fahrzeugstart wurde nicht gesendet.")
+            if value.get("status_code") == 4:
+                raise SmartfoxControlError("Die Wallbox meldet einen Fehler. Fahrzeugstart wurde nicht gesendet.")
+            elapsed = self.clock() - began
+            if value.get("ready_for_start") and elapsed >= settle_seconds:
+                return value
+            if elapsed >= timeout:
+                raise SmartfoxControlError("Smartfox-Ladefreigabe noch nicht bestätigt. Fahrzeugstart wurde nicht gesendet.")
+            self.sleep(min(1, timeout - elapsed))

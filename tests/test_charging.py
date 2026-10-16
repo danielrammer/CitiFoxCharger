@@ -19,9 +19,11 @@ from test_power_background import FakePower
 VIN = "TMBJB9NY5RF999999"
 
 
-def xml(mode=2, firmware="EM3  00.01.16.08", power="2.93 <span>kW</span>"):
+def xml(mode=2, firmware="EM3  00.01.16.08", power="2.93 <span>kW</span>", state=2, info=8, current=11.5, ttl=30):
     return (f'<values><value id="version">{firmware}</value><value id="hidCcMode1">{mode}</value>'
-            f'<value id="cc1Power"><![CDATA[{power}]]></value><value id="hidCcMplusMode">[1,0,0,0,0]</value></values>').encode()
+            f'<value id="cc1Power"><![CDATA[{power}]]></value><value id="hidCcMplusMode">[1,0,0,0,0]</value>'
+            f'<value id="hidCcSt1">{state}</value><value id="hidCc1Info">{info}</value>'
+            f'<value id="hidCcControlCurrent">[{current},0,0,0,0]</value><value id="hidCcConnTimeout1">{ttl}</value></values>').encode()
 
 
 class SmartfoxWebTests(unittest.TestCase):
@@ -72,6 +74,30 @@ class SmartfoxWebTests(unittest.TestCase):
         web = SmartfoxWeb(lambda *args: xml(0), True)
         with self.assertRaises(SmartfoxControlError): web.set_mode(self.config, "M+")
 
+    def test_start_waits_for_live_readiness_and_settling_without_writes(self):
+        clock, paths = [0], []
+        def request(host, path, timeout):
+            paths.append(path)
+            return xml(4, current=0 if clock[0] < 2 else 16)
+        def sleep(seconds): clock[0] += seconds
+        result = SmartfoxWeb(request, True, lambda:clock[0], sleep).wait_ready(self.config)
+        self.assertGreaterEqual(clock[0],3)
+        self.assertTrue(result["ready_for_start"])
+        self.assertEqual(set(paths),{"/values.xml"})
+
+    def test_missing_current_or_stale_device_never_becomes_ready(self):
+        for body in (xml(4,current=0), xml(4,ttl=2), xml(4,state=5), xml(4,info=22)):
+            clock=[0]
+            def sleep(seconds): clock[0] += seconds
+            web=SmartfoxWeb(lambda *args:body,True,lambda:clock[0],sleep)
+            with self.subTest(body=body), self.assertRaises(SmartfoxControlError):
+                web.wait_ready(self.config,timeout=4)
+
+    def test_authentication_error_or_lost_mplus_blocks_start(self):
+        for body in (xml(4,info=14),xml(4,state=4),xml(2)):
+            with self.subTest(body=body), self.assertRaises(SmartfoxControlError):
+                SmartfoxWeb(lambda *args:body,True).wait_ready(self.config)
+
 
 class InstanceTests(unittest.TestCase):
     def test_same_data_directory_cannot_run_two_monitors(self):
@@ -95,15 +121,22 @@ class FakeWeb:
     def __init__(self, effects):
         self.mode, self.effects, self.allow_control = "A+", effects, True
         self.fail_mplus = False
+        self.ready_calls, self.fail_ready = 0, False
     def read(self, config):
         return {"available": True, "mode": self.mode, "control_available": self.allow_control,
-                "control_reason": None if self.allow_control else "Nicht freigegeben"}
+                "control_reason": None if self.allow_control else "Nicht freigegeben",
+                "status_code":2, "telemetry_available":True,"power_kw":0.0,"read_at":datetime.now(timezone.utc).isoformat()}
     def set_mode(self, config, mode):
         if self.mode != mode:
             if not self.allow_control or (mode == "M+" and self.fail_mplus):
                 raise SmartfoxControlError("Moduswechsel gesperrt")
             self.effects.append(mode)
             self.mode = mode
+        return self.read(config)
+    def wait_ready(self, config):
+        self.ready_calls += 1
+        if self.fail_ready:
+            raise SmartfoxControlError("Ladebereitschaft fehlt")
         return self.read(config)
 
 
@@ -151,6 +184,64 @@ class ChargingTests(unittest.TestCase):
         self.assertEqual(self.effects, ["M+", "start"])
         self.assertEqual(result["status"], "monitoring")
         self.assertEqual(result["target_percent"], 80)
+        self.assertEqual(self.web.ready_calls,1)
+
+    def test_no_vehicle_post_until_wallbox_readiness(self):
+        self.web.fail_ready=True
+        with self.assertRaises(IntegrationError): self.force()
+        self.assertEqual(self.effects,["M+","A+"])
+        self.assertEqual(self.service.cache["smartfox"]["charger"]["mode"],"A+")
+
+    def test_confirmed_mplus_replaces_pre_switch_cache(self):
+        self.force()
+        self.service.charging.next_attempt=0
+        result=self.service.status()
+        self.assertEqual(result["smartfox"]["charger"]["mode"],"M+")
+        self.assertNotIn("auf A+ gewechselt",result["charging"]["message"])
+
+    def prepare_retry(self):
+        self.force(90)
+        self.service.command_after=0
+        self.service.charging.value["last_start_epoch"]=time.time()-601
+        self.service.cache["skoda"]["state"]="CHARGING_INTERRUPTED"
+        self.service.last_command["status"]="unconfirmed"
+
+    def test_unconfirmed_start_requires_explicit_new_request_and_preserves_target(self):
+        self.prepare_retry()
+        self.service.charging.next_attempt=0
+        state=self.service.status()["charging"]
+        self.assertTrue(state["can_retry_start"])
+        self.assertTrue(state["can_force"])
+        self.assertEqual(self.effects.count("start"),1)
+        with self.assertRaises(IntegrationError):
+            self.service.force_charge(95,"retry-with-other-target-01")
+        result=self.service.force_charge(90,"explicit-retry-start-0001")
+        self.assertEqual(result["target_percent"],90)
+        self.assertEqual(self.effects.count("start"),2)
+        self.service.force_charge(90,"explicit-retry-start-0001")
+        self.assertEqual(self.effects.count("start"),2)
+
+    def test_retry_blocked_while_charging_disconnected_stale_or_stopping(self):
+        self.prepare_retry()
+        baseline=copy.deepcopy(self.service.cache)
+        for changes in ({"power_kw":1.3},{"status_code":3},{"telemetry_available":False},
+                        {"read_at":(datetime.now(timezone.utc)-timedelta(seconds=60)).isoformat()}):
+            self.service.cache=copy.deepcopy(baseline)
+            self.service.cache["smartfox"]["charger"].update(changes)
+            with self.subTest(changes=changes): self.assertFalse(self.service.charging.can_retry_start())
+        self.service.cache=baseline
+        self.service.charging.value["stop_requested"]=True
+        self.assertFalse(self.service.charging.can_retry_start())
+
+    def test_retry_needs_cooldown_and_evidence_or_ten_minute_timeout(self):
+        self.prepare_retry()
+        self.service.charging.value["last_start_epoch"]=time.time()-10
+        self.assertFalse(self.service.charging.can_retry_start())
+        self.service.charging.value["last_start_epoch"]=time.time()-60
+        self.service.cache["skoda"]["captured_at"]=(datetime.now(timezone.utc)-timedelta(seconds=90)).isoformat()
+        self.assertFalse(self.service.charging.can_retry_start())
+        self.service.cache["skoda"]["captured_at"]=datetime.now(timezone.utc).isoformat()
+        self.assertTrue(self.service.charging.can_retry_start())
 
     def test_unverified_smartfox_prevents_partial_vehicle_start(self):
         self.web.allow_control = False

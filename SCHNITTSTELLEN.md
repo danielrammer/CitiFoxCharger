@@ -1,6 +1,6 @@
 # Verifikation der Schnittstellen
 
-Stand: **16.10.2026**, Version 1.2.0. Primärquellen und die tatsächlich installierte Geräteoberfläche wurden geprüft. Die ältere Chat-Unterhaltung wurde nicht als Schnittstellennachweis übernommen.
+Stand: **16.10.2026**, Version 1.2.1. Primärquellen und die tatsächlich installierte Geräteoberfläche wurden geprüft. Die ältere Chat-Unterhaltung wurde nicht als Schnittstellennachweis übernommen.
 
 ## SMARTFOX Pro 2 / Charger Pro 1
 
@@ -38,6 +38,10 @@ Der Benutzer hat am 16.10.2026 ausdrücklich geantwortet: **„Ja, lokale Webste
 **Realer Nachweis:** A+ → M+ → A+ mit Rücklesebestätigung erfolgreich; Endzustand A+. Kein neuer Fahrzeugbefehl während dieses Tests.
 
 Laut Handbuch bedeutet A+ PV-Überschuss mit zusätzlicher Smartfox-Wochenzeitschaltuhr. Fahrzeug-Schaltzeiten sind eine eigene Ebene. M+ hat native Energie-/Zeitvorgaben und einen Fallback; diese bleiben wirksam und können M+ vor einem SOC-Ziel beenden. Die App ändert weder diese Vorgaben noch Fahrzeug-Ladeprofile.
+
+### Ladebereitschaft vor dem Fahrzeugstart
+
+Zusätzlich wurden am ausgelieferten Hersteller-JavaScript die Felder hidCcSt1, hidCc1Info, hidCcConnTimeout1 und hidCcControlCurrent geprüft. Status 2 bedeutet ladebereit, 3 lädt; Info 2/8/10 bezeichnet aktive manuelle Freigaben, Info 14 verlangt Authentifizierung. Die Herstelleroberfläche wertet einen Verbindungszähler bis 3 als nicht verbunden. Der Adapter wartet nach M+ mindestens drei Sekunden auf frische Ladebereitschaft mit mindestens 6 A Vorgabe. Diese Herstellerwerte sind keine Interpretation von Modbus 42111. Sie belegen eine Wallboxfreigabe, nicht bereits die Stromaufnahme des Fahrzeugs.
 
 ## Škoda Public API
 

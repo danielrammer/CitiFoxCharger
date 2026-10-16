@@ -1,10 +1,18 @@
-# Prüfbericht · Version 1.2.0
+# Prüfbericht · Version 1.2.1
 
 Stand: **16.10.2026**, Windows / Python 3.14.
 
+## Korrektur nach unbestätigtem Start
+
+Im realen Fehlerfall stand die Wallbox auf M+ mit „ladebereit“, Stromvorgabe 11,5 A und 0 kW. Škoda hatte den Start angenommen, lieferte aber zunächst nur eine vor dem Start erfasste Meldung CHARGING_INTERRUPTED mit SOC 88 %. Daraus folgt keine bestätigte Ladung und keine gesicherte Ursache der MyŠkoda-Meldung über erneute Freigabe bzw. Klimatisierung. Es wurden zur Diagnose keine zusätzlichen Start- oder Klimabefehle gesendet.
+
+Zwei App-Probleme wurden korrigiert: Eine aktive Zielüberwachung sperrte jeden erneuten bewussten Start dauerhaft; außerdem konnte der vor der M+-Schaltung gespeicherte A+-Cache einen falschen Wechselhinweis stehen lassen. Neu sind ein expliziter Wiederholungsweg ohne automatische Startwiederholung und eine Prüfung der Ladebereitschaft vor dem Fahrzeugbefehl.
+
+Neue Tests prüfen frische Geräteverbindung, Status/Stromvorgabe und Anlaufzeit ohne zusätzliche Schreibaufrufe. Fehlende Freigabe, lokale Authentifizierung, Wallboxfehler oder verlorenes M+ verhindern den Fahrzeugstart. Die Wiederholung hält dasselbe Prozentziel fest und ist bei Ladung, alten Gerätestatusdaten oder laufendem Stopp gesperrt. Ein erfolgreicher simulierter Test ersetzt keinen realen Nachweis, dass die ursprüngliche MyŠkoda-Störung damit beseitigt ist.
+
 ## Automatisierte Prüfung
 
-**92 Tests erfolgreich**, zusätzlich JavaScript-Syntaxprüfung. Automatisierte Tests verwenden simulierte Geräte und lokale Test-Sockets, keine echten Fahrzeug- oder Wallboxbefehle.
+**100 Tests erfolgreich**, zusätzlich JavaScript-Syntaxprüfung. Automatisierte Tests verwenden simulierte Geräte und lokale Test-Sockets, keine echten Fahrzeug- oder Wallboxbefehle.
 
 Geprüft sind Modbus-Protokoll und Fehlerantworten, genaue PDU-Adressen, verlustfreie uint64-Darstellung, ungültige Registerlesebereiche, Škoda-Schema und FIN-Zuordnung, fehlende oder ungültige SOC-Werte und Zeitstempel, fehlende Fähigkeiten, API-Fehler, RateLimit und Retry-After, zwei reservierte Befehlsaufrufe, Abfrageabstände beim Laden und im Leerlauf sowie manuelle Neuabfrage.
 
