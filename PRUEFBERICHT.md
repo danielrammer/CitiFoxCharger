@@ -1,10 +1,10 @@
-# Prüfbericht · Version 1.1.0
+# Prüfbericht · Version 1.2.0
 
 Stand: **16.10.2026**, Windows / Python 3.14.
 
 ## Automatisierte Prüfung
 
-**80 Tests erfolgreich**, zusätzlich JavaScript-Syntaxprüfung. Automatisierte Tests verwenden simulierte Geräte und lokale Test-Sockets, keine echten Fahrzeug- oder Wallboxbefehle.
+**92 Tests erfolgreich**, zusätzlich JavaScript-Syntaxprüfung. Automatisierte Tests verwenden simulierte Geräte und lokale Test-Sockets, keine echten Fahrzeug- oder Wallboxbefehle.
 
 Geprüft sind Modbus-Protokoll und Fehlerantworten, genaue PDU-Adressen, verlustfreie uint64-Darstellung, ungültige Registerlesebereiche, Škoda-Schema und FIN-Zuordnung, fehlende oder ungültige SOC-Werte und Zeitstempel, fehlende Fähigkeiten, API-Fehler, RateLimit und Retry-After, zwei reservierte Befehlsaufrufe, Abfrageabstände beim Laden und im Leerlauf sowie manuelle Neuabfrage.
 
@@ -30,4 +30,12 @@ Für ein im Hochformat gedrehtes 1280 × 800-Panel gibt es ein eigenes Layout f�
 
 Die Ladeanimation beruht auf frischer lokaler Leistung über 0,1 kW, ersatzweise auf einem frischen CHARGING-Fahrzeugstatus. Ein HTTP-202-Ergebnis allein aktiviert sie nicht. Die Animation verändert den dargestellten SOC nicht und lässt sich durch die Systemeinstellung für reduzierte Bewegung unterdrücken.
 
-Kein Langzeittest über Windows-Energiesparzustände oder Mobilfunkabschaltungen; kein Windows-Dienst und kein Autostart eingerichtet.
+## Hintergrundbetrieb
+
+Zusätzlich simuliert geprüft: Backend fordert bei einer manuellen Sitzung SystemRequired und ExecutionRequired an, fordert nie den Bildschirm an, stoppt ohne Browser bei 90 %, stellt A+ wieder her und gibt nach bestätigtem Fahrzeugstopp die Energieanforderungen frei. Teilfehler und Prozessende schließen alle angelegten Handles. Ein Beenden über die Oberfläche erfordert die lokale Sitzung plus CSRF und ist während einer aktiven Ladeüberwachung gesperrt.
+
+Der echte getrennte Windows-Prozess wurde ohne Fahrzeugzugang und mit absichtlich nicht passender Smartfox-Firmwarekonfiguration gestartet, wodurch Schreibbefehle gesperrt blieben. Der Starterprozess beendete sich, das Backend lief weiter, ein zweiter Start verwendete dieselbe Instanz, und die lokale Beenden-Route fuhr den Testprozess kontrolliert herunter.
+
+Die Windows-Power-API nahm auf diesem PC beide Anforderungen an; anschließend wurden sie freigegeben. Die ergänzende Abfrage mit powercfg /requests verlangte erhöhte Rechte und lieferte hier keinen zusätzlichen Nachweis. Der PC meldete Akkubetrieb. Das konkrete Wandtablet mit ausgeschaltetem Bildschirm wurde hier nicht real getestet. Auf Modern-Standby-Geräten kann Windows die Anforderungen im Akkubetrieb zeitlich begrenzen; Netzbetrieb und passende Windows-Einstellungen bleiben Voraussetzung für den Wandbetrieb.
+
+Kein Langzeittest über Windows-Energiesparzustände oder Mobilfunkabschaltungen; kein Windows-Dienst und kein Autostart eingerichtet. Expliziter Standby oder Ausschalten wird nicht übergangen.

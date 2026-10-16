@@ -1,6 +1,6 @@
 # Verifikation der Schnittstellen
 
-Stand: **16.10.2026**, Version 1.1.0. Primärquellen und die tatsächlich installierte Geräteoberfläche wurden geprüft. Die ältere Chat-Unterhaltung wurde nicht als Schnittstellennachweis übernommen.
+Stand: **16.10.2026**, Version 1.2.0. Primärquellen und die tatsächlich installierte Geräteoberfläche wurden geprüft. Die ältere Chat-Unterhaltung wurde nicht als Schnittstellennachweis übernommen.
 
 ## SMARTFOX Pro 2 / Charger Pro 1
 
@@ -79,3 +79,11 @@ HTTP 202 bedeutet Annahme eines Befehls, keine Zustandsbestätigung. Erst eine n
 ## Brave-Start
 
 [Brave dokumentiert Kommandozeilenflags unter Windows](https://support.brave.app/hc/en-us/articles/360044860011-How-Do-I-Use-Command-Line-Flags-in-Brave). Das Chromium-Startflag `--start-fullscreen` ist im [offiziellen Quellcode](https://chromium.googlesource.com/chromium/src.git/+/2eee6cb90276be4e16fe7f2cf898ec558863a2d1/content/public/common/content_switches.cc) definiert. Der Launcher startet ein neues Fenster mit diesem Flag, ohne Shell-Auswertung. Bereits laufende Browserprozesse können Startflags übergehen; F11 bleibt der manuelle Weg zum Vollbild. Fehlt Brave oder schlägt der Prozessstart fehl, wird der Standardbrowser verwendet.
+
+## Windows-Hintergrundüberwachung
+
+`Start-Hintergrund.cmd` startet Python über einen getrennten Prozess mit CREATE_NO_WINDOW, umgeleitetem Ein-/Ausgang und festem Programmverzeichnis. Ein offener Browser ist für den Monitor nicht erforderlich. Es wird kein Dienst, Autostart oder geänderter Energiesparplan installiert.
+
+Die Windows-API [PowerCreateRequest](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-powercreaterequest) erstellt ein begründetes Request-Objekt. Während einer aktiven Zielüberwachung fordert [PowerSetRequest](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-powersetrequest) SystemRequired (1) und ExecutionRequired (3) an. DisplayRequired und AwayModeRequired werden nicht angefordert. PowerClearRequest und CloseHandle geben Anforderungen nach Ende der Sitzung und beim Prozessabbau frei.
+
+Laut Microsoft enden diese Anforderungen auf Modern-Standby-Systemen im Akkubetrieb fünf Minuten nach Ablauf des System-Schlafzeitlimits; ein explizit ausgelöster Standby beendet sie ebenfalls. Das Verhalten am konkreten Tablet muss daher im Netzbetrieb mit dessen Windows-Energiepolitik geprüft werden. Die App zeigt eine angeforderte Wachhaltung und die Netzversorgung an, behauptet keine Fähigkeit, während echten Schlafs oder bei ausgeschaltetem PC zu arbeiten.

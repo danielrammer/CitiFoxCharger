@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 from ladezentrale.server import make_server
 from ladezentrale.browser import open_dashboard
+from ladezentrale.background import dashboard_running, spawn_backend, wait_until_ready
 
 
 def main():
@@ -15,9 +16,25 @@ def main():
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--browser", choices=("brave", "default"), default="brave")
     parser.add_argument("--fullscreen", action="store_true")
+    parser.add_argument("--background", action="store_true", help="Backend ohne offenes Konsolenfenster starten")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error("Port muss zwischen 1 und 65535 liegen.")
+    if args.background:
+        if dashboard_running(args.port):
+            if not args.no_browser:
+                open_dashboard(f"http://127.0.0.1:{args.port}", args.browser, args.fullscreen)
+            print("CitiFoxCharger läuft bereits. Vorhandene Instanz wird verwendet.")
+            return 0
+        try:
+            child = spawn_backend([value for value in sys.argv[1:] if value != "--background"], args.data_dir)
+            if wait_until_ready(child, args.port):
+                print("CitiFoxCharger läuft im Hintergrund. Beenden unter Einstellungen.")
+                return 0
+        except OSError:
+            pass
+        print("Hintergrundstart nicht bestätigt. Bitte Datenordner/background.log oder Start.cmd prüfen.")
+        return 1
     try:
         server = make_server(args.port, args.data_dir)
     except ValueError as error:

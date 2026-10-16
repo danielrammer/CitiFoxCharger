@@ -3,6 +3,7 @@ import json
 import re
 import secrets
 import socket
+import threading
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -13,6 +14,7 @@ from .secrets_store import SecretStore
 from .service import Service
 from .skoda import IntegrationError
 from .instance import InstanceLock
+from . import __version__
 
 STATIC = Path(__file__).with_name("web")
 FILES = {"/": ("index.html", "text/html; charset=utf-8"),
@@ -114,7 +116,7 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, {"csrf": self.server.csrf}, cookie=True)
             return
         if path == "/health":
-            self.reply(200, {"status": "ok", "version": "1.1.0"})
+            self.reply(200, {"app": "CitiFoxCharger", "status": "ok", "version": __version__})
             return
         if not self.authenticated():
             return
@@ -147,7 +149,14 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("JSON-Objekt erforderlich.")
             path = urlsplit(self.path).path
             service = self.server.service
-            if path == "/api/config":
+            if path == "/api/app/quit":
+                if data:
+                    raise ValueError("Keine Parameter erforderlich.")
+                service.prepare_shutdown()
+                self.reply(200, {"message": "CitiFoxCharger wird beendet. Es läuft keine Ladeüberwachung mehr."})
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                return
+            elif path == "/api/config":
                 service.save_config(data)
                 result = {"message": "Konfiguration gespeichert."}
             elif path == "/api/key":

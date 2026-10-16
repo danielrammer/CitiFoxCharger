@@ -283,5 +283,15 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status,409)
         self.assertEqual(json.loads(body)["code"],"blocked")
 
+    def test_background_shutdown_requires_local_session_and_no_monitor(self):
+        self.assertEqual(self.call("/api/app/quit", {}, **{"X-CSRF-Token":"wrong"})[0],403)
+        self.service.charging.save(status="monitoring",target_percent=90)
+        self.assertEqual(self.call("/api/app/quit", {})[0],400)
+        self.assertFalse(self.service.stopping)
+        self.service.charging.save(status="complete")
+        self.assertEqual(self.call("/api/app/quit", {})[0],200)
+        self.assertTrue(self.service.stopping)
+        self.assertFalse(self.service.can_command("start"))
+
 
 if __name__ == "__main__": unittest.main()

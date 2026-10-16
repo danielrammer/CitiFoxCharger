@@ -1,4 +1,4 @@
-# CitiFoxCharger für Windows · 1.1.0
+# CitiFoxCharger für Windows · 1.2.0
 
 Für Škoda Citigo e iV, SMARTFOX Pro 2 mit Firmware EM3 00.01.16.08 und Charger Pro an Ladeplatz 1.
 
@@ -8,7 +8,9 @@ Den gesamten ZIP-Inhalt entpacken und **Start.cmd** doppelklicken. Voraussetzung
 
 Die Betriebsansicht ist für ein Tablet mit einem 1280 × 800-Panel **im Hochformat (800 × 1280)** angepasst: große Schrift, große Tasten und ein breiter Slider mit großem Griff. Auch Querformat und kleinere Fenster bleiben bedienbar. Die App dreht den Windows-Bildschirm nicht selbst.
 
-Bei einem Update die alte App zuerst mit Strg+C beenden und die Programmdateien ersetzen. Der Datenordner behält aus Kompatibilitätsgründen seinen bisherigen Namen. Einstellungen und optional verschlüsselter Schlüssel liegen separat unter **%LOCALAPPDATA%\Ladezentrale**. Ohne aktivierte Windows-Speicherung muss der API-Schlüssel nach einem Neustart erneut eingegeben werden.
+**Start.cmd** und der gleichwertige Einstieg **Start-Hintergrund.cmd** starten das Backend ohne dauerhaft offenes Konsolenfenster und öffnen Brave im Vollbild. Ein erneuter Aufruf öffnet die bereits laufende Instanz. Der Browser darf anschließend geschlossen oder der Bildschirm ausgeschaltet werden. Unter **Einstellungen → App beenden** lässt sich das Hintergrundprogramm beenden; während einer aktiven Zielüberwachung ist diese Taste gesperrt.
+
+Bei einem Update die alte App zuerst unter **Einstellungen → App beenden** schließen; bei einer alten oder manuell gestarteten Konsolenversion stattdessen Strg+C verwenden. Erst danach die Programmdateien ersetzen. Der Datenordner behält aus Kompatibilitätsgründen seinen bisherigen Namen. Einstellungen und optional verschlüsselter Schlüssel liegen separat unter **%LOCALAPPDATA%\Ladezentrale**. Ohne aktivierte Windows-Speicherung muss der API-Schlüssel nach einem Neustart erneut eingegeben werden.
 
 Alternativ im Programmordner:
 
@@ -49,6 +51,12 @@ A+ bedeutet laut Smartfox-Handbuch Überschussladen mit zusätzlicher Berücksic
 ## Zielüberwachung
 
 Die Überwachung läuft in einem Hintergrund-Thread des Backends. Der Browser darf geschlossen werden. **Der Windows-PC und das Backend müssen weiterlaufen.** Energiesparmodus, Netzwerkverlust oder abgelaufener Schlüssel können eine Zielabschaltung verzögern oder verhindern. Ein Sitzungszustand wird lokal gespeichert. Nach einem Neustart wird eine vorhandene Überwachung anhand frischer Daten fortgesetzt; es wird kein Startbefehl wiederholt.
+
+Während einer aktiven Zielüberwachung fordert die App von Windows **SystemRequired und ExecutionRequired** an. Damit soll das Backend auch bei automatischer Bildschirmabschaltung weiterarbeiten. Eine DisplayRequired-Anforderung wird nicht gesetzt: Der Bildschirm darf nach dem Windows-Zeitplan ausgehen. Die Anforderungen werden nach bestätigtem Sitzungsende oder beim Beenden des Backends freigegeben. Windows-Energiepläne werden nicht dauerhaft verändert. Die Betriebsansicht zeigt den Status während einer aktiven Überwachung.
+
+**Das Wandtablet am Netzteil betreiben.** Auf Modern-Standby-Geräten begrenzt Windows solche Anforderungen im Akkubetrieb nach Ablauf des Schlafzeitlimits. Manuell ausgelöster Standby, Ruhezustand, Ausschalten und Abmelden können die Überwachung unterbrechen; ein ausgeschalteter Bildschirm allein braucht das nicht. Für den ersten Betrieb auf dem konkreten Tablet zusätzlich unter Windows **Energiesparen im Netzbetrieb: Nie**, aber **Bildschirm ausschalten: nach Wunsch** einstellen und einmal mit dunklem Bildschirm prüfen. Die App setzt keinen Admin-Dienst und keinen Autostart auf. [Microsoft erklärt die Grenzen von Energieanforderungen](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-powersetrequest).
+
+Für automatisches Wiederaufnehmen nach einem Programm- oder Windows-Neustart muss der Schlüssel über die vorhandene Option mit Windows verschlüsselt gespeichert sein; ein reiner RAM-Schlüssel ist nach Prozessende weg. `background.log` im Datenordner enthält Start-/Fehlermeldungen ohne absichtliche Ausgabe von FIN oder API-Schlüssel.
 
 Das Prozentziel wird anhand der Cloud-Fahrzeugmeldungen geprüft. Der Stopp erfolgt beim ersten neuen, gültigen SOC-Wert ab Ziel. Der tatsächliche SOC kann durch Melde- oder Befehlsverzögerungen darüber liegen. Die native Fahrzeug-Ladegrenze wird durch diese App nicht geändert.
 
@@ -99,7 +107,7 @@ Ein eigener Datenordner kann mit `--data-dir "C:\MeinOrdner\Ladezentrale-Daten"`
 py -3 -m unittest discover -s tests -v
 ```
 
-80 Tests, ohne reale Fahrzeug- oder Wallboxbefehle. Geprüft sind Protokolle, Sicherheit, verschlüsselte Schlüsselablage, kombinierte Abläufe, Fehler, neue Sitzungen nach einem Stopp, Neustartzustände, Hintergrundüberwachung ohne Browser, Kontingentsteuerung, Instanzsperre und Brave-Start mit Rückfall auf den Standardbrowser.
+92 Tests, ohne reale Fahrzeug- oder Wallboxbefehle. Geprüft sind Protokolle, Sicherheit, verschlüsselte Schlüsselablage, kombinierte Abläufe, Fehler, neue Sitzungen nach einem Stopp, Neustartzustände, Hintergrundüberwachung ohne Browser, Kontingentsteuerung, Instanzsperre, Brave-Start, getrennter Hintergrundprozess, sichere Beendigung und Freigabe der Windows-Energieanforderungen nach dem 90-%-Ziel.
 
 ## Repository
 

@@ -13,6 +13,8 @@ from ladezentrale.service import Service
 from ladezentrale.skoda import IntegrationError, SkodaAdapter
 from ladezentrale.smartfox_web import SmartfoxWeb, SmartfoxControlError
 from ladezentrale.instance import InstanceLock
+from ladezentrale.power import PowerGuard
+from test_power_background import FakePower
 
 VIN = "TMBJB9NY5RF999999"
 
@@ -128,7 +130,7 @@ class ChargingTests(unittest.TestCase):
             return 200, {}, json.dumps(self.data).encode()
         class SF:
             def read(self, config): return {"available": True, "registers": []}
-        self.service = Service(self.config, self.secrets, SF(), SkodaAdapter(request), self.web)
+        self.service = Service(self.config, self.secrets, SF(), SkodaAdapter(request), self.web, PowerGuard(FakePower()))
         self.addCleanup(self.service.stop_worker)
         self.service.status()
 
@@ -192,6 +194,24 @@ class ChargingTests(unittest.TestCase):
         self.assertTrue(self.stop_event.wait(timeout=4))
         with self.service.lock:
             self.assertIn("A+", self.effects)
+
+    def test_ninety_percent_background_stop_holds_and_releases_power_request(self):
+        self.force(90)
+        self.assertTrue(self.service.power.state()["requested"])
+        self.update_soc(90)
+        self.service.start_worker()
+        self.assertTrue(self.stop_event.wait(timeout=4))
+        self.update_soc(90, "READY_FOR_CHARGING")
+        result = self.service.status()
+        self.assertEqual(result["charging"]["status"], "complete")
+        self.assertFalse(result["monitoring"]["power"]["requested"])
+        self.assertEqual(self.effects[-2:], ["stop", "A+"])
+
+    def test_app_exit_is_blocked_while_monitoring(self):
+        self.force(90)
+        with self.assertRaises(ValueError):
+            self.service.prepare_shutdown()
+        self.assertFalse(self.service.stopping)
 
     def test_user_stop_below_target(self):
         self.force(90)

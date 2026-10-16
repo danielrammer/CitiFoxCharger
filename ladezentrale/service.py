@@ -7,10 +7,11 @@ from .modbus import SmartfoxAdapter, utcnow
 from .skoda import SkodaAdapter, IntegrationError, timestamp
 from .smartfox_web import SmartfoxWeb, SmartfoxControlError
 from .charging import ChargingSession
+from .power import PowerGuard
 
 
 class Service:
-    def __init__(self, config, secrets, smartfox=None, skoda=None, web=None):
+    def __init__(self, config, secrets, smartfox=None, skoda=None, web=None, power=None):
         self.config, self.secrets = config, secrets
         self.sf, self.car = smartfox or SmartfoxAdapter(), skoda or SkodaAdapter()
         # User explicitly authorized the local vendor-web control on 2026-10-16.
@@ -26,6 +27,8 @@ class Service:
         self.worker = None
         self.last_attempt = {}
         self.manual_refresh_after = 0
+        self.power = power if power is not None else PowerGuard()
+        self.stopping = False
 
     def poll_interval(self, source):
         configured = self.config.value[source]["poll_seconds"]
@@ -70,6 +73,13 @@ class Service:
         self.worker_stop.set()
         if self.worker is not None:
             self.worker.join(timeout=25)
+        self.power.close()
+
+    def prepare_shutdown(self):
+        with self.lock:
+            if self.charging.active:
+                raise ValueError("Eine Ladeüberwachung läuft. Bitte zuerst Laden stoppen und die Bestätigung abwarten.")
+            self.stopping = True
 
     def event(self, message):
         self.events.insert(0, {"at": utcnow(), "message": message})
@@ -136,6 +146,8 @@ class Service:
 
     def can_command(self, action):
         current = self.cache.get("skoda", {})
+        if self.stopping:
+            return False
         if not self.secrets.key or not self.config.value["skoda"]["vin"]:
             return False
         expiry = timestamp(self.car.key_expires_at)
@@ -182,16 +194,23 @@ class Service:
                 car["stale"] = True
             self.check_command_observation()
             self.charging.tick()
+            self.power.update(self.charging.active and not self.worker_stop.is_set())
             return {"smartfox": copy.deepcopy(self.cache["smartfox"]),
                     "skoda": copy.deepcopy(self.cache["skoda"]),
                     "controls": {a: self.can_command(a) for a in ("start", "stop")},
                     "last_command": copy.deepcopy(self.last_command), "events": copy.deepcopy(self.events),
                     "charging": self.charging.state(),
+                    "monitoring": {"running": self.worker is not None and self.worker.is_alive(),
+                                   "power": self.power.state()},
                     "server_at": utcnow(), "next_skoda_seconds": max(0, int(self.next_due.get("skoda", 0) - time.monotonic()))}
 
     def force_charge(self, target, request_id):
         with self.lock:
-            return self.charging.start(target, request_id)
+            self.power.update(not self.stopping)
+            try:
+                return self.charging.start(target, request_id)
+            finally:
+                self.power.update(self.charging.active and not self.worker_stop.is_set())
 
     def refresh_now(self):
         with self.lock:
