@@ -8,5 +8,7 @@ if %errorlevel% equ 0 (
   python manage.py stop %*
 )
 set "citifox_result=%errorlevel%"
-if not "%citifox_result%"=="0" pause
+echo.
+echo Zum Schliessen eine Taste druecken.
+pause >nul
 exit /b %citifox_result%

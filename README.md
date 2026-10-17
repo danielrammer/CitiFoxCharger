@@ -1,4 +1,4 @@
-# CitiFoxCharger für Windows · 1.6.1
+# CitiFoxCharger für Windows · 1.6.2
 
 Für Škoda Citigo e iV, SMARTFOX Pro 2 mit Firmware EM3 00.01.16.08 und Charger Pro an Ladeplatz 1.
 
@@ -152,7 +152,7 @@ Ein eigener Datenordner kann mit `--data-dir "C:\MeinOrdner\Ladezentrale-Daten"`
 py -3 -m unittest discover -s tests -v
 ```
 
-191 Tests, ohne reale Fahrzeug- oder Wallboxbefehle. Geprüft sind Protokolle, Sicherheit, verschlüsselte Schlüsselablage, kombinierte Abläufe, Fehler, neue Sitzungen nach einem Stopp, Neustartzustände, Hintergrundüberwachung ohne Browser, Kontingentsteuerung, Instanzsperre, Brave-Start, getrennter Hintergrundprozess, sichere Beendigung und Freigabe der Windows-Energieanforderungen nach dem 90-%-Ziel. Zusätzlich geprüft: ausdrücklicher Start mit älterem SOC, eng begrenzte Freigabe, persistente Fünf-Minuten-Frist, neue SOC-Meldungen, A+-Rückstellung bei abgelehntem/gesperrtem Cloud-Stopp, Energieeinheiten/Vorzeichen/Sensorzuordnung, Zieländerungen ohne Start und geschützter Neustart mit erhaltenem Zustand.
+202 Tests, ohne reale Fahrzeug- oder Wallboxbefehle. Geprüft sind Protokolle, Sicherheit, verschlüsselte Schlüsselablage, kombinierte Abläufe, Fehler, neue Sitzungen nach einem Stopp, Neustartzustände, Hintergrundüberwachung ohne Browser, Kontingentsteuerung, Instanzsperre, Brave-Start, getrennter Hintergrundprozess, sichere Beendigung und Freigabe der Windows-Energieanforderungen nach dem 90-%-Ziel. Zusätzlich geprüft: ausdrücklicher Start mit älterem SOC, eng begrenzte Freigabe, persistente Fünf-Minuten-Frist, neue SOC-Meldungen, A+-Rückstellung bei abgelehntem/gesperrtem Cloud-Stopp, Energieeinheiten/Vorzeichen/Sensorzuordnung, Zieländerungen ohne Start und geschützter Neustart mit erhaltenem Zustand.
 
 ## Repository
 
@@ -178,3 +178,12 @@ Die Prozentgrenze ist weiterhin eine lokale Überwachung und keine in das Auto p
 **Vor Update oder Neustart** im neuen Programmordner **Diagnose.cmd** ausführen. Es fragt standardmäßig das schon laufende lokale Backend auf Port 8765 ab, auch wenn dieses noch 1.6.0 ist. Die normale Backend-Überwachung bleibt dabei aktiv; das Skript selbst sendet keinen Start-/Stoppbefehl. Falls kein Backend antwortet, werden ausdrücklich als möglicherweise älter gekennzeichnete gespeicherte Werte verwendet.
 
 Die Datei **CitiFoxCharger-Diagnose.json** entsteht neben dem Skript. Sie enthält ausgewählte Ziel-, SOC-, Zeit-, Kontingent-, Wallbox- und Überwachungsdaten, aber keine FIN, Schlüssel, Passwörter, Sitzungstoken, IP-Adresse, Rohantworten oder freien Fehlermeldungen. Diese Datei kann zur Fehlersuche weitergegeben werden. Bei abweichendem Backend-Port beispielsweise `Diagnose.cmd --port 8774`; für einen anderen Datenordner zusätzlich `--data-dir "C:\MeinOrdner"`. `--offline` verzichtet auf den Backend-Abruf. Erst danach den alten Backendprozess geordnet beenden, die neue Version übernehmen und starten.
+
+
+## Update-Skript und offene Ergebnisfenster · 1.6.2
+
+**Update.cmd** aktualisiert das private Repository mit `git pull --ff-only --no-rebase origin main`. Git fuer Windows und eine GitHub-Anmeldung mit Zugriff auf das private Repository sind erforderlich. Der Updater prueft origin, den Branch main und einen sauberen Arbeitsstand. Eigene Aenderungen, fehlende Verbindung und ein nicht vorspulbarer Verlauf brechen ab, ohne Reset, Stash oder Ueberschreiben. Vor dem Aendern der Programmdateien wird das Backend geordnet beendet. Eine aktive Ladung wird nicht automatisch gestoppt. Ein nur im RAM hinterlegter API-Schluessel blockiert das Update, bis er mit Windows verschluesselt gespeichert ist. Nach dem Update **Start.cmd** im angezeigten Ordner ausfuehren.
+
+Bei einer entpackten ZIP ohne Git-Historie wird ein separater Nachbarordner **CitiFoxCharger-Git** angelegt und das private Repository geklont. Ein schon vorhandener passender Git-Ordner wird wiederverwendet. Der bisherige Programmordner und die separate Datenablage bleiben erhalten. Ab dann Start.cmd und Update.cmd aus dem Git-Ordner benutzen. Das Skript startet das Backend oder das Auto nicht selbst. Abweichende lokale Backend-Ports lassen sich als `Update.cmd --port 8774` angeben.
+
+**Update.cmd**, **Stoppen.cmd**, **Netzwerk-Einrichten.cmd** und **Netzwerk-Firewall.cmd** bleiben bei Erfolg und Fehler offen, bis eine Taste gedrueckt wird. Start.cmd behaelt den Hintergrundstart ohne dauerhaftes Konsolenfenster. Geprueft wurden echte lokale Git-Repositorys fuer Fast-forward, eigene Aenderungen, aktive Ueberwachung, RAM-Schluessel, fremdes origin, ZIP-Ersteinrichtung/Wiederverwendung, vorhandene Ordner, divergierten Verlauf und fehlgeschlagenen Fetch. Echte Windows-Batch-Tests mit harmlosen Ersatzprogrammen pruefen die Pause und erhaltene Rueckgabecodes bei Erfolg/Fehler sowie das Ersetzen der Update.cmd waehrend ihrer Ausfuehrung. Kein reales Backend wurde dafuer beendet.

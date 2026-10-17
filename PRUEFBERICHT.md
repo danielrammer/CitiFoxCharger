@@ -1,10 +1,10 @@
-# Prüfbericht · Version 1.6.1
+# Prüfbericht · Version 1.6.2
 
 Stand: **17.10.2026**, Windows / Python 3.14.
 
 ## Automatisierte Prüfung
 
-**191 Tests erfolgreich**, zusätzlich JavaScript-Syntaxprüfung. Geräte und Fahrzeugbefehle sind in Tests simuliert. Lokale Testserver prüfen echte HTTP-/Sicherheitsabläufe; kein neuer realer Start/Stopp oder Wärmeschaltbefehl wird dafür gesendet.
+**202 Tests erfolgreich**, zusätzlich JavaScript-Syntaxprüfung. Geräte und Fahrzeugbefehle sind in Tests simuliert. Lokale Testserver prüfen echte HTTP-/Sicherheitsabläufe; kein neuer realer Start/Stopp oder Wärmeschaltbefehl wird dafür gesendet.
 
 Geprüft: Modbus-Leseregister, Protokollfehler, Wertebereiche, SOC-/FIN-/Fähigkeitsschema, Zeitstempel, Schlüsselablauf, Windows-DPAPI, RateLimit/Retry-After, Kontingentreserve, adaptive Abrufe, Host/Origin/CSRF/Sitzung, Loopback und keine Modbus-Schreibroute.
 
@@ -60,3 +60,12 @@ Die gerätefreie Browserprüfung mit sichtbarer TEST-Kennzeichnung bestätigte o
 Simuliert geprüft: alte 86-%-Meldung, blockierter/unerreichbarer Cloud-Stopp, Aus vor einem fehlschlagenden Cloud-Aufruf, spätere Datenalterung, begrenzte Erholung nach Lesefehler und Neustart während der Erholungsfrist. Aus bleibt bei unbestätigtem Stopp bestehen, fremde Modusänderung wird zurückgesetzt, lokaler Aus-Wiederholversuch wartet nicht auf Cloud-Backoff. Erst neuere, nicht mehr als fünf Sekunden in der Zukunft liegende Stillstandsmeldungen heben den Schutz auf. Schließen und Neustart führen keinen automatischen Start aus. Diagnoseexport prüft ausdrücklich den Ausschluss von Identität, Zugangsdaten und freien Texten.
 
 Der dokumentierte HTTPS-Zugang am genannten Tablet-Port 8766 antwortete bei der rein lesenden Verbindungsprüfung nicht. Es wurde kein Zertifikat umgangen, kein Passwort angefordert und kein Geräteschaltbefehl für diese Tests gesendet. Die aktive Browseransicht war durch die Browser-Zugriffsprüfung gesperrt; deshalb erfolgte keine visuelle Nachprüfung der einzigen geänderten Hinweiszeile. Layout und Animationen bleiben unverändert.
+
+
+## Update-Skript und offene Ergebnisfenster · 1.6.2
+
+**Update.cmd** aktualisiert das private Repository mit `git pull --ff-only --no-rebase origin main`. Git fuer Windows und eine GitHub-Anmeldung mit Zugriff auf das private Repository sind erforderlich. Der Updater prueft origin, den Branch main und einen sauberen Arbeitsstand. Eigene Aenderungen, fehlende Verbindung und ein nicht vorspulbarer Verlauf brechen ab, ohne Reset, Stash oder Ueberschreiben. Vor dem Aendern der Programmdateien wird das Backend geordnet beendet. Eine aktive Ladung wird nicht automatisch gestoppt. Ein nur im RAM hinterlegter API-Schluessel blockiert das Update, bis er mit Windows verschluesselt gespeichert ist. Nach dem Update **Start.cmd** im angezeigten Ordner ausfuehren.
+
+Bei einer entpackten ZIP ohne Git-Historie wird ein separater Nachbarordner **CitiFoxCharger-Git** angelegt und das private Repository geklont. Ein schon vorhandener passender Git-Ordner wird wiederverwendet. Der bisherige Programmordner und die separate Datenablage bleiben erhalten. Ab dann Start.cmd und Update.cmd aus dem Git-Ordner benutzen. Das Skript startet das Backend oder das Auto nicht selbst. Abweichende lokale Backend-Ports lassen sich als `Update.cmd --port 8774` angeben.
+
+**Update.cmd**, **Stoppen.cmd**, **Netzwerk-Einrichten.cmd** und **Netzwerk-Firewall.cmd** bleiben bei Erfolg und Fehler offen, bis eine Taste gedrueckt wird. Start.cmd behaelt den Hintergrundstart ohne dauerhaftes Konsolenfenster. Geprueft wurden echte lokale Git-Repositorys fuer Fast-forward, eigene Aenderungen, aktive Ueberwachung, RAM-Schluessel, fremdes origin, ZIP-Ersteinrichtung/Wiederverwendung, vorhandene Ordner, divergierten Verlauf und fehlgeschlagenen Fetch. Echte Windows-Batch-Tests mit harmlosen Ersatzprogrammen pruefen die Pause und erhaltene Rueckgabecodes bei Erfolg/Fehler sowie das Ersetzen der Update.cmd waehrend ihrer Ausfuehrung. Kein reales Backend wurde dafuer beendet.

@@ -8,5 +8,7 @@ if %errorlevel% equ 0 (
   python setup_network.py --firewall %*
 )
 set "citifox_result=%errorlevel%"
-pause
+echo.
+echo Zum Schliessen eine Taste druecken.
+pause >nul
 exit /b %citifox_result%
