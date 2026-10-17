@@ -233,7 +233,7 @@ class BatchWindowTests(unittest.TestCase):
                 if process.poll() is None:process.kill();process.wait(timeout=3)
                 process.stdin.close();process.stdout.close()
     def test_windows_remain_open_after_success_and_failure(self):
-        for name in ('Update.cmd','Stop.cmd','Setup-Network.cmd','Setup-Firewall.cmd'):
+        for name in ('Update.cmd','Stop.cmd','Stop-Charging.cmd','Setup-Network.cmd','Setup-Firewall.cmd'):
             for code in (0,7):
                 with self.subTest(name=name,code=code):self.exercise(name,code)
     def test_updater_still_pauses_and_preserves_exit_code_after_its_batch_is_replaced(self):

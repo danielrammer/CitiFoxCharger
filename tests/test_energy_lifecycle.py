@@ -73,6 +73,61 @@ class EnergyTests(unittest.TestCase):
 
 
 class LifecycleTests(unittest.TestCase):
+    def recovery_status(self,**changes):
+        from datetime import datetime,timezone
+        return {'charging':{'stop_requested':True},'smartfox':{'charger':{
+            'available':True,'mode':'OFF','read_at':datetime.now(timezone.utc).isoformat(),**changes}}}
+
+    def test_recovery_stop_checks_persisted_intent_even_when_an_old_backend_returns_a_cloud_error(self):
+        control=LocalControl(8765)
+        control.health=MagicMock(return_value={'app':'CitiFoxCharger'})
+        control.request=MagicMock(side_effect=[{'csrf':'test-csrf'},{'status':'confirmed'},ControlError('Cloud unavailable'),self.recovery_status()])
+        self.assertIn('vehicle confirmation may still be pending',control.stop_charging())
+        calls=control.request.call_args_list
+        self.assertEqual([c.args[0] for c in calls],['/api/session','/api/smartfox/charger-mode','/api/charging/stop','/api/status'])
+        self.assertEqual(calls[1].args[1]['mode'],'OFF')
+        self.assertEqual(calls[1].args[2],'test-csrf')
+        self.assertNotEqual(calls[1].args[1]['request_id'],calls[2].args[1]['request_id'])
+
+    def test_recovery_never_starts_a_backend_when_none_is_running(self):
+        control=LocalControl(8765)
+        control.health=MagicMock(return_value=None)
+        control.request=MagicMock()
+        with patch('citifoxcharger.lifecycle.spawn_backend') as spawn:
+            with self.assertRaisesRegex(ControlError,'not running'):control.action('stop-charging',Path('unused'),8765)
+            spawn.assert_not_called()
+        control.request.assert_not_called()
+
+    def test_recovery_rejects_missing_stop_intent(self):
+        control=LocalControl(8765)
+        control.health=MagicMock(return_value={'app':'CitiFoxCharger'})
+        status=self.recovery_status();status['charging']['stop_requested']=False
+        control.request=MagicMock(side_effect=[{'csrf':'test'},{},{},status])
+        with self.assertRaisesRegex(ControlError,'stop request is unconfirmed'):control.stop_charging()
+
+    def test_recovery_rejects_invalid_status_without_claiming_a_stop(self):
+        for status in (None,[],{'charging':[]},{'smartfox':None}):
+            with self.subTest(status=status):
+                control=LocalControl(8765)
+                control.health=MagicMock(return_value={'app':'CitiFoxCharger'})
+                control.request=MagicMock(side_effect=[{'csrf':'test'},{},{},status])
+                with self.assertRaisesRegex(ControlError,'Stop status is unavailable'):control.stop_charging()
+
+    def test_recovery_still_requests_vehicle_stop_after_local_failure_and_never_claims_off(self):
+        control=LocalControl(8765)
+        control.health=MagicMock(return_value={'app':'CitiFoxCharger'})
+        control.request=MagicMock(side_effect=[{'csrf':'test'},ControlError('Local offline'),{},self.recovery_status(mode='M+')])
+        with self.assertRaisesRegex(ControlError,'Off is unconfirmed'):control.stop_charging()
+        self.assertEqual(control.request.call_args_list[2].args[0],'/api/charging/stop')
+
+    def test_recovery_rejects_old_or_unavailable_local_readback(self):
+        for change in ({'read_at':'2000-01-01T00:00:00+00:00'},{'available':False},{'read_at':None}):
+            with self.subTest(change=change):
+                control=LocalControl(8765)
+                control.health=MagicMock(return_value={'app':'CitiFoxCharger'})
+                control.request=MagicMock(side_effect=[{'csrf':'test'},{},{},self.recovery_status(**change)])
+                with self.assertRaisesRegex(ControlError,'Off is unconfirmed'):control.stop_charging()
+
     def test_stop_uses_authenticated_quit_and_waits_for_shutdown(self):
         control=LocalControl(8765)
         control.health=MagicMock(side_effect=[{"app":"CitiFoxCharger","instance_id":"a"},None])

@@ -7,8 +7,8 @@ from citifoxcharger.lifecycle import LocalControl, ControlError
 
 
 def main():
-    parser=argparse.ArgumentParser(description="Stop or restart CitiFoxCharger")
-    parser.add_argument("action",choices=("stop","restart"))
+    parser=argparse.ArgumentParser(description="Stop charging, stop or restart CitiFoxCharger")
+    parser.add_argument("action",choices=("stop","restart","stop-charging"))
     parser.add_argument("--port",type=int,default=8765)
     parser.add_argument("--no-browser",action="store_true")
     parser.add_argument("--data-dir",type=Path,default=default_data_dir())

@@ -327,8 +327,7 @@ class Service:
     def stop_charge(self, request_id):
         with self.lock:
             if self.stopping:raise IntegrationError("blocked","The app is restarting or stopping.")
-            self.update("skoda")
-            self.update("smartfox")
+            # The verified local Off/readback happens before any slow cloud read.
             if self.web is None:
                 raise IntegrationError("blocked", "Smartfox integration is not configured.")
             return self.charging.stop(request_id)

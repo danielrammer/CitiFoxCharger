@@ -1,10 +1,12 @@
 """Local session/CSRF-protected backend control. Never kills Python processes."""
 import json
 import time
+import uuid
 import urllib.error
 import urllib.request
 from http.cookiejar import CookieJar
 from .background import spawn_backend, wait_until_ready
+from .skoda import timestamp
 
 
 class ControlError(Exception):
@@ -40,6 +42,8 @@ class LocalControl:
                 message = json.loads(error.read(16384)).get("error", 'Local action failed.')
             except (ValueError, UnicodeError):
                 message = 'Local action failed.'
+            finally:
+                error.close()
             raise ControlError(message) from None
         except (OSError, ValueError):
             raise ControlError("No valid response from CitiFoxCharger. Check Start.cmd or the background log.") from None
@@ -61,7 +65,41 @@ class LocalControl:
             raise ControlError("This port is not serving a confirmed CitiFoxCharger instance.")
         return result
 
+    def stop_charging(self):
+        """Use existing local endpoints, including on older running backends."""
+        if self.health() is None:
+            raise ControlError("The backend is not running. Charging was not stopped by this script.")
+        csrf = self.request("/api/session")["csrf"]
+        # Explicit Off persists on old backends even if their vehicle stop fails.
+        for path,data in (("/api/smartfox/charger-mode", {"mode":"OFF","request_id":"local-off-"+uuid.uuid4().hex}),
+                          ("/api/charging/stop", {"request_id":"manual-stop-"+uuid.uuid4().hex})):
+            try:
+                self.request(path,data,csrf)
+            except ControlError:
+                # The independent stop still matters if either upstream rejects a command.
+                pass
+        status = self.request("/api/status")
+        if not isinstance(status,dict):
+            raise ControlError("Stop status is unavailable. Check the dashboard; the backend remains running.")
+        session = status.get("charging", {})
+        smartfox = status.get("smartfox", {})
+        charger = smartfox.get("charger", {}) if isinstance(smartfox,dict) else None
+        if not isinstance(session,dict) or not isinstance(charger,dict):
+            raise ControlError("Stop status is unavailable. Check the dashboard; the backend remains running.")
+        captured = timestamp(charger.get("read_at"))
+        if session.get("stop_requested") is not True:
+            raise ControlError("The stop request is unconfirmed. Check the dashboard and Smartfox; the backend remains running.")
+        if not (charger.get("available") and charger.get("mode") == "OFF" and captured is not None and -5 <= time.time()-captured <= 30):
+            raise ControlError("Charging stop requested, but Smartfox Off is unconfirmed. Check Smartfox; the backend remains running.")
+        return ("Charging stop requested. Smartfox Off is confirmed; vehicle confirmation may still be pending. "
+                "The backend remains running. After at least five seconds, use Stop.cmd to stop the backend. "
+                "The charger stays explicitly Off until you choose A+ or start a new charging session.")
+
     def action(self, action, data_dir, port, no_browser=False, timeout=45):
+        if action == "stop-charging":
+            return self.stop_charging()
+        if action not in ("stop", "restart"):
+            raise ControlError("Unknown backend action.")
         previous = self.health()
         if previous is None:
             if action == "stop":

@@ -514,7 +514,77 @@ class ChargingTests(unittest.TestCase):
         self.force(90)
         result = self.service.stop_charge("manual-stop-id-0000001")
         self.assertEqual(result["status"], "stop_pending")
-        self.assertEqual(self.effects[-2:], ["stop", "A+"])
+        self.assertEqual(self.effects[-2:], ["OFF", "stop"])
+        self.assertTrue(result['stop_guard'])
+        self.update_soc(40,'READY_FOR_CHARGING')
+        self.service.status()
+        self.assertEqual(self.web.mode,'A+')
+
+    def test_unreachable_vehicle_keeps_local_stop_available_and_allows_checked_shutdown(self):
+        self.force()
+        self.service.cache['skoda'].update(available=False,stale=True,operations=[])
+        self.service.next_due['skoda']=time.monotonic()+300
+        status=self.service.status()
+        self.assertFalse(status['controls']['stop'])
+        self.assertTrue(status['charging']['can_stop'])
+        with self.assertRaises(IntegrationError):self.service.stop_charge('offline-manual-stop-001')
+        self.assertEqual(self.web.mode,'OFF')
+        self.assertTrue(self.service.charging.value['stop_requested'])
+        self.service.charging.save(stop_intent_epoch=time.time()-10)
+        self.service.prepare_shutdown()
+        self.assertTrue(self.service.stopping)
+        self.assertEqual(self.service.charging.value['status'],'closed')
+        self.assertFalse(self.service.charging.value['vehicle_stop_confirmed'])
+
+    def test_manual_stop_secures_off_before_even_a_failing_vehicle_read(self):
+        self.force()
+        self.service.next_due['skoda']=0
+        def offline(*args):
+            self.assertEqual(self.web.mode,'OFF')
+            raise IntegrationError('network','Simulated offline vehicle')
+        self.service.car.read=offline
+        with self.assertRaises(IntegrationError):self.service.stop_charge('offline-first-off-0001')
+        self.assertEqual(self.effects,['M+','start','OFF'])
+
+    def test_guarded_shutdown_rejects_a_plus_even_at_zero_power(self):
+        self.stopped_without_cloud_confirmation()
+        self.web.mode='A+'
+        with self.assertRaises(ValueError):self.service.prepare_shutdown()
+        self.assertFalse(self.service.stopping)
+
+    def test_local_stop_is_disabled_during_backend_shutdown(self):
+        self.force()
+        self.service.stopping=True
+        self.assertFalse(self.service.charging.state()['can_stop'])
+
+    def test_failed_off_never_claims_stopped_or_allows_exit(self):
+        from unittest.mock import patch
+        self.force()
+        self.service.cache['skoda'].update(available=False,operations=[])
+        with patch.object(self.web,'set_charger_mode',side_effect=SmartfoxControlError('Simulated local failure')):
+            with self.assertRaisesRegex(IntegrationError,'Off is unconfirmed'):
+                self.service.stop_charge('offline-both-fail-0001')
+        self.assertFalse(self.service.charging.value['auto_restored'])
+        with self.assertRaises(ValueError):self.service.prepare_shutdown()
+
+    def test_recovery_command_works_over_http_with_an_unreachable_vehicle(self):
+        from citifoxcharger.server import LocalServer
+        from citifoxcharger.lifecycle import LocalControl
+        self.force()
+        self.service.cache['skoda'].update(available=False,stale=True,operations=[])
+        self.service.next_due['skoda']=time.monotonic()+300
+        server=LocalServer(0,self.service)
+        thread=threading.Thread(target=server.serve_forever,kwargs={'poll_interval':.02},daemon=True)
+        thread.start()
+        try:
+            result=LocalControl(server.server_port).stop_charging()
+            self.assertIn('Smartfox Off is confirmed',result)
+            self.assertEqual(self.web.mode,'OFF')
+            self.assertTrue(self.service.charging.value['stop_requested'])
+            self.assertEqual(self.service.charging.value['user_charger_mode'],'OFF')
+            self.assertFalse(self.service.stopping)
+        finally:
+            server.shutdown();server.server_close();thread.join(2)
 
     def test_new_session_does_not_inherit_previous_stop_intent(self):
         self.force(80)

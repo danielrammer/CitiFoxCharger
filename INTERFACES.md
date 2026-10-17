@@ -1,6 +1,6 @@
 # Verified interfaces
 
-Evidence reviewed on **16–17 October 2026**; application version **1.7.0**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
+Evidence reviewed on **16–17 October 2026**; application version **1.7.3**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
 
 ## SMARTFOX Pro 2 and Charger Pro 1
 
@@ -92,7 +92,7 @@ The public contract contains `setChargingLimit`, but support and permitted steps
 
 ### Local target monitoring
 
-`POST /api/charging/target` changes only the local target, never repeats a start and does not alter the native vehicle limit. A valid old SOC already at/above target authorizes a conservative stop, not a start. Automatic stopping requests the verified local OFF mode before the cloud request, even when cloud access is blocked. The temporary Off hold survives restart and is released only after newer stopped vehicle telemetry. Future reports beyond the allowed five-second release tolerance cannot release it. A+ is not treated as a power-off guarantee.
+`POST /api/charging/target` changes only the local target, never repeats a start and does not alter the native vehicle limit. A valid old SOC already at/above target authorizes a conservative stop, not a start. Both manual and automatic stopping request verified local OFF before any vehicle read or cloud request, even when cloud access is blocked. The temporary Off hold survives restart and is released only after newer stopped vehicle telemetry. Future reports beyond the allowed five-second release tolerance cannot release it. A+ is not treated as a power-off guarantee. `charging.can_stop` exposes local stop availability independently of cloud-only `controls.stop`.
 
 The explicit older-SOC start exception requires a known capture time ≤24 hours old, a successful API read ≤five minutes old and wallbox readiness/no power ≤30 seconds old. It does not falsify freshness. A persistent five-minute post-start deadline requires a new SOC; later loss of data also has bounded recovery and a maximum 15-minute report age. Uncertain starts are never replayed. Stops require newer charging telemetry for bounded retries; a newer stopped report can complete without another command.
 

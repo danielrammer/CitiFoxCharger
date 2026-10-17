@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.7.2
+# CitiFoxCharger for Windows · 1.7.3
 
 A local dashboard for a Škoda Citigo e iV and a SMARTFOX Pro 2 energy manager with a Charger Pro at charging point 1. The installed SMARTFOX profile is **EM3 00.01.16.08**, address **192.168.0.81**.
 
@@ -23,6 +23,7 @@ The target layout is an **800 × 1280 portrait viewport** on a 1280 × 800 table
 | **Start.cmd** | Start the background backend and open Brave in full screen. Reuse an existing instance. |
 | **Start-Background.cmd** | Start or reuse the background backend without opening a browser. |
 | **Stop.cmd** | Stop the backend cleanly after charging has stopped; never kill unrelated Python processes. |
+| **Stop-Charging.cmd** | Request a charging stop through the running backend, with persistent Smartfox Off; works with older backends and an unreachable vehicle. |
 | **Restart.cmd** | Restart the existing backend/profile and resume monitoring without sending another charging start. |
 | **Update.cmd** | Fetch and fast-forward after a safe backend shutdown, then offer a startup choice. |
 | **Setup-Network.cmd** | Configure optional HTTPS home network access, with or without a password. |
@@ -100,7 +101,13 @@ The **Use the last reported battery level** checkbox allows one explicit manual 
 
 **Retry start** requires fresh local readiness, no physical charging above 0.1 kW, available start/stop access and at least 30 seconds since the previous attempt. A newer non-charging report or ten minutes of unconfirmed outcome is also required. A new deliberate click sends one new start and preserves the existing target. Duplicate request IDs do not repeat commands. Starts are never automatically replayed, including after restart.
 
-**Stop** sends a vehicle stop and attempts the normal-mode return even if the cloud command fails. An existing automatic Off hold remains effective. Unknown stop outcomes can be retried only after newer CHARGING telemetry, with bounded attempts. A newer stopped report can confirm the stop without another command.
+**Stop** remains available for an active session even when the vehicle is unreachable, the key expired or the cloud command is blocked. It durably records the stop and requests verified local Smartfox **Off before any vehicle read or command**. Off is held until a newer stopped vehicle report permits the normal-mode return. A failed local request is not reported as stopped and is retried independently of cloud backoff. Unknown stop outcomes can be retried only after newer CHARGING telemetry, with bounded attempts. A newer stopped report can confirm the stop without another command.
+
+### Recovering an older backend with a disabled Stop button
+
+If the dashboard says the vehicle is unreachable while **Stop.cmd** says charging monitoring is active, extract the new package into a separate folder on the tablet. Do not start a second backend. Run **Stop-Charging.cmd** from that new folder; it uses the existing local backend on port 8765, requests persistent charger Off and a vehicle stop, then checks the stored stop intent and fresh local Off readback. It does not require the vehicle API key, kill a process or pretend that the vehicle confirmed the stop. For another local port use `Stop-Charging.cmd --port 8774`.
+
+After its Off confirmation, wait at least five seconds and run **Stop.cmd**. The backend independently checks current power and status before allowing exit. You can then run **Start.cmd** from the new folder or update the existing Git installation. The recovery command leaves the charger explicitly Off until A+ is deliberately selected or a new manual session is started. If any confirmation fails, check Smartfox and leave monitoring running.
 
 ## Home energy and outputs
 
@@ -123,7 +130,7 @@ The displayed time estimate uses **32.3 kWh usable capacity**, an assumed **90% 
 
 The backend keeps monitoring after the browser closes or the screen turns off. During an active session it requests Windows SystemRequired and ExecutionRequired, not DisplayRequired. It releases those requests when monitoring ends or the backend stops. Use mains power and suitable Windows sleep settings; explicit sleep, shutdown and platform power policies can still interrupt execution. No Windows service, scheduled startup or power-plan change is installed.
 
-**Stop.cmd** refuses to abandon an active charge. After an explicit stop it can close without waiting indefinitely for cloud confirmation only when at least five seconds have passed and a fresh local read confirms A+/Off, non-charging wallbox status and 0–0.1 kW. The session is marked explicitly closed, not falsely vehicle-confirmed. Old data, M+, errors or power flow block exit. A stored automatic Off hold is not silently released after restart.
+**Stop.cmd** refuses to abandon an active charge. After an explicit stop it can close without waiting indefinitely for cloud confirmation only when at least five seconds have passed and a fresh local read confirms the required mode, non-charging wallbox status and 0–0.1 kW. A guarded stop requires Off; an externally changed A+ is insufficient even at zero power. The session is marked explicitly closed, not falsely vehicle-confirmed. Old data, M+, errors or power flow block exit. A stored Off hold is not silently released after restart.
 
 **Restart.cmd** requires a persisted key if a key or active session exists. It saves the session and quota state, releases worker/lock/power handles and starts the same profile. A changed instance ID confirms restart. It never repeats a vehicle start. Reload an already open browser if needed.
 

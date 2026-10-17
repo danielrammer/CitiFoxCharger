@@ -53,6 +53,9 @@ class ChargingSession:
         value = copy.deepcopy(self.value)
         value["can_shutdown"] = not self.active or self.local_stop_allows_shutdown()
         web = self.service.cache.get("smartfox", {}).get("charger", {})
+        # A local stop must remain available when the vehicle/cloud is unreachable.
+        value["can_stop"] = bool(not self.service.stopping and self.web is not None and
+                                 (self.active or web.get("control_available") or self.service.can_command("stop")))
         retry = self.can_retry_start()
         value["can_retry_start"] = retry
         value["can_adjust_target"] = self.value.get("status") in ("monitoring", "paused", "interrupted") and not self.value.get("stop_requested", False)
@@ -90,7 +93,8 @@ class ChargingSession:
         charger = self.service.cache.get("smartfox",{}).get("charger",{})
         captured,power = timestamp(charger.get("read_at")),charger.get("power_kw")
         return bool(charger.get("available") and charger.get("telemetry_available") is True
-                    and charger.get("mode") in ("A+","OFF") and charger.get("status_code") in (0,1,2,5,6,255)
+                    and charger.get("mode") in (("OFF",) if self.value.get("stop_guard") else ("A+","OFF"))
+                    and charger.get("status_code") in (0,1,2,5,6,255)
                     and type(power) in (int,float) and math.isfinite(power) and 0<=power<=.1
                     and captured is not None and captured>=intent and -5<=time.time()-captured<=30)
 
@@ -212,7 +216,7 @@ class ChargingSession:
     def stop(self, request_id, automatic=False):
         # Durable stop intent before the upstream call. Also protects a user-requested stop below target.
         self.save(status="paused", stop_requested=True, awaiting_fresh_soc=False, stop_intent_epoch=time.time(),
-                  stop_guard=automatic or self.value.get("stop_guard", False),
+                  stop_guard=True,
                   vin=self.service.config.value["skoda"]["vin"], message="Requesting a stop.")
         if self.value.get("stop_guard"):
             # A+ can supply power according to schedules; secure the local stop before a cloud timeout.
@@ -220,25 +224,31 @@ class ChargingSession:
                 self.restore_auto()
             except SmartfoxControlError:
                 self.save(auto_restored=False)
+        failure = None
         try:
             result = self.service.command("stop", request_id)
             if result["status"] != "accepted":
                 raise IntegrationError("stop_unconfirmed", result["message"])
         except IntegrationError as error:
+            failure = error
             self.save(status="paused", stop_failures=self.value.get("stop_failures", 0) + 1,
                       last_stop_failure_epoch=time.time(), message="Stop is unconfirmed. Monitoring is waiting for new vehicle data.")
             self.next_attempt = time.monotonic() + 60
-            raise IntegrationError("stop_unconfirmed", str(error)) from None
         finally:
             # End M+ even if the cloud call is rejected, unavailable or rate limited.
             try:
                 self.restore_auto()
             except SmartfoxControlError:
                 self.save(auto_restored=False)
+        if failure is not None:
+            message = ("Smartfox is Off. Vehicle stop confirmation is pending." if self.value.get("auto_restored")
+                       else "Wallbox Off is unconfirmed. Please check charging.")
+            self.save(message=message)
+            raise IntegrationError("stop_unconfirmed", message) from None
         self.save(status="stop_pending", stop_id=request_id, stop_requested_at=result["requested_at"],
                   stop_requested_epoch=result["requested_epoch"],
                   message="Target reached. Charging is stopping." if automatic else "Charging is stopping.")
-        # Restore A+ immediately after accepted stop; completion still needs newer non-charging telemetry.
+        # Keep Off until newer non-charging telemetry confirms the vehicle stop.
         if not self.value.get("auto_restored"):
             self.save(message=f"Stop requested. Return to {self.normal_name} is not confirmed yet.")
         return self.state()

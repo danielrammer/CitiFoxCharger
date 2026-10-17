@@ -1,4 +1,4 @@
-# Validation report · 1.7.2
+# Validation report · 1.7.3
 
 Date: **17 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
@@ -6,7 +6,9 @@ Date: **17 October 2026**. Environment: Windows, Python 3.14. Device and vehicle
 
 The 1.6.2 update/window checkpoint passed **202 tests** and was pushed to the private repository before the English migration. Version 1.7.0 renames the Python package and command/document files, translates CLI/backend/documentation to English, retains an optional German/English browser view and adds explicit passwordless HTTPS setup. That release was pushed before the separate 1.7.1 light-theme contrast adjustment.
 
-The complete 1.7.2 offline suite passed **218 tests**. The prior 1.7.1 suite passed 208 tests. Version 1.7.2 adds the post-update startup choice and distinguishes browser startup from backend-only startup. Test coverage includes the following behavior; hardware limitations are separate.
+The complete 1.7.3 offline suite passed **230 tests**; the prior 1.7.2 suite passed 218 tests. The prior 1.7.1 suite passed 208 tests. Version 1.7.2 adds the post-update startup choice and distinguishes browser startup from backend-only startup. Test coverage includes the following behavior; hardware limitations are separate.
+
+Version 1.7.3 fixes a reported deadlock after the tablet slept on a low battery: the vehicle showed unreachable/unknown command outcome, the UI disabled Stop using cloud permissions, and backend shutdown required a stop intent. Local stop availability is now separate from cloud capability. Every stop secures Off before cloud access. Tests cover offline stop, failed local Off, mode changes, shutdown intent and no fabricated vehicle confirmation. The recovery command was also exercised against the actual 1.6.2 backend code with simulated devices: it secured Off, recorded the stop, passed the legacy shutdown guard and did not replay a start. The reported tablet itself remains unmodified until the user installs the package.
 
 ### Charging, profiles and lifecycle
 
@@ -17,7 +19,7 @@ The complete 1.7.2 offline suite passed **218 tests**. The prior 1.7.1 suite pas
 - Regression for 82% target with an old 86% report, including blocked/offline cloud access. Local Off is attempted before cloud stop and retried independently of cloud backoff.
 - Initial five-minute new-data deadline, bounded later data loss, maximum monitored report age, recovery and restart without extending deadlines.
 - Off hold until a newer non-future stopped report, resistance to external mode changes and preservation across explicit close/restart.
-- Exit guard requiring explicit stop, a settling period, fresh local A+/Off, non-charging status and at most 0.1 kW. No fabricated cloud confirmation.
+- Exit guard requiring explicit stop, a settling period, fresh local readback in the required mode (Off for a guarded stop), non-charging status and at most 0.1 kW. No fabricated cloud confirmation.
 - Persisted key requirement, cache/quota/session recovery, instance locking, same-profile restart and no device actions after shutdown intent.
 - Windows power requests with no display requirement and proper cleanup. Background startup and Brave/default-browser selection.
 - New profiles use the English folder; existing historical profiles retain their credentials and lock without movement or duplication.
@@ -55,3 +57,5 @@ The tablet network listener had not been set up, as confirmed by the user. A phy
 Preview uses fake hardware and an explicit TEST label. The new light theme was checked at 800 × 1280, 640 × 1024, 534 × 854 and 1280 × 800 without page overflow. English/German switching, translated backend status and target-save messages, number/date formatting, language persistence after reload and a target change during simulated charging were verified. Dark mode was checked separately at 640 × 1024. The browser reported no JavaScript errors. These checks must not be confused with a real charging session.
 
 Light mode now uses darker secondary text, stronger control borders, clearer status colours and readable disabled controls. Computed palette contrast ratios are 6.29:1 for secondary text on white, 5.80:1 on device tiles, 5.39:1 on the page background and 7.26:1 for the primary button text. These are checks of the listed colour pairs, not a complete accessibility certification. No charging, heating or polling behavior changed in the theme adjustment.
+
+The simulated 800 × 1280 browser check verified an unreachable vehicle with an enabled Stop button. Clicking Stop produced verified local Off at 0 kW, kept cloud confirmation pending, blocked A+/M+ during the hold and enabled backend exit after the existing settling/readback checks. The displayed normal-mode note identifies the Off hold. This is simulated UI evidence, not a change to the physical tablet.
