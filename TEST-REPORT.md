@@ -1,10 +1,10 @@
-# Validation report · 1.7.0
+# Validation report · 1.7.1
 
 Date: **17 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
 ## Existing baseline and new work
 
-The 1.6.2 update/window checkpoint passed **202 tests** and was pushed to the private repository before the English migration. Version 1.7.0 renames the Python package and command/document files, translates CLI/backend/documentation to English, retains an optional German/English browser view and adds explicit passwordless HTTPS setup.
+The 1.6.2 update/window checkpoint passed **202 tests** and was pushed to the private repository before the English migration. Version 1.7.0 renames the Python package and command/document files, translates CLI/backend/documentation to English, retains an optional German/English browser view and adds explicit passwordless HTTPS setup. That release was pushed before the separate 1.7.1 light-theme contrast adjustment.
 
 The complete offline suite passed **208 tests**. Test coverage includes the following behavior; hardware limitations are separate.
 
@@ -50,4 +50,6 @@ The tablet network listener had not been set up, as confirmed by the user. A phy
 
 ## Browser validation
 
-Preview uses fake hardware and an explicit TEST label. The earlier compact layout was checked at 800 × 1280, 640 × 1024, approximately 534 × 854 and 1280 × 800 without page overflow. The 1.7.0 preview verified English/German switching, translated backend status and target-save messages, number/date formatting, language persistence after reload and a target change during simulated charging. The browser reported no JavaScript errors. These checks must not be confused with a real charging session.
+Preview uses fake hardware and an explicit TEST label. The new light theme was checked at 800 × 1280, 640 × 1024, 534 × 854 and 1280 × 800 without page overflow. English/German switching, translated backend status and target-save messages, number/date formatting, language persistence after reload and a target change during simulated charging were verified. Dark mode was checked separately at 640 × 1024. The browser reported no JavaScript errors. These checks must not be confused with a real charging session.
+
+Light mode now uses darker secondary text, stronger control borders, clearer status colours and readable disabled controls. Computed palette contrast ratios are 6.29:1 for secondary text on white, 5.80:1 on device tiles, 5.39:1 on the page background and 7.26:1 for the primary button text. These are checks of the listed colour pairs, not a complete accessibility certification. No charging, heating or polling behavior changed in the theme adjustment.

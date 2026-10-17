@@ -55,3 +55,82 @@ button,a,input,select,summary{-webkit-tap-highlight-color:transparent}button,sum
 @media(orientation:portrait) and (min-width:480px) and (max-height:900px),(orientation:landscape) and (min-width:1000px) and (max-height:800px){
  .compact-energy .energy-ring{padding-bottom:0}
 }
+
+/* Higher contrast in light mode; shared layout and dark palette stay independent. */
+:root:not([data-theme=dark]) {
+  --ink: #173d2e;
+  --green: #0e6347;
+  --muted: #4f6559;
+  --line: #b4c5b9;
+  --paper: #e9efea;
+}
+:root:not([data-theme=dark]) .card { box-shadow: 0 2px 8px #163b2810; }
+:root:not([data-theme=dark]) :is(.nav,.eyebrow,.metric small,.mode-badge,
+  .target-heading label,.range-labels,.card-bottom,.normal-mode,footer,
+  .energy-ring small,.energy-ring>span,.device-detail,.device-status,.energy-time) {
+  color: var(--muted);
+}
+:root:not([data-theme=dark]) .nav.active {
+  background: #d5e6ce;
+  color: var(--ink);
+}
+:root:not([data-theme=dark]) :is(.power-reading,#monitoring-note) { color: #355c28; }
+:root:not([data-theme=dark]) :is(label,summary) { color: #3e5d49; }
+:root:not([data-theme=dark]) .badge {
+  color: #475f4b;
+  background: #edf2e8;
+  border-color: #adbf9f;
+}
+:root:not([data-theme=dark]) :is(.badge.good,.notice.success) {
+  color: #315625;
+  background: #e8f1df;
+  border-color: #98b37d;
+}
+:root:not([data-theme=dark]) :is(.badge.warn,.notice,.stale-consent) {
+  color: #725017;
+  background: #fff3da;
+  border-color: #bd9d5b;
+}
+:root:not([data-theme=dark]) .notice.error {
+  color: #8b3526;
+  background: #fcece6;
+  border-color: #c88875;
+}
+:root:not([data-theme=dark]) .operation-hint { color: #80531b; }
+:root:not([data-theme=dark]) .session-status { background: #e9f0e1; color: #3c5e2d; }
+:root:not([data-theme=dark]) .target-control { border-color: var(--line); }
+:root:not([data-theme=dark]) :is(.secondary,input:not([type=checkbox]):not([type=range]),select) {
+  background: #f7faf6;
+  color: var(--ink);
+  border-color: #7a9281;
+}
+:root:not([data-theme=dark]) .secondary:hover:not(:disabled) { background: #dfebdc; }
+:root:not([data-theme=dark]) button:disabled {
+  opacity: 1;
+  color: #526459;
+  background: #e3eae4;
+  border-color: #9dac9f;
+}
+:root:not([data-theme=dark]) select:disabled { opacity: 1; color: #526459; }
+:root:not([data-theme=dark]) .card-bottom button { color: var(--green); }
+:root:not([data-theme=dark]) .energy-device { background: #f3f7f0; border-color: #a5b9a8; }
+:root:not([data-theme=dark]) .energy-ring { border-color: #739b37; }
+:root:not([data-theme=dark]) .grid-ring { border-color: #337d9e; }
+:root:not([data-theme=dark]) .grid-ring.exporting { border-color: #a97525; }
+:root:not([data-theme=dark]) :is(.energy-icon,.device-icon) { stroke: #5b7362; }
+:root:not([data-theme=dark]) .energy-link:before { background: #5e8e9f; }
+:root:not([data-theme=dark]) .energy-link span { background: #147598; }
+:root:not([data-theme=dark]) .exporting .energy-link span { background: #9e6b1b; }
+:root:not([data-theme=dark]) :is(.device-dot,.status-dot) { background: #819586; }
+:root:not([data-theme=dark]) :is(.device-dot.on,.status-dot.charging) { background: #398042; }
+:root:not([data-theme=dark]) .battery { border-color: #819b64; background: #eef4e4; }
+:root:not([data-theme=dark]) .battery:after { background: #819b64; }
+:root:not([data-theme=dark]) .battery>div { background: #b5d66e; }
+:root:not([data-theme=dark]) .battery span { color: #3c641e; }
+:root:not([data-theme=dark]) .track { background: #dbe6cf; }
+:root:not([data-theme=dark]) .track>span { background: #729b37; }
+:root:not([data-theme=dark]) input[type=range]::-webkit-slider-runnable-track { background: #bccdab; }
+:root:not([data-theme=dark]) input[type=range]::-moz-range-track { background: #bccdab; }
+:root:not([data-theme=dark]) :is(button,a,input,select,summary):focus-visible {
+  outline-color: #0c6e51;
+}

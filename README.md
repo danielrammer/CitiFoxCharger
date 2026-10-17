@@ -1,8 +1,10 @@
-# CitiFoxCharger for Windows · 1.7.0
+# CitiFoxCharger for Windows · 1.7.1
 
 A local dashboard for a Škoda Citigo e iV and a SMARTFOX Pro 2 energy manager with a Charger Pro at charging point 1. The installed SMARTFOX profile is **EM3 00.01.16.08**, address **192.168.0.81**.
 
 Documentation, program filenames, command scripts and command-window messages are English. The browser interface offers **Deutsch / English** in **Settings → Appearance → Language**. The preference is saved in each browser. A German browser initially uses German; other browsers use English.
+
+Both light and dark appearance are available. The light palette uses darker labels and more distinct borders for better readability on the wall tablet.
 
 ## Installation and first start
 
