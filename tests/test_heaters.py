@@ -1,8 +1,8 @@
 import copy
 import unittest
 from urllib.parse import parse_qs,urlsplit
-from ladezentrale.config import DEFAULT
-from ladezentrale.smartfox_web import SmartfoxWeb,SmartfoxControlError
+from citifoxcharger.config import DEFAULT
+from citifoxcharger.smartfox_web import SmartfoxWeb,SmartfoxControlError
 from test_charging import xml
 
 

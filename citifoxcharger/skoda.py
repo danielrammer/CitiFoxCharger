@@ -37,12 +37,12 @@ def https_request(method, path, key):
     except urllib.error.HTTPError as error:
         response = error
     except (OSError, TimeoutError):
-        raise IntegrationError("network", "Škoda ist nicht erreichbar. Bei einem Befehl ist der Ausgang unbekannt.",
+        raise IntegrationError("network", "Škoda is unreachable. The outcome of a command is unknown.",
                                uncertain=method == "POST") from None
     with response:
         body = response.read(1024 * 1024 + 1)
         if len(body) > 1024 * 1024:
-            raise IntegrationError("protocol", "Škoda-Antwort ist zu groß.", uncertain=method == "POST")
+            raise IntegrationError("protocol", "The Škoda response is too large.", uncertain=method == "POST")
         return response.code, dict(response.headers.items()), body
 
 
@@ -81,14 +81,14 @@ class SkodaAdapter:
     def call(self, method, path, key):
         if self.clock() < self.blocked_until:
             wait = math.ceil(self.blocked_until - self.clock())
-            raise IntegrationError("rate_limit", f"Škoda-Abfragelimit: noch {wait} Sekunden warten.", wait)
+            raise IntegrationError("rate_limit", f"Škoda request limit: wait {wait} seconds.", wait)
         try:
             reserve = int(self.quota_remaining) <= 2
         except (ValueError, TypeError):
             reserve = False
         if method == "GET" and reserve and self.clock() < self.quota_reset_at:
             wait = math.ceil(self.quota_reset_at - self.clock())
-            raise IntegrationError("quota_reserved", "Die verbleibenden Škoda-Anfragen sind für Ladebefehle reserviert.", wait)
+            raise IntegrationError("quota_reserved", "Remaining Škoda requests are reserved for charging commands.", wait)
         status, headers, body = self.request(method, path, key)
         headers = {k.lower(): v for k, v in headers.items()}
         self.key_expires_at = headers.get("x-api-key-expires-at", self.key_expires_at)
@@ -101,12 +101,12 @@ class SkodaAdapter:
         if status == 429:
             wait = retry_seconds(headers.get("retry-after"))
             self.blocked_until = max(self.blocked_until, self.clock() + wait)
-            raise IntegrationError("rate_limit", "Škoda verlangt eine Abfragepause.", math.ceil(wait))
+            raise IntegrationError("rate_limit", "Škoda requires a request cooldown.", math.ceil(wait))
         messages = {
-            401: ("auth", "API-Schlüssel ungültig oder abgelaufen. In MyŠkoda erneuern."),
-            403: ("forbidden", "API-Schlüssel oder Benutzer darf diese FIN/Aktion nicht verwenden."),
-            404: ("not_found", "Fahrzeug über diese API nicht gefunden. Citigo-Zugriff nicht bestätigt."),
-            422: ("unsupported", "Fahrzeug unterstützt diesen Befehl nicht oder die Funktion ist deaktiviert."),
+            401: ("auth", "The API key is invalid or expired. Renew it in MyŠkoda."),
+            403: ("forbidden", "The API key or user is not allowed to access this VIN/action."),
+            404: ("not_found", "Vehicle not found through this API. Citigo access is unconfirmed."),
+            422: ("unsupported", "The vehicle does not support this command or the function is disabled."),
         }
         expected = 200 if method == "GET" else 202
         if status != expected:
@@ -121,32 +121,32 @@ class SkodaAdapter:
                 raise ValueError()
             return data
         except (ValueError, UnicodeError):
-            raise IntegrationError("protocol", "Ungültige Škoda-JSON-Antwort.") from None
+            raise IntegrationError("protocol", "Invalid Škoda JSON response.") from None
 
     def read(self, config, key):
         if not key or not config["vin"]:
             return {"available": False, "code": "not_configured", "soc": None,
-                    "message": "FIN und API-Schlüssel einrichten. Citigo-Kompatibilität noch ungeprüft.",
+                    "message": "Configure the VIN and API key. Citigo compatibility is not yet verified.",
                     "operations": [], "stale": True}
         vin = config["vin"]
         data = self.call("GET", f"/api/v1/vehicles/{vin}?include=charging,operations", key)
         vehicle = data.get("vehicle")
         if not isinstance(vehicle, dict) or vehicle.get("vin") != vin:
-            raise IntegrationError("protocol", "Škoda-Antwort gehört nicht zur konfigurierten FIN.")
+            raise IntegrationError("protocol", "The Škoda response does not belong to the configured VIN.")
         errors = data.get("errors", [])
         if not isinstance(errors, list) or any(not isinstance(e, dict) for e in errors):
-            raise IntegrationError("protocol", "Ungültige Škoda-Fehlerliste.")
+            raise IntegrationError("protocol", "Invalid Škoda error list.")
         codes = [e.get("type") for e in errors if isinstance(e.get("type"), str)]
         charging = vehicle.get("charging", {})
         operations = vehicle.get("operations", [])
         if not isinstance(charging, dict) or not isinstance(operations, list):
-            raise IntegrationError("protocol", "Ungültiges Škoda-Fahrzeugformat.")
+            raise IntegrationError("protocol", "Invalid Škoda vehicle format.")
         status = charging.get("status", {})
         if not isinstance(status, dict) or not isinstance(status.get("battery", {}), dict):
-            raise IntegrationError("protocol", "Ungültiges Škoda-Ladeformat.")
+            raise IntegrationError("protocol", "Invalid Škoda charging format.")
         soc = status.get("battery", {}).get("stateOfChargeInPercent")
         if soc is not None and (type(soc) is not int or not 0 <= soc <= 100):
-            raise IntegrationError("protocol", "Škoda meldet einen ungültigen Akkustand.")
+            raise IntegrationError("protocol", "Škoda reported an invalid battery level.")
         captured = charging.get("carCapturedTimestamp")
         captured_epoch = timestamp(captured)
         age = time.time() - captured_epoch if captured_epoch is not None else None
@@ -155,15 +155,15 @@ class SkodaAdapter:
         affected = any(c.startswith(("CHARGING_", "OPERATIONS_")) for c in codes)
         if affected or not charging:
             supported = []
-        message = "Fahrzeugzugriff bestätigt; Funktionen anhand der FIN ermittelt."
+        message = "Vehicle access confirmed; capabilities discovered for this VIN."
         if not charging:
-            message = "Keine Ladedaten. Citigo-Unterstützung über diese API nicht bestätigt."
+            message = "No charging data. Citigo support through this API is unconfirmed."
         elif stale:
-            message = "Fahrzeugdaten veraltet oder ohne gültigen Fahrzeugzeitstempel. Steuerung gesperrt."
+            message = "Vehicle data are stale or have no valid vehicle timestamp. Starting is blocked."
         elif not supported:
-            message = "Ladedaten vorhanden, aber Start/Stopp nicht als Fahrzeugfunktion bestätigt."
+            message = "Charging data exist, but start/stop capability is not confirmed."
         if affected:
-            message = "Ladefunktion oder Befehlsliste ist nicht verfügbar, nicht unterstützt oder deaktiviert."
+            message = "Charging data or the command list are unavailable, unsupported or disabled."
         state = status.get("state")
         return {"available": bool(charging) and not affected, "code": "partial" if codes else "ok",
                 "message": message, "soc": soc, "state": state if isinstance(state, str) else None,
@@ -175,5 +175,5 @@ class SkodaAdapter:
 
     def command(self, action, config, key):
         if action not in ("start", "stop"):
-            raise ValueError("Unbekannter Fahrzeugbefehl.")
+            raise ValueError("Unknown vehicle command.")
         self.call("POST", f"/api/v1/vehicles/{config['vin']}/charging/{action}", key)

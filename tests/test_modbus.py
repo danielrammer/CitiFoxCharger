@@ -3,8 +3,8 @@ import socket
 import struct
 import threading
 import unittest
-from ladezentrale.config import DEFAULT
-from ladezentrale.modbus import ModbusReader, ModbusError, SmartfoxAdapter, unsigned
+from citifoxcharger.config import DEFAULT
+from citifoxcharger.modbus import ModbusReader, ModbusError, SmartfoxAdapter, unsigned
 
 
 class ModbusTests(unittest.TestCase):
@@ -57,7 +57,7 @@ class ModbusTests(unittest.TestCase):
                     self.exchange(response)
 
     def test_exception(self):
-        with self.assertRaisesRegex(ModbusError, "Ausnahme 2"):
+        with self.assertRaisesRegex(ModbusError, "exception 2"):
             self.exchange(lambda r: self.frame(r, b"\x83\x02"))
 
     def test_short_wrong_length_and_wrong_function(self):

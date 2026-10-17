@@ -19,38 +19,38 @@ DEFAULT = {
 
 def validate(value):
     if not isinstance(value, dict) or set(value) != set(DEFAULT):
-        raise ValueError("Konfiguration muss smartfox und skoda enthalten.")
+        raise ValueError("Configuration must contain smartfox and skoda.")
     result = copy.deepcopy(value)
     for section, template in DEFAULT.items():
         if not isinstance(result[section], dict) or set(result[section]) != set(template):
-            raise ValueError("Unbekannte oder fehlende Konfigurationsfelder.")
+            raise ValueError("Unknown or missing configuration fields.")
     sf, car = result["smartfox"], result["skoda"]
     try:
         ip = ipaddress.IPv4Address(sf["host"])
     except (ValueError, TypeError):
-        raise ValueError("Smartfox benötigt eine private IPv4-Adresse.") from None
+        raise ValueError("Smartfox requires a private IPv4 address.") from None
     if not any(ip in ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")):
-        raise ValueError("Smartfox muss im privaten lokalen Netz liegen.")
+        raise ValueError("Smartfox must be on the private local network.")
     for section, field, low, high in [
         (sf, "port", 1, 65535), (sf, "unit_id", 1, 247),
         (sf, "poll_seconds", 5, 3600), (sf, "timeout_seconds", 1, 10),
         (car, "poll_seconds", 60, 3600), (car, "stale_seconds", 300, 86400),
     ]:
         if type(section[field]) is not int or not low <= section[field] <= high:
-            raise ValueError(f"Ungültiger Wert für {field} ({low}–{high}).")
+            raise ValueError(f"Invalid value for {field} ({low}–{high}).")
     if sf["profile"] not in ("observed", "manufacturer_v22e"):
-        raise ValueError("Unbekanntes Smartfox-Leseprofil.")
+        raise ValueError("Unknown Smartfox read profile.")
     if sf["word_order"] not in ("big", "little"):
-        raise ValueError("Ungültige Wortreihenfolge.")
+        raise ValueError("Invalid word order.")
     if type(sf["interpretation_confirmed"]) is not bool:
         raise ValueError("interpretation_confirmed muss boolesch sein.")
     if not isinstance(sf["firmware"], str) or len(sf["firmware"]) > 80:
-        raise ValueError("Ungültige Firmware-Bezeichnung.")
+        raise ValueError("Invalid firmware identifier.")
     if not isinstance(car["vin"], str):
-        raise ValueError("Ungültige FIN.")
+        raise ValueError("Invalid VIN.")
     car["vin"] = car["vin"].strip().upper()
     if car["vin"] and not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", car["vin"]):
-        raise ValueError("Die FIN muss aus 17 gültigen Zeichen bestehen.")
+        raise ValueError("The VIN must contain 17 valid characters.")
     return result
 
 

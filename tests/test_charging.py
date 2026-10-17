@@ -6,14 +6,14 @@ import time
 import unittest
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from ladezentrale.charging import ChargingSession
-from ladezentrale.config import ConfigStore, DEFAULT
-from ladezentrale.secrets_store import SecretStore
-from ladezentrale.service import Service
-from ladezentrale.skoda import IntegrationError, SkodaAdapter
-from ladezentrale.smartfox_web import SmartfoxWeb, SmartfoxControlError
-from ladezentrale.instance import InstanceLock
-from ladezentrale.power import PowerGuard
+from citifoxcharger.charging import ChargingSession
+from citifoxcharger.config import ConfigStore, DEFAULT
+from citifoxcharger.secrets_store import SecretStore
+from citifoxcharger.service import Service
+from citifoxcharger.skoda import IntegrationError, SkodaAdapter
+from citifoxcharger.smartfox_web import SmartfoxWeb, SmartfoxControlError
+from citifoxcharger.instance import InstanceLock
+from citifoxcharger.power import PowerGuard
 from test_power_background import FakePower
 
 VIN = "TMBJB9NY5RF999999"
@@ -130,20 +130,20 @@ class FakeWeb:
     def set_mode(self, config, mode):
         if self.mode != mode:
             if not self.allow_control or (mode == "M+" and self.fail_mplus):
-                raise SmartfoxControlError("Moduswechsel gesperrt")
+                raise SmartfoxControlError('Mode change blocked')
             self.effects.append(mode)
             self.mode = mode
         return self.read(config)
     def wait_ready(self, config):
         self.ready_calls += 1
         if self.fail_ready:
-            raise SmartfoxControlError("Ladebereitschaft fehlt")
+            raise SmartfoxControlError("Ready to chargeschaft fehlt")
         return self.read(config)
     def set_charger_mode(self,config,mode):
         return self.set_mode(config,mode)
     def set_heater_mode(self,config,device,mode):
         self.effects.append(device+"-"+mode)
-        if self.fail_heater: raise SmartfoxControlError("Heizstab-Modus unbestätigt")
+        if self.fail_heater: raise SmartfoxControlError('Heater mode unconfirmed')
         return self.read(config)
 
 
@@ -373,7 +373,7 @@ class ChargingTests(unittest.TestCase):
         self.service.charging.next_attempt=0
         self.service.charging.tick()
         self.assertEqual(self.effects,['M+','start','OFF','stop'])
-        self.assertIn('ohne aktuelle Fahrzeugdaten',self.service.charging.value['stop_reason'])
+        self.assertIn('without current vehicle data',self.service.charging.value['stop_reason'])
 
     def test_configured_long_display_freshness_does_not_extend_charging_blindly(self):
         self.force(82)
@@ -647,7 +647,7 @@ class ChargingTests(unittest.TestCase):
         self.assertEqual(self.effects,["M+","start","OFF","stop"])
         self.assertEqual(result["charging"]["status"],"stop_pending")
         self.assertFalse(result["charging"]["awaiting_fresh_soc"])
-        self.assertIn("Fahrzeugstopp wird noch geprüft",result["charging"]["message"])
+        self.assertIn("Vehicle stop confirmation is pending",result["charging"]["message"])
         self.service.charging.next_attempt=0
         self.service.status()
         self.assertEqual(self.effects.count("stop"),1)
@@ -694,7 +694,7 @@ class ChargingTests(unittest.TestCase):
         result=self.service.status()
         self.assertEqual(self.effects,["M+","start","OFF"])
         self.assertTrue(result["charging"]["stop_requested"])
-        self.assertIn("Fahrzeugstopp wird noch geprüft",result["charging"]["message"])
+        self.assertIn("Vehicle stop confirmation is pending",result["charging"]["message"])
 
     def test_offline_vehicle_at_deadline_still_ends_mplus(self):
         self.stale_start()
@@ -711,7 +711,7 @@ class ChargingTests(unittest.TestCase):
         self.web.allow_control=False
         result=self.service.status()
         self.assertFalse(result["charging"]["auto_restored"])
-        self.assertIn("Wallbox-Aus ist noch unbestätigt",result["charging"]["message"])
+        self.assertIn("Wallbox Off is unconfirmed",result["charging"]["message"])
         self.web.allow_control=True
         self.service.charging.next_attempt=0
         result=self.service.status()
@@ -857,7 +857,7 @@ class ChargingTests(unittest.TestCase):
         self.assertEqual(result["charging"]["status"],"complete")
         self.assertEqual(self.effects,["M+","start","OFF","stop"])
         self.assertEqual(self.web.mode,"OFF")
-        self.assertIn("Aus",result["charging"]["message"])
+        self.assertIn("Off",result["charging"]["message"])
 
     def test_m_plus_requires_monitored_target_and_active_change_never_restarts_car(self):
         with self.assertRaises(IntegrationError):self.service.set_charger_mode("M+","charger-mode-test-0001")
@@ -900,7 +900,7 @@ class ChargingTests(unittest.TestCase):
         self.assertTrue(result["charging"]["normalization_pending"])
         self.assertEqual(self.effects, [])
 
-    def test_fin_bound_session_never_controls_another_car(self):
+    def test_vin_bound_session_never_controls_another_car(self):
         self.force()
         self.config.value["skoda"]["vin"] = "TMBJB9NY5RF999998"
         self.service.charging.next_attempt = 0

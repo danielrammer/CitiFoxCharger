@@ -9,11 +9,11 @@ import unittest
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from unittest.mock import patch
-from ladezentrale.config import ConfigStore, DEFAULT, validate
-from ladezentrale.secrets_store import SecretStore
-from ladezentrale.server import LocalServer
-from ladezentrale.service import Service
-from ladezentrale.skoda import SkodaAdapter, IntegrationError
+from citifoxcharger.config import ConfigStore, DEFAULT, validate
+from citifoxcharger.secrets_store import SecretStore
+from citifoxcharger.server import LocalServer
+from citifoxcharger.service import Service
+from citifoxcharger.skoda import SkodaAdapter, IntegrationError
 
 VIN = "TMBJB9NY5RF999999"
 KEY = "local-test-api-key"
@@ -160,7 +160,7 @@ class ServiceTests(unittest.TestCase):
     def test_upstream_read_failure_retains_old_soc_marked_stale(self):
         self.service.status()
         self.service.next_due["skoda"] = 0
-        def offline(*args): raise IntegrationError("auth", "Schlüssel abgelaufen")
+        def offline(*args): raise IntegrationError("auth", "Key expired")
         self.adapter.request = offline
         result = self.service.status()
         self.assertEqual(result["skoda"]["soc"], 50)

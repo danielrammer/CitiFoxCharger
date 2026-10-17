@@ -7,7 +7,7 @@ rate-limits.json
 vehicle-cache.json
 network.json
 network/
-CitiFoxCharger-Heimnetz.cer
+CitiFoxCharger-Home-Network.cer
 *.tmp
 charging-session.json
 .instance.lock
@@ -17,4 +17,4 @@ brave-profile/
 !.env.example
 *.log
 *.zip
-CitiFoxCharger-Diagnose.json
+CitiFoxCharger-Diagnostics.json

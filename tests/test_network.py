@@ -12,11 +12,11 @@ from datetime import datetime,timezone,timedelta
 from pathlib import Path
 from unittest.mock import patch
 from contextlib import redirect_stdout
-from ladezentrale.config import ConfigStore
-from ladezentrale.network import NetworkAuth,ITERATIONS,password_record,private_host,read_network,tls_context,validate_network
-from ladezentrale.secrets_store import SecretStore
-from ladezentrale.server import LocalServer,make_server
-from ladezentrale.service import Service
+from citifoxcharger.config import ConfigStore
+from citifoxcharger.network import NetworkAuth,ITERATIONS,password_record,private_host,read_network,tls_context,validate_network
+from citifoxcharger.secrets_store import SecretStore
+from citifoxcharger.server import LocalServer,make_server
+from citifoxcharger.service import Service
 from test_service_server import FakeSmartfox
 
 PASSWORD='only-for-fake-network-tests'
@@ -32,6 +32,16 @@ def configuration():
 
 
 class NetworkValidationTests(unittest.TestCase):
+    def test_passwordless_mode_requires_explicit_configuration(self):
+        legacy=configuration()
+        self.assertEqual(NetworkAuth(legacy).check(None,'client'),401)
+        open_config={**legacy,'authentication':'none','salt':None,'password_hash':None,'iterations':0}
+        self.assertEqual(validate_network(open_config),open_config)
+        self.assertEqual(NetworkAuth(open_config).check(None,'client'),200)
+        for change in ({'authentication':'other'},{'authentication':None},{'iterations':False},
+                       {'password_hash':'x'*64},{'salt':'0'*32}):
+            with self.subTest(change=change),self.assertRaises(ValueError):validate_network({**open_config,**change})
+
     def test_only_concrete_private_ipv4_and_hashed_long_password(self):
         self.assertEqual(private_host('192.168.0.123'),'192.168.0.123')
         for host in ('0.0.0.0','127.0.0.1','8.8.8.8','::','tablet.local'):
@@ -66,8 +76,8 @@ class NetworkValidationTests(unittest.TestCase):
         self.assertNotIn(PASSWORD,str(auth.accepted))
 
     def test_unicode_password_and_malformed_basic_auth(self):
-        auth=NetworkAuth(password_record('fuer-tests-äöü-123'))
-        self.assertEqual(auth.check(credentials('fuer-tests-äöü-123'),'client'),200)
+        auth=NetworkAuth(password_record('unicode-tests-äöü-123'))
+        self.assertEqual(auth.check(credentials('unicode-tests-äöü-123'),'client'),200)
         for header in ('Bearer token','Basic ###','Basic '+base64.b64encode(b'no-colon').decode()):
             self.assertEqual(auth.check(header,'other'),401)
 
@@ -85,7 +95,7 @@ class NetworkHttpsTests(unittest.TestCase):
         create_certificate(cls.material.name,'127.0.0.1')
         cls.tls=tls_context(cls.material.name)
         cls.client_tls=ssl.create_default_context()
-        root=Path(cls.material.name,'network/CitiFoxCharger-Heimnetz.cer').read_bytes()
+        root=Path(cls.material.name,'network/CitiFoxCharger-Home-Network.cer').read_bytes()
         cls.client_tls.load_verify_locations(cadata=ssl.DER_cert_to_PEM_cert(root))
 
     @classmethod
@@ -119,8 +129,25 @@ class NetworkHttpsTests(unittest.TestCase):
         self.assertFalse(list(Path(self.material.name).rglob('*.key.tmp')))
         self.assertNotIn(b'PRIVATE KEY',Path(self.material.name,'network/server-key.dpapi').read_bytes())
 
+    def test_passwordless_https_retains_remote_permissions_session_origin_and_csrf(self):
+        config={**configuration(),'authentication':'none','salt':None,'password_hash':None,'iterations':0}
+        self.server.network_auth=NetworkAuth(validate_network(config))
+        for path in ('/','/api/session','/health','/api/status'):
+            self.assertEqual(self.call(path,Authorization='')[0],200)
+        status,_,headers=self.call('/api/status',Authorization='',Cookie='')
+        self.assertEqual(status,401)
+        self.assertNotIn('WWW-Authenticate',headers)
+        self.assertEqual(self.call('/api/refresh',{},Authorization='',Origin='https://other.example')[0],403)
+        self.assertEqual(self.call('/api/refresh',{},Authorization='',**{'X-CSRF-Token':'wrong'})[0],403)
+        for path in ('/api/key','/api/config','/api/app/quit','/api/app/restart'):
+            self.assertEqual(self.call(path,{},Authorization='')[0],403)
+        config=json.loads(self.call('/api/config',Authorization='')[1])
+        self.assertFalse(config['access']['local_admin'])
+        with patch.object(self.service,'refresh_now',return_value={'message':'queried'}):
+            self.assertEqual(self.call('/api/refresh',{},Authorization='')[0],200)
+
     def test_entire_site_requires_auth_even_static_session_and_health(self):
-        for path in ('/','/app.js','/api/session','/health','/api/status'):
+        for path in ('/','/app.js','/i18n.js','/api/session','/health','/api/status'):
             status,body,headers=self.call(path,Authorization='')
             self.assertEqual(status,401)
             self.assertIn('WWW-Authenticate',headers)
@@ -163,6 +190,19 @@ class NetworkHttpsTests(unittest.TestCase):
 
 
 class NetworkStartupTests(unittest.TestCase):
+    def test_empty_setup_password_creates_explicit_passwordless_configuration(self):
+        import setup_network
+        with tempfile.TemporaryDirectory() as directory:
+            with patch('sys.argv',['setup_network.py','--data-dir',directory]),patch.object(setup_network,'LocalControl') as control,patch('builtins.input',return_value='192.168.0.123'),patch.object(setup_network.getpass,'getpass',return_value='') as password,patch.object(setup_network,'create_certificate',return_value=((datetime.now(timezone.utc)+timedelta(days=730)).isoformat(),'public-test-fingerprint')):
+                control.return_value.health.return_value=None
+                control.return_value.request.side_effect=[{}, {'network':{'enabled':True,'authentication':'none'}}]
+                control.return_value.action.return_value='restart confirmed'
+                with redirect_stdout(io.StringIO()):self.assertEqual(setup_network.main(),0)
+                config=read_network(directory)
+                self.assertEqual(config['authentication'],'none')
+                self.assertIsNone(config['password_hash'])
+                password.assert_called_once()
+
     def test_local_setup_stores_only_a_hash_and_requires_positive_listener_confirmation(self):
         import setup_network
         with tempfile.TemporaryDirectory() as directory:
@@ -200,7 +240,7 @@ class NetworkStartupTests(unittest.TestCase):
                 try:
                     self.assertEqual(server.server_address[0],'127.0.0.1')
                     self.assertFalse(server.service.network['enabled'])
-                    self.assertIn('Lokale Überwachung läuft weiter',server.service.network['message'])
+                    self.assertIn('Local monitoring continues',server.service.network['message'])
                 finally:server.server_close()
 
 

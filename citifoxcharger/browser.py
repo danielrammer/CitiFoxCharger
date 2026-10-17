@@ -30,6 +30,6 @@ def open_dashboard(url, browser="brave", fullscreen=False):
         except OSError:
             pass
     if browser == "brave":
-        print("Brave nicht verfügbar. Öffne den Standardbrowser; Vollbild gegebenenfalls mit F11.")
+        print("Brave is unavailable. Opening the default browser; press F11 for full screen if needed.")
     webbrowser.open(url, new=1)
     return "default"

@@ -3,12 +3,10 @@ setlocal
 cd /d "%~dp0"
 py -3 -c "import sys" >nul 2>nul
 if %errorlevel% equ 0 (
-  py -3 setup_network.py %*
+  py -3 diagnostics.py %*
 ) else (
-  python setup_network.py %*
+  python diagnostics.py %*
 )
 set "citifox_result=%errorlevel%"
-echo.
-echo Zum Schliessen eine Taste druecken.
-pause >nul
+pause
 exit /b %citifox_result%

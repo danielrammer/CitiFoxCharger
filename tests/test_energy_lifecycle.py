@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from ladezentrale.lifecycle import LocalControl, ControlError, BackendUnavailable
-from ladezentrale.smartfox_energy import energy_display, quantity
+from citifoxcharger.lifecycle import LocalControl, ControlError, BackendUnavailable
+from citifoxcharger.smartfox_energy import energy_display, quantity
 
 
 class EnergyTests(unittest.TestCase):
@@ -77,40 +77,40 @@ class LifecycleTests(unittest.TestCase):
         control=LocalControl(8765)
         control.health=MagicMock(side_effect=[{"app":"CitiFoxCharger","instance_id":"a"},None])
         control.request=MagicMock(side_effect=[{"csrf":"test-csrf"},{"message":"ok"}])
-        self.assertIn("beendet",control.action("stop",Path("unused"),8765))
+        self.assertIn("stopped",control.action("stop",Path("unused"),8765))
         self.assertEqual(control.request.call_args_list[-1].args,("/api/app/quit",{},"test-csrf"))
 
     def test_restart_waits_for_new_instance_and_never_sends_charging_commands(self):
         control=LocalControl(8765)
         control.health=MagicMock(side_effect=[{"instance_id":"old"},None,{"instance_id":"new"}])
         control.request=MagicMock(side_effect=[{"csrf":"test-csrf"},{}])
-        with patch("ladezentrale.lifecycle.time.sleep"):
+        with patch("citifoxcharger.lifecycle.time.sleep"):
             message=control.action("restart",Path("unused"),8765,no_browser=True)
-        self.assertIn("kein neuer Ladestart",message)
+        self.assertIn("no new charging start",message)
         self.assertEqual([c.args[0] for c in control.request.call_args_list],["/api/session","/api/app/restart"])
 
     def test_shutdown_waits_through_temporarily_bound_unresponsive_port(self):
         control=LocalControl(8765)
         control.health=MagicMock(side_effect=[{"instance_id":"old"},BackendUnavailable("closing"),None])
         control.request=MagicMock(side_effect=[{"csrf":"test"},{}])
-        with patch("ladezentrale.lifecycle.time.sleep"):
-            self.assertIn("beendet",control.action("stop",Path("unused"),8765))
+        with patch("citifoxcharger.lifecycle.time.sleep"):
+            self.assertIn("stopped",control.action("stop",Path("unused"),8765))
 
     def test_rejected_stop_is_not_forced(self):
         control=LocalControl(8765)
         control.health=MagicMock(return_value={"instance_id":"a"})
-        control.request=MagicMock(side_effect=[{"csrf":"test"},ControlError("Überwachung läuft")])
-        with self.assertRaisesRegex(ControlError,"Überwachung"):
+        control.request=MagicMock(side_effect=[{"csrf":"test"},ControlError("Monitoring active")])
+        with self.assertRaisesRegex(ControlError,"Monitoring"):
             control.action("stop",Path("unused"),8765)
 
     def test_stopped_backend_is_a_successful_noop(self):
         control=LocalControl(8765)
         control.health=MagicMock(return_value=None)
         control.request=MagicMock()
-        self.assertIn("bereits beendet",control.action("stop",Path("unused"),8765))
+        self.assertIn("already stopped",control.action("stop",Path("unused"),8765))
         control.request.assert_not_called()
 
-    @patch("ladezentrale.lifecycle.urllib.request.build_opener")
+    @patch("citifoxcharger.lifecycle.urllib.request.build_opener")
     def test_foreign_process_is_never_stopped(self,opener):
         response=opener.return_value.open.return_value.__enter__.return_value
         response.read.return_value=b'{"app":"Another app"}'

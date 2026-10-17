@@ -19,6 +19,7 @@ from . import __version__
 
 STATIC = Path(__file__).with_name("web")
 FILES = {"/": ("index.html", "text/html; charset=utf-8"),
+         "/i18n.js": ("i18n.js", "text/javascript; charset=utf-8"),
          "/app.js": ("app.js", "text/javascript; charset=utf-8"),
          "/style.css": ("style.css", "text/css; charset=utf-8")}
 
@@ -29,10 +30,10 @@ class LocalServer(ThreadingHTTPServer):
 
     def __init__(self, port, service, *, address="127.0.0.1", network_auth=None, tls=None):
         if bool(network_auth) != bool(tls):
-            raise ValueError("Netzwerkzugriff erfordert Anmeldung und HTTPS gemeinsam.")
+            raise ValueError("Network access requires HTTPS and a configured access policy.")
         if address != "127.0.0.1":
             private_host(address)
-            if not network_auth:raise ValueError("Kein ungeschützter Netzwerkzugriff.")
+            if not network_auth:raise ValueError("Unprotected network access is not allowed.")
         self.network_auth,self.tls = network_auth,tls
         self.scheme = "https" if tls else "http"
         self.remote_server,self.remote_thread = None,None
@@ -107,7 +108,7 @@ class Handler(BaseHTTPRequestHandler):
         if cookie:
             secure = "; Secure" if self.server.tls else ""
             self.send_header("Set-Cookie", f"lz_session={self.server.session}; HttpOnly; SameSite=Strict; Path=/{secure}")
-        if self.server.network_auth and code == 401:
+        if self.server.network_auth and self.server.network_auth.config.get('authentication','password') != 'none' and code == 401:
             self.send_header("WWW-Authenticate", 'Basic realm="CitiFoxCharger", charset="UTF-8"')
         if self.server.network_auth and code == 429:
             self.send_header("Retry-After", "60")
@@ -117,24 +118,24 @@ class Handler(BaseHTTPRequestHandler):
     def valid_request(self, mutation=False):
         host = self.headers.get("Host", "")
         if host not in self.server.hosts:
-            self.reply(403, {"error": "Host nicht erlaubt."})
+            self.reply(403, {"error": "Host is not allowed."})
             return False
         origin = self.headers.get("Origin")
         if (origin and origin != f"{self.server.scheme}://{host}") or (mutation and origin != f"{self.server.scheme}://{host}"):
-            self.reply(403, {"error": "Anfrage stammt nicht aus der lokalen Oberfläche."})
+            self.reply(403, {"error": "The request did not originate from this dashboard."})
             return False
         if self.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "none"):
-            self.reply(403, {"error": "Fremde Webseite darf nicht zugreifen."})
+            self.reply(403, {"error": "Access from another website is not allowed."})
             return False
         if self.server.network_auth:
             if self.client_address[0] != "127.0.0.1":
                 try:private_host(self.client_address[0])
                 except ValueError:
-                    self.reply(403,{"error":"Nur private Netzwerkgeräte sind zugelassen."})
+                    self.reply(403,{"error":"Only private network devices are allowed."})
                     return False
             code = self.server.network_auth.check(self.headers.get("Authorization"),self.client_address[0])
             if code != 200:
-                self.reply(code,{"error":"Netzwerkanmeldung erforderlich." if code==401 else "Zu viele Anmeldeversuche. Eine Minute warten."})
+                self.reply(code,{"error":"Network authentication is required." if code==401 else "Too many sign-in attempts. Wait one minute."})
                 return False
         return True
 
@@ -148,14 +149,14 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, TypeError):
             valid = False
         if not valid:
-            self.reply(401, {"error": "Lokale Sitzung abgelaufen. Seite neu laden."})
+            self.reply(401, {"error": "Local session expired. Reload the page."})
             return False
         try:
             csrf_valid = hmac.compare_digest(self.headers.get("X-CSRF-Token", ""), self.server.csrf)
         except TypeError:
             csrf_valid = False
         if mutation and not csrf_valid:
-            self.reply(403, {"error": "Ungültiger Sitzungsschutz. Seite neu laden."})
+            self.reply(403, {"error": "Invalid session protection. Reload the page."})
             return False
         return True
 
@@ -184,9 +185,9 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 self.reply(200, service.status())
             except Exception:
-                self.reply(500, {"error": "Interner Lesefehler. Konfiguration und Verbindungen prüfen."})
+                self.reply(500, {"error": "Internal read error. Check configuration and connections."})
         else:
-            self.reply(404, {"error": "Nicht gefunden."})
+            self.reply(404, {"error": "Not found."})
 
     def do_POST(self):
         if not self.valid_request(mutation=True) or not self.authenticated(mutation=True):
@@ -194,101 +195,101 @@ class Handler(BaseHTTPRequestHandler):
         remote_actions = {"/api/refresh","/api/charging/start","/api/charging/stop","/api/charging/target",
                           "/api/smartfox/heater","/api/smartfox/charger-mode"}
         if self.server.network_auth and urlsplit(self.path).path not in remote_actions:
-            self.reply(403,{"error":"Gerätezugang und Backend bitte direkt am Tablet einrichten."})
+            self.reply(403,{"error":"Configure device access and the backend directly on the tablet."})
             return
         if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
-            self.reply(415, {"error": "JSON erforderlich."})
+            self.reply(415, {"error": "JSON is required."})
             return
         try:
             if self.headers.get("Transfer-Encoding"):
-                raise ValueError("Transfer-Encoding ist nicht erlaubt.")
+                raise ValueError("Transfer-Encoding is not allowed.")
             length = int(self.headers.get("Content-Length", "0"))
             if not 1 <= length <= 16384:
-                raise ValueError("Ungültige Nachrichtengröße.")
+                raise ValueError("Invalid message size.")
             self.body_consumed = True
             data = json.loads(self.rfile.read(length))
             if not isinstance(data, dict):
-                raise ValueError("JSON-Objekt erforderlich.")
+                raise ValueError("A JSON object is required.")
             path = urlsplit(self.path).path
             service = self.server.service
             if path == "/api/app/restart":
                 if data:
-                    raise ValueError("Keine Parameter erforderlich.")
+                    raise ValueError("No parameters are required.")
                 service.prepare_restart()
                 self.server.restart_requested = True
-                self.reply(200, {"message":"CitiFoxCharger startet neu; kein neuer Fahrzeugstart."})
+                self.reply(200, {"message":"CitiFoxCharger is restarting; no new vehicle start."})
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
                 return
             if path == "/api/app/quit":
                 if data:
-                    raise ValueError("Keine Parameter erforderlich.")
+                    raise ValueError("No parameters are required.")
                 service.prepare_shutdown()
-                self.reply(200, {"message": "CitiFoxCharger wird beendet. Es läuft keine Ladeüberwachung mehr."})
+                self.reply(200, {"message": "CitiFoxCharger is stopping. No charging monitoring remains active."})
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
                 return
             elif path == "/api/config":
                 service.save_config(data)
-                result = {"message": "Konfiguration gespeichert."}
+                result = {"message": "Configuration saved."}
             elif path == "/api/key":
                 if set(data) != {"key", "persist"} or type(data["persist"]) is not bool:
-                    raise ValueError("key und persist erforderlich.")
+                    raise ValueError("key and persist are required.")
                 service.set_key(data["key"], data["persist"])
-                result = {"message": "API-Schlüssel gespeichert.", "key": service.secrets.status()}
+                result = {"message": "API key saved.", "key": service.secrets.status()}
             elif path == "/api/key/clear":
                 service.clear_key()
-                result = {"message": "API-Schlüssel entfernt."}
+                result = {"message": "API key removed."}
             elif path == "/api/refresh":
                 if data:
-                    raise ValueError("Keine Parameter erforderlich.")
+                    raise ValueError("No parameters are required.")
                 result = service.refresh_now()
             elif path == "/api/skoda/command":
                 if set(data) != {"action", "request_id"} or data["action"] not in ("start", "stop"):
-                    raise ValueError("Ungültiger Fahrzeugbefehl.")
+                    raise ValueError("Invalid vehicle command.")
                 if not isinstance(data["request_id"], str) or not re.fullmatch(r"[a-zA-Z0-9-]{16,80}", data["request_id"]):
-                    raise ValueError("Ungültige Befehlskennung.")
+                    raise ValueError("Invalid request ID.")
                 result = service.command(data["action"], data["request_id"])
             elif path == "/api/charging/target":
                 if set(data) != {"target_percent"}:
-                    raise ValueError("Nur Ziel-Ladestand erforderlich.")
+                    raise ValueError("Only target charge level is required.")
                 result = service.change_target(data["target_percent"])
             elif path in ("/api/charging/start", "/api/charging/stop"):
                 request_id = data.get("request_id")
                 if not isinstance(request_id, str) or not re.fullmatch(r"[a-zA-Z0-9-]{16,80}", request_id):
-                    raise ValueError("Ungültige Befehlskennung.")
+                    raise ValueError("Invalid request ID.")
                 if path.endswith("/start"):
                     if (set(data) not in ({"target_percent", "request_id"}, {"target_percent", "request_id", "allow_stale"})
                             or type(data.get("allow_stale", False)) is not bool):
-                        raise ValueError("Ziel-Ladestand und Befehlskennung erforderlich.")
+                        raise ValueError("Target charge level and request ID are required.")
                     result = service.force_charge(data["target_percent"], request_id, data.get("allow_stale", False))
                 else:
                     if set(data) != {"request_id"}:
-                        raise ValueError("Nur eine Befehlskennung erforderlich.")
+                        raise ValueError("Only a request ID is required.")
                     result = service.stop_charge(request_id)
             elif path == "/api/smartfox/charger-mode":
                 if (set(data) != {"mode","request_id"} or not isinstance(data["request_id"],str)
                         or not re.fullmatch(r"[a-zA-Z0-9-]{16,80}",data["request_id"])):
-                    raise ValueError("Ungültige Ladestation-Anfrage.")
+                    raise ValueError("Invalid charger request.")
                 result = service.set_charger_mode(data["mode"],data["request_id"])
             elif path == "/api/smartfox/heater":
                 if (set(data) != {"device","mode","request_id"} or not isinstance(data["request_id"],str)
                         or not re.fullmatch(r"[a-zA-Z0-9-]{16,80}",data["request_id"])):
-                    raise ValueError("Ungültige Heizstab-Anfrage.")
+                    raise ValueError("Invalid heater request.")
                 result = service.set_heater_mode(data["device"],data["mode"],data["request_id"])
             elif path == "/api/smartfox/command":
                 self.reply(409, {"error": WRITE_BLOCK, "code": "unverified_write"})
                 return
             else:
-                self.reply(404, {"error": "Nicht gefunden."})
+                self.reply(404, {"error": "Not found."})
                 return
             self.reply(200, result)
         except IntegrationError as error:
             self.reply(409, {"error": str(error), "code": error.code})
         except (ValueError, UnicodeError) as error:
-            self.reply(400, {"error": str(error) if not isinstance(error, json.JSONDecodeError) else "Ungültiges JSON."})
+            self.reply(400, {"error": str(error) if not isinstance(error, json.JSONDecodeError) else "Invalid JSON."})
         except (TimeoutError, socket.timeout):
             self.close_connection = True
         except Exception:
-            self.reply(500, {"error": "Aktion fehlgeschlagen. Lokale Dateiablage und Konfiguration prüfen."})
+            self.reply(500, {"error": "Action failed. Check local storage and configuration."})
 
 
 def make_server(port, data_dir):
@@ -306,9 +307,12 @@ def make_server(port, data_dir):
                 server.remote_thread = threading.Thread(target=remote.serve_forever,kwargs={"poll_interval":.25},daemon=True)
                 server.remote_thread.start()
                 server.service.network = {"enabled":True,"url":f'https://{network["host"]}:{remote.server_port}/',
-                                          "certificate_expires":network["certificate_expires"],"message":"Heimnetz-Zugang mit Anmeldung und HTTPS aktiv."}
+                                          "certificate_expires":network["certificate_expires"],
+                                          "authentication":network.get('authentication','password'),
+                                          "message":("HTTPS home network access without a password is active. All reachable home network devices can operate charging and heaters."
+                                                     if network.get('authentication')=='none' else "Authenticated HTTPS home network access is active.")}
         except (OSError,ValueError,TypeError,KeyError):
-            server.service.network = {"enabled":False,"message":"Heimnetz-Zugang konnte nicht starten. Private Tablet-IP, Zertifikat und Netzwerk-Einrichten.cmd prüfen. Lokale Überwachung läuft weiter."}
+            server.service.network = {"enabled":False,"message":"Home network access could not start. Check the private tablet IP, certificate and Setup-Network.cmd. Local monitoring continues."}
         server.service.start_worker()
         return server
     except Exception:

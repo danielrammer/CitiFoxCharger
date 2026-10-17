@@ -32,10 +32,10 @@ def request_local(host, path, timeout):
         with opener.open(f"http://{host}{path}", timeout=timeout) as response:
             body = response.read(512001)
             if response.code != 200 or len(body) > 512000:
-                raise SmartfoxControlError("Ungültige Smartfox-Antwort.")
+                raise SmartfoxControlError("Invalid Smartfox response.")
             return body
     except (OSError, urllib.error.URLError):
-        raise SmartfoxControlError("Smartfox-Webanzeige ist nicht erreichbar.") from None
+        raise SmartfoxControlError("The Smartfox web display is unreachable.") from None
 
 
 class SmartfoxWeb:
@@ -55,7 +55,7 @@ class SmartfoxWeb:
             fields = {item.attrib.get("id"): item.text or "" for item in root.iter("value")}
             firmware = " ".join(fields.get("version", "").split())
             if firmware != FIRMWARE:
-                raise SmartfoxControlError("Smartfox-Firmware passt nicht zum geprüften Webprofil.")
+                raise SmartfoxControlError("Smartfox firmware does not match the verified web profile.")
             raw_mode = int(fields["hidCcMode1"])
             power_match = re.fullmatch(r"\s*([0-9]+(?:[.,][0-9]+)?)\s*<span>kW</span>\s*", fields.get("cc1Power", ""))
             power = float(power_match[1].replace(",", ".")) if power_match else None
@@ -75,8 +75,8 @@ class SmartfoxWeb:
                 current = None
             telemetry = connection is not None and connection > 3
             connected = telemetry and state_code in (2, 3, 5, 6)
-            states = {0: "Kein Fahrzeug", 1: "Kein Fahrzeug", 2: "Ladebereit", 3: "Lädt",
-                      4: "Wallbox-Fehler", 5: "Laden unterbrochen", 6: "An Wallbox gestoppt", 255: "Kein Fahrzeug"}
+            states = {0: "No vehicle", 1: "No vehicle", 2: "Ready to charge", 3: "Charging",
+                      4: "Wallbox error", 5: "Charging interrupted", 6: "Stopped at wallbox", 255: "No vehicle"}
             # These codes are verified in the installed vendor JavaScript, not in Modbus 42111.
             ready = (telemetry and state_code in (2, 3) and info_code in (2, 8, 10)
                      and current is not None and current >= 6)
@@ -92,7 +92,7 @@ class SmartfoxWeb:
                                     fields.get("hidR2Name", "").strip().casefold() == "warmwasser")):
                 value = energy[device]
                 value["control_available"] = bool(self.allow_heater_control and mapped and value["enabled"] and value["mode"])
-                value["control_reason"] = None if value["control_available"] else "Heizstab-Steuerung nicht freigegeben oder Zuordnung nicht bestätigt."
+                value["control_reason"] = None if value["control_available"] else "Heater control is not authorized or the output assignment is unconfirmed."
             return {"available": True, "mode": MODES.get(raw_mode), "mode_code": raw_mode,
                     "power_kw": power, "read_at": read_at, "firmware": firmware,
                     "energy": energy,
@@ -102,18 +102,18 @@ class SmartfoxWeb:
                     "mplus_configuration": mplus_modes[0] if mplus_modes else None,
                     "control_available": self.allow_control,
                     "control_reason": None if self.allow_control else
-                    "M+/A+-Umschaltung wartet auf Freigabe der nicht öffentlich dokumentierten Smartfox-Websteuerung."}
+                    "M+/A+ switching requires permission to use the undocumented local Smartfox web control."}
         except (ET.ParseError, ValueError, KeyError, TypeError, IndexError):
-            raise SmartfoxControlError("Smartfox-Webanzeige enthält keine gültigen Charger-1-Daten.") from None
+            raise SmartfoxControlError("The Smartfox web display has no valid Charger 1 data.") from None
 
     def set_mode(self, config, mode):
         if mode not in ("M+", "A+"):
-            raise ValueError("Nur M+ und A+ sind vorgesehen.")
+            raise ValueError("Only M+ and A+ are supported here.")
         return self.set_charger_mode(config, mode)
 
     def set_charger_mode(self, config, mode):
         if mode not in ("OFF", "A+", "M+"):
-            raise ValueError("Nur Aus, A+ und M+ sind vorgesehen.")
+            raise ValueError("Only Off, A+ and M+ are supported here.")
         # Reading back an already selected A+ requires no write and works even with the gate closed.
         before = self.read(config)
         if before["mode"] == mode:
@@ -124,7 +124,7 @@ class SmartfoxWeb:
         self.request(config["host"], f"/setswcc.cgi?num=0&mode={number}&value=100", config["timeout_seconds"])
         after = self.read(config)
         if after["mode"] != mode:
-            raise SmartfoxControlError(f"Smartfox hat {mode} noch nicht bestätigt. Fahrzeugstart wird nicht ausgelöst.")
+            raise SmartfoxControlError(f"Smartfox hat {mode} is not confirmed yet. Vehicle start will not be sent.")
         return after
 
     def wait_ready(self, config, timeout=15, settle_seconds=3):
@@ -133,21 +133,21 @@ class SmartfoxWeb:
         while True:
             value = self.read(config)
             if value.get("mode") != "M+":
-                raise SmartfoxControlError("Smartfox bleibt nicht auf M+. Fahrzeugstart wurde nicht gesendet.")
+                raise SmartfoxControlError("Smartfox did not stay on M+. Vehicle start was not sent.")
             if value.get("info_code") == 14:
-                raise SmartfoxControlError("Die Wallbox verlangt eine lokale Ladefreigabe. Fahrzeugstart wurde nicht gesendet.")
+                raise SmartfoxControlError("The wallbox requires local charging authorization. Vehicle start was not sent.")
             if value.get("status_code") == 4:
-                raise SmartfoxControlError("Die Wallbox meldet einen Fehler. Fahrzeugstart wurde nicht gesendet.")
+                raise SmartfoxControlError("The wallbox reports an error. Vehicle start was not sent.")
             elapsed = self.clock() - began
             if value.get("ready_for_start") and elapsed >= settle_seconds:
                 return value
             if elapsed >= timeout:
-                raise SmartfoxControlError("Smartfox-Ladefreigabe noch nicht bestätigt. Fahrzeugstart wurde nicht gesendet.")
+                raise SmartfoxControlError("Smartfox charging permission is unconfirmed. Vehicle start was not sent.")
             self.sleep(min(1, timeout - elapsed))
 
     def set_heater_mode(self, config, device, mode):
         if device not in ("heater", "heater2", "hot_water") or mode not in ("auto", "manual", "off"):
-            raise ValueError("Nur Aus/Automatik/Manuell für die bestätigten Wärmeausgänge ist vorgesehen.")
+            raise ValueError("Only Off/Automatic/Manual are supported for the verified heating outputs.")
         before = self.read(config)
         value = before["energy"][device]
         if not value.get("control_available"):
@@ -158,7 +158,7 @@ class SmartfoxWeb:
         if device == "heater":
             percent = value.get("manual_percent")
             if mode == "manual" and percent is None:
-                raise SmartfoxControlError("Die eingestellte manuelle Heizleistung fehlt. Bitte in Smartfox prüfen.")
+                raise SmartfoxControlError("The configured manual heater power is missing. Please check Smartfox.")
             path = f"/setswaout.cgi?mode=1&power={percent}" if mode == "manual" else "/setswaout.cgi?mode=" + ("2" if mode == "auto" else "0")
         else:
             relay = 1 if device == "heater2" else 2
@@ -170,5 +170,5 @@ class SmartfoxWeb:
         after = self.read(config)
         if (after["energy"][device].get("mode") != desired
                 or (device == "heater" and mode == "manual" and after["energy"][device].get("manual_percent") != percent)):
-            raise SmartfoxControlError("Smartfox hat den gewünschten Heizstab-Modus noch nicht bestätigt.")
+            raise SmartfoxControlError("Smartfox has not confirmed the requested heater mode.")
         return after

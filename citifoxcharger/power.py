@@ -43,15 +43,15 @@ class WindowsPowerRequest:
     def create(self):
         reason = ReasonContext()
         reason.version, reason.flags = 0, 1  # POWER_REQUEST_CONTEXT_VERSION / SIMPLE_STRING
-        reason.reason.simple = "CitiFoxCharger überwacht das Ladeziel. Der Bildschirm darf ausgehen."
+        reason.reason.simple = "CitiFoxCharger is monitoring the charge target. The screen may turn off."
         handle = self.api.PowerCreateRequest(ctypes.byref(reason))
         if handle in (None, ctypes.c_void_p(-1).value):
-            raise OSError("Windows-Energieanforderung fehlgeschlagen.")
+            raise OSError("Windows power request failed.")
         return handle
 
     def set(self, handle, request):
         if not self.api.PowerSetRequest(handle, request):
-            raise OSError("Windows-Energieanforderung fehlgeschlagen.")
+            raise OSError("Windows power request failed.")
 
     def clear(self, handle, request):
         self.api.PowerClearRequest(handle, request)
@@ -76,7 +76,7 @@ class PowerGuard:
             try:
                 self.backend = WindowsPowerRequest()
             except (OSError, AttributeError):
-                self.warning = "Windows-Wachhaltefunktion nicht verfügbar. Energiesparen bitte selbst verhindern."
+                self.warning = "Windows sleep prevention is unavailable. Please prevent sleep manually."
 
     def _release(self):
         if self.handle is not None:
@@ -100,7 +100,7 @@ class PowerGuard:
                     self.warning = None
                 except OSError:
                     self._release()
-                    self.warning = "Windows konnte das Wachhalten nicht bestätigen. Energiesparen bitte selbst verhindern."
+                    self.warning = "Windows could not confirm sleep prevention. Please prevent sleep manually."
 
     def state(self):
         with self.lock:

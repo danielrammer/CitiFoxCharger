@@ -23,12 +23,12 @@ def private_host(value):
             return str(address)
     except (ValueError,TypeError):
         pass
-    raise ValueError('Eine private IPv4-Adresse des Tablets ist erforderlich.')
+    raise ValueError('A private IPv4 address of this tablet is required.')
 
 
 def password_record(password):
     if not isinstance(password,str) or not 12 <= len(password) <= 128 or any(ord(c)<32 for c in password):
-        raise ValueError('Bitte ein eigenes Netzwerkpasswort mit 12 bis 128 Zeichen verwenden.')
+        raise ValueError('Choose a separate network password of 12 to 128 characters.')
     salt = secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac('sha256',password.encode('utf-8'),bytes.fromhex(salt),ITERATIONS).hex()
     return {'salt':salt,'password_hash':digest,'iterations':ITERATIONS}
@@ -36,25 +36,31 @@ def password_record(password):
 
 def validate_network(value):
     required = {'enabled','host','port','salt','password_hash','iterations','certificate_expires'}
-    if not isinstance(value,dict) or set(value) != required or type(value['enabled']) is not bool:
-        raise ValueError('Ungültige Netzwerk-Konfiguration.')
+    if not isinstance(value,dict) or set(value) not in (required,required|{'authentication'}) or type(value['enabled']) is not bool:
+        raise ValueError('Invalid network configuration.')
     value = dict(value)
     value['host'] = private_host(value['host'])
     if type(value['port']) is not int or not 1024 <= value['port'] <= 65535:
-        raise ValueError('Ungültiger Netzwerkport.')
-    for key,length in (('salt',32),('password_hash',64)):
-        data = value[key]
-        if not isinstance(data,str) or len(data)!=length or any(c not in '0123456789abcdef' for c in data):
-            raise ValueError('Ungültige Netzwerk-Anmeldung.')
-    if value['iterations'] != ITERATIONS or type(value['certificate_expires']) is not str:
-        raise ValueError('Ungültige Netzwerk-Anmeldung oder Zertifikatszeit.')
+        raise ValueError('Invalid network port.')
+    mode = value.get('authentication','password')  # Existing configurations remain password-protected.
+    if mode == 'password':
+        for key,length in (('salt',32),('password_hash',64)):
+            data = value[key]
+            if not isinstance(data,str) or len(data)!=length or any(c not in '0123456789abcdef' for c in data):
+                raise ValueError('Invalid network authentication.')
+        if value['iterations'] != ITERATIONS:
+            raise ValueError('Invalid network authentication.')
+    elif mode != 'none' or value['salt'] is not None or value['password_hash'] is not None or type(value['iterations']) is not int or value['iterations'] != 0:
+        raise ValueError('Invalid network authentication.')
+    if type(value['certificate_expires']) is not str:
+        raise ValueError('Invalid network authentication or certificate time.')
     try:
         from datetime import datetime
         expiry = datetime.fromisoformat(value['certificate_expires'])
         if expiry.tzinfo is None or expiry.timestamp() <= time.time():
             raise ValueError()
     except ValueError:
-        raise ValueError('Netzwerkzertifikat ist abgelaufen. Netzwerk-Einrichten.cmd erneut ausführen.') from None
+        raise ValueError('The network certificate expired. Run Setup-Network.cmd again.') from None
     return value
 
 
@@ -93,6 +99,8 @@ class NetworkAuth:
 
     def check(self,header,client):
         """Return 200, 401 or 429. No credentials are logged or returned."""
+        if self.config.get('authentication','password') == 'none':
+            return 200
         if not header:
             return 401
         now = self.clock()

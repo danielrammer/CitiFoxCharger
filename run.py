@@ -4,36 +4,37 @@ import os
 import sys
 import threading
 from pathlib import Path
-from ladezentrale.server import make_server
-from ladezentrale.browser import open_dashboard
-from ladezentrale.background import dashboard_running, spawn_backend, wait_until_ready
+from citifoxcharger.profile import default_data_dir
+from citifoxcharger.server import make_server
+from citifoxcharger.browser import open_dashboard
+from citifoxcharger.background import dashboard_running, spawn_backend, wait_until_ready
 
 
 def main():
-    parser = argparse.ArgumentParser(description="CitiFoxCharger für Windows")
+    parser = argparse.ArgumentParser(description="CitiFoxCharger for Windows")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--data-dir", type=Path, default=Path(os.environ.get("LOCALAPPDATA", Path(__file__).parent / ".local")) / "Ladezentrale")
+    parser.add_argument("--data-dir", type=Path, default=default_data_dir())
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--browser", choices=("brave", "default"), default="brave")
     parser.add_argument("--fullscreen", action="store_true")
-    parser.add_argument("--background", action="store_true", help="Backend ohne offenes Konsolenfenster starten")
+    parser.add_argument("--background", action="store_true", help="Start the backend without an open console window")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
-        parser.error("Port muss zwischen 1 und 65535 liegen.")
+        parser.error("Port must be between 1 and 65535.")
     if args.background:
         if dashboard_running(args.port):
             if not args.no_browser:
                 open_dashboard(f"http://127.0.0.1:{args.port}", args.browser, args.fullscreen)
-            print("CitiFoxCharger läuft bereits. Vorhandene Instanz wird verwendet.")
+            print("CitiFoxCharger is already running. Reusing the existing instance.")
             return 0
         try:
             child = spawn_backend([value for value in sys.argv[1:] if value != "--background"], args.data_dir)
             if wait_until_ready(child, args.port):
-                print("CitiFoxCharger läuft im Hintergrund. Beenden unter Einstellungen.")
+                print("CitiFoxCharger runs in the background. Exit from Settings.")
                 return 0
         except OSError:
             pass
-        print("Hintergrundstart nicht bestätigt. Bitte Datenordner/background.log oder Start.cmd prüfen.")
+        print("Background startup is unconfirmed. Check data-folder/background.log or Start.cmd.")
         return 1
     try:
         server = make_server(args.port, args.data_dir)
@@ -41,7 +42,7 @@ def main():
         print(str(error))
         return 1
     except OSError:
-        print("Start fehlgeschlagen. Port belegt oder Datenordner nicht lesbar.")
+        print("Startup failed. The port is in use or the data folder is unreadable.")
         return 1
     url = f"http://127.0.0.1:{server.server_port}"
     print(f"CitiFoxCharger: {url}\nBeenden: Strg+C. Modbus nur lesend; lokale M+/A+-Websteuerung freigegeben.")
@@ -61,12 +62,12 @@ def main():
         try:
             spawn_backend([*[arg for arg in sys.argv[1:] if arg not in ("--background", "--no-browser")], "--no-browser"], args.data_dir)
         except OSError:
-            print("Neustart fehlgeschlagen. Bitte Start.cmd aufrufen.")
+            print("Restart failed. Please run Start.cmd.")
             return 1
     return 0
 
 
 if __name__ == "__main__":
     if sys.version_info < (3, 11):
-        raise SystemExit("Python 3.11 oder neuer erforderlich.")
+        raise SystemExit("Python 3.11 or newer is required.")
     raise SystemExit(main())

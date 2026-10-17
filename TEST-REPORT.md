@@ -1,0 +1,53 @@
+# Validation report · 1.7.0
+
+Date: **17 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
+
+## Existing baseline and new work
+
+The 1.6.2 update/window checkpoint passed **202 tests** and was pushed to the private repository before the English migration. Version 1.7.0 renames the Python package and command/document files, translates CLI/backend/documentation to English, retains an optional German/English browser view and adds explicit passwordless HTTPS setup.
+
+The complete offline suite passed **208 tests**. Test coverage includes the following behavior; hardware limitations are separate.
+
+### Charging, profiles and lifecycle
+
+- Strict Modbus reads, schema/range/unit checks and no write route.
+- Per-VIN SOC and capabilities, original capture times, key expiry, partial/error responses, request quota and cooldown.
+- M+ and physical readiness before one vehicle start; failure/unknown outcomes and bounded retries without automatic starts.
+- Editable target with no new start, fresh/old above-target stops, explicit Off persistence and no reopening of a stopping session.
+- Regression for 82% target with an old 86% report, including blocked/offline cloud access. Local Off is attempted before cloud stop and retried independently of cloud backoff.
+- Initial five-minute new-data deadline, bounded later data loss, maximum monitored report age, recovery and restart without extending deadlines.
+- Off hold until a newer non-future stopped report, resistance to external mode changes and preservation across explicit close/restart.
+- Exit guard requiring explicit stop, a settling period, fresh local A+/Off, non-charging status and at most 0.1 kW. No fabricated cloud confirmation.
+- Persisted key requirement, cache/quota/session recovery, instance locking, same-profile restart and no device actions after shutdown intent.
+- Windows power requests with no display requirement and proper cleanup. Background startup and Brave/default-browser selection.
+- New profiles use the English folder; existing historical profiles retain their credentials and lock without movement or duplication.
+
+### Heating and energy
+
+Tests cover all three output modes, fixed vendor name/type assignments, existing analog manual percentage, relay timer cancellation, readback failures and idempotency. Energy tests cover units, import/export sign, house consumption formula, temperature slot assignment and missing 850 °C values. Relay power is never invented.
+
+### HTTPS access and diagnostics
+
+Tests generate native Windows certificates and use real loopback TLS with full chain/IP verification. Private keys remain DPAPI encrypted and temporary loading files are removed. Host/Origin/session/CSRF checks, local-only administration, shared monitor lifecycle, bad configuration and authenticated resource coverage are exercised.
+
+The explicitly passwordless mode is tested separately. Missing credentials are accepted only after explicit valid configuration; existing configurations remain protected. HTTPS, remote permission boundaries and session/CSRF still apply. Empty setup password writes no hash or plaintext password. A missing session in this mode does not create an unwanted Basic Authentication prompt.
+
+Diagnostics tests check old-backend compatibility, GET-only collection, clearly marked offline fallback and the exclusion of VIN, credentials, session tokens, raw responses and arbitrary text.
+
+### Git updater and command windows
+
+Real temporary local Git repositories test fast-forward, dirty/untracked files, diverged history, missing remote, unexpected origin, ZIP bootstrap/reuse and refusal to overwrite an unrelated directory. Fake backend control tests protect active monitoring and RAM-only credentials. Actual Windows batch processes verify that Update, Stop, Setup-Network and Setup-Firewall wait for a key after both success and failure and preserve return codes. Update.cmd remains safe when its own file changes during the Git pull. No production backend is stopped for these tests.
+
+## Hardware evidence and limits
+
+The installed Pro 2 / Charger 1 / EM3 00.01.16.08 firmware and local display fields were read. A+ → M+ → A+ was read back successfully after user authorization. SOC and start/stop capabilities were received from the actual Citigo, and the user confirmed physical charging after a start.
+
+The user reported early interruptions and a failure to stop automatically at 82%, continuing to 86% until manually stopped. The supplied report came from backend **1.6.0**. It records the manual stop request at **08:14:44**, an 86% vehicle capture at **08:14:56**, and completion at **08:15:04**, Vienna time on 17 October. At report generation, local power was 0 kW and mode A+. The saved report does not contain earlier SOC history or prove that 86% was known before the manual stop. Quota reservation observed after the session is not by itself proof of the earlier cause.
+
+Version 1.6.1 corrected identified stop gaps, but the exact tablet incident cause and a successful complete automatic percentage-stop cycle on the real car still require confirmation. Delayed telemetry can overshoot a local target. The app does not configure a verified native 82% vehicle limit or implement an unverified wake-up operation.
+
+The tablet network listener had not been set up, as confirmed by the user. A physical second-device HTTPS/certificate-import test remains outstanding. No real passwordless listener is enabled as part of development. Explicit sleep, shutdown, mobile connectivity loss and long-term tablet power behavior are not covered by a continuous hardware trial. The app cannot monitor while Windows is actually asleep or powered off.
+
+## Browser validation
+
+Preview uses fake hardware and an explicit TEST label. The earlier compact layout was checked at 800 × 1280, 640 × 1024, approximately 534 × 854 and 1280 × 800 without page overflow. The 1.7.0 preview verified English/German switching, translated backend status and target-save messages, number/date formatting, language persistence after reload and a target change during simulated charging. The browser reported no JavaScript errors. These checks must not be confused with a real charging session.

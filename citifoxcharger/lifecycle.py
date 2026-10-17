@@ -37,12 +37,12 @@ class LocalControl:
                 return json.loads(response.read(1048577))
         except urllib.error.HTTPError as error:
             try:
-                message = json.loads(error.read(16384)).get("error", "Lokale Aktion fehlgeschlagen.")
+                message = json.loads(error.read(16384)).get("error", 'Local action failed.')
             except (ValueError, UnicodeError):
-                message = "Lokale Aktion fehlgeschlagen."
+                message = 'Local action failed.'
             raise ControlError(message) from None
         except (OSError, ValueError):
-            raise ControlError("Keine gültige Antwort von CitiFoxCharger. Start.cmd oder Hintergrundprotokoll prüfen.") from None
+            raise ControlError("No valid response from CitiFoxCharger. Check Start.cmd or the background log.") from None
 
     def health(self):
         try:
@@ -52,23 +52,23 @@ class LocalControl:
         except urllib.error.URLError as error:
             if isinstance(error.reason, ConnectionRefusedError):
                 return None
-            raise BackendUnavailable("Backend antwortet nicht. Es wurde kein Prozess beendet.") from None
+            raise BackendUnavailable("The backend is not responding. No process was terminated.") from None
         except OSError:
-            raise BackendUnavailable("Backend antwortet nicht. Es wurde kein Prozess beendet.") from None
+            raise BackendUnavailable("The backend is not responding. No process was terminated.") from None
         except ValueError:
-            raise ControlError("An diesem Port läuft keine bestätigte CitiFoxCharger-Instanz.") from None
+            raise ControlError("This port is not serving a confirmed CitiFoxCharger instance.") from None
         if not isinstance(result, dict) or result.get("app") != "CitiFoxCharger":
-            raise ControlError("An diesem Port läuft keine bestätigte CitiFoxCharger-Instanz.")
+            raise ControlError("This port is not serving a confirmed CitiFoxCharger instance.")
         return result
 
     def action(self, action, data_dir, port, no_browser=False, timeout=45):
         previous = self.health()
         if previous is None:
             if action == "stop":
-                return "CitiFoxCharger ist bereits beendet."
+                return "CitiFoxCharger is already stopped."
             child = spawn_backend(["--port",str(port),"--data-dir",str(data_dir),"--no-browser"],data_dir)
             if not wait_until_ready(child,port):
-                raise ControlError("Start nicht bestätigt. Bitte Start.cmd oder background.log prüfen.")
+                raise ControlError("Startup is unconfirmed. Please check Start.cmd or background.log.")
         else:
             csrf = self.request("/api/session")["csrf"]
             path = "/api/app/quit" if action == "stop" else "/api/app/restart"
@@ -82,13 +82,13 @@ class LocalControl:
                     time.sleep(.2)
                     continue
                 if action == "stop" and current is None:
-                    return "CitiFoxCharger beendet. Ein Browserfenster kann offen bleiben."
+                    return "CitiFoxCharger stopped. A browser window may remain open."
                 if action == "restart" and current and current.get("instance_id") != previous.get("instance_id"):
                     break
                 time.sleep(.2)
             else:
-                raise ControlError("Beenden/Neustart nicht bestätigt. Bitte den Status prüfen; kein erzwungenes Beenden durchgeführt.")
+                raise ControlError("Stop/restart was not confirmed. Check the status; no forced shutdown was performed.")
         if action == "restart" and not no_browser:
             from .browser import open_dashboard
             open_dashboard(self.base, "brave", True)
-        return "CitiFoxCharger neu gestartet. Vorhandene Überwachung wird fortgesetzt; kein neuer Ladestart."
+        return "CitiFoxCharger restarted. Existing monitoring resumes; no new charging start."

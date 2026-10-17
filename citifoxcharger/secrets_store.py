@@ -11,7 +11,7 @@ class Blob(ctypes.Structure):
 
 def dpapi(data, decrypt=False):
     if os.name != "nt":
-        raise ValueError("Dauerhafte Schlüsselablage ist nur unter Windows verfügbar.")
+        raise ValueError("Persistent key storage is only available on Windows.")
     crypt = ctypes.WinDLL("crypt32", use_last_error=True)
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     crypt.CryptProtectData.argtypes = [ctypes.POINTER(Blob), wintypes.LPCWSTR, ctypes.c_void_p,
@@ -27,9 +27,9 @@ def dpapi(data, decrypt=False):
     target = Blob()
     # CRYPTPROTECT_UI_FORBIDDEN. No machine-wide protection flag: bound to this Windows user.
     function = crypt.CryptUnprotectData if decrypt else crypt.CryptProtectData
-    description = None if decrypt else "Ladezentrale MySkoda API key"
+    description = None if decrypt else "CitiFoxCharger MySkoda API key"
     if not function(ctypes.byref(source), description, None, None, None, 1, ctypes.byref(target)):
-        raise ValueError("Windows konnte den Schlüssel nicht ver- oder entschlüsseln.")
+        raise ValueError("Windows could not encrypt or decrypt the key.")
     try:
         return ctypes.string_at(target.data, target.size)
     finally:
@@ -47,11 +47,11 @@ class SecretStore:
                 self.key = dpapi(self.path.read_bytes(), decrypt=True).decode("utf-8")
                 self.persisted = True
             except (ValueError, UnicodeError):
-                self.warning = "Gespeicherten API-Schlüssel bitte neu eingeben (Windows-Benutzerbindung)."
+                self.warning = "Please enter the saved API key again; encryption is bound to the Windows user."
 
     def set(self, key, persist=False):
         if not isinstance(key, str) or not 8 <= len(key) <= 4096 or any(ord(c) < 33 or ord(c) > 126 for c in key):
-            raise ValueError("Ungültiger API-Schlüssel. Bitte ohne Leerzeichen eingeben.")
+            raise ValueError("Invalid API key. Enter it without whitespace.")
         if persist:
             atomic_write(self.path, dpapi(key.encode("utf-8")))
         else:

@@ -13,17 +13,18 @@ import socket
 import subprocess
 import sys
 from pathlib import Path
-from ladezentrale.config import atomic_write
-from ladezentrale.lifecycle import LocalControl,ControlError
-from ladezentrale.network import password_record,private_host,read_network,tls_context
-from ladezentrale.secrets_store import dpapi
+from citifoxcharger.profile import default_data_dir
+from citifoxcharger.config import atomic_write
+from citifoxcharger.lifecycle import LocalControl,ControlError
+from citifoxcharger.network import password_record,private_host,read_network,tls_context
+from citifoxcharger.secrets_store import dpapi
 
 
 def powershell(script,data):
-    if os.name!='nt':raise ValueError('Netzwerkeinrichtung benötigt Windows mit .NET Framework 4.7.2 oder neuer.')
+    if os.name!='nt':raise ValueError('Network setup requires Windows and .NET Framework 4.7.2 or newer.')
     binary=Path(os.environ['SystemRoot'])/'System32/WindowsPowerShell/v1.0/powershell.exe'
     result=subprocess.run([str(binary),'-NoProfile','-NonInteractive','-Command',script],input=json.dumps(data),capture_output=True,text=True,encoding='utf-8',timeout=60,creationflags=subprocess.CREATE_NO_WINDOW)
-    if result.returncode:raise ValueError('Windows konnte den Netzwerkschritt nicht ausführen. Windows/.NET und Berechtigungen prüfen.')
+    if result.returncode:raise ValueError('Windows could not complete network setup. Check Windows/.NET and permissions.')
     return result.stdout
 
 
@@ -54,13 +55,13 @@ def create_certificate(directory,host):
     directory.mkdir(parents=True,exist_ok=True)
     identity=subprocess.check_output(['whoami','/user','/fo','csv','/nh'],text=True,errors='replace')
     sid=list(csv.reader(io.StringIO(identity)))[0][-1]
-    if not sid.startswith('S-1-5-'):raise ValueError('Windows-Benutzer konnte nicht bestimmt werden.')
+    if not sid.startswith('S-1-5-'):raise ValueError('The Windows user could not be identified.')
     result=subprocess.run(['icacls',str(directory),'/inheritance:r','/grant:r',f'*{sid}:(OI)(CI)F','*S-1-5-18:(OI)(CI)F'],capture_output=True)
-    if result.returncode:raise ValueError('Geschützte Zertifikatsablage konnte nicht eingerichtet werden.')
-    script=(Path(__file__).parent/'ladezentrale/network_certificate.ps1').read_text(encoding='utf-8')
+    if result.returncode:raise ValueError('Protected certificate storage could not be configured.')
+    script=(Path(__file__).parent/'citifoxcharger/network_certificate.ps1').read_text(encoding='utf-8')
     value=json.loads(powershell(script,{'host':host}))
     root=base64.b64decode(value['root'],validate=True)
-    atomic_write(directory/'CitiFoxCharger-Heimnetz.cer',root)
+    atomic_write(directory/'CitiFoxCharger-Home-Network.cer',root)
     atomic_write(directory/'server.pem',pem('CERTIFICATE',base64.b64decode(value['certificate'],validate=True))+pem('CERTIFICATE',root))
     atomic_write(directory/'server-key.dpapi',dpapi(private_pem(value['key'])))
     tls_context(directory.parent)  # Check matching certificate/key before enabling anything.
@@ -77,8 +78,8 @@ def suggested_host(directory):
 
 
 def main():
-    parser=argparse.ArgumentParser(description='CitiFoxCharger im Heimnetz einrichten')
-    parser.add_argument('--data-dir',type=Path,default=Path(os.environ.get('LOCALAPPDATA',Path(__file__).parent/'.local'))/'Ladezentrale')
+    parser=argparse.ArgumentParser(description='Configure CitiFoxCharger home network access')
+    parser.add_argument('--data-dir',type=Path,default=default_data_dir())
     parser.add_argument('--port',type=int,default=8766)
     parser.add_argument('--backend-port',type=int,default=8765)
     parser.add_argument('--disable',action='store_true')
@@ -87,55 +88,61 @@ def main():
     try:
         if args.firewall:
             import ctypes
-            if not ctypes.windll.shell32.IsUserAnAdmin():raise ValueError('Netzwerk-Firewall.cmd bitte mit Rechtsklick als Administrator ausführen.')
+            if not ctypes.windll.shell32.IsUserAnAdmin():raise ValueError('Right-click Setup-Firewall.cmd and choose Run as administrator.')
             config=read_network(args.data_dir)
-            if not config:raise ValueError('Zuerst Netzwerk-Einrichten.cmd unter dem bisherigen Windows-Benutzer ausführen.')
-            script=(Path(__file__).parent/'ladezentrale/network_firewall.ps1').read_text(encoding='utf-8')
+            if not config:raise ValueError('First run Setup-Network.cmd under the usual Windows user.')
+            script=(Path(__file__).parent/'citifoxcharger/network_firewall.ps1').read_text(encoding='utf-8')
             powershell(script,{'host':config['host'],'port':config['port'],'program':sys.executable})
-            print('Firewallfreigabe eingerichtet: nur privates Netzwerk und lokales Subnetz.')
+            print('Firewall access configured: private network and local subnet only.')
             return 0
         control=LocalControl(args.backend_port)
         health=control.health()
         if health:
             control.request('/api/session')
             access=control.request('/api/config')['key']
-            if access['configured'] and not access['persisted']:raise ValueError('Den MySkoda-Schlüssel zuerst in Einstellungen mit Windows verschlüsselt speichern.')
+            if access['configured'] and not access['persisted']:raise ValueError('First save the MyŠkoda key with Windows encryption in Settings.')
         path=args.data_dir/'network.json'
         if args.disable:
             if path.exists():
                 value=json.loads(path.read_text(encoding='utf-8'));value['enabled']=False
                 atomic_write(path,json.dumps(value).encode('utf-8'))
         else:
-            if not 1024<=args.port<=65535 or args.port==args.backend_port:raise ValueError('Netzwerkport muss vom lokalen Backend-Port verschieden sein (1024 bis 65535).')
+            if not 1024<=args.port<=65535 or args.port==args.backend_port:raise ValueError('Network port must differ from the local backend port (1024 to 65535).')
             default=suggested_host(args.data_dir)
-            host=private_host(input(f'IPv4-Adresse dieses Tablets [{default}]: ').strip() or default)
-            password=getpass.getpass('Eigenes Netzwerkpasswort (mindestens 12 Zeichen): ')
-            record=password_record(password)
-            if not hmac.compare_digest(password.encode('utf-8'),getpass.getpass('Netzwerkpasswort wiederholen: ').encode('utf-8')):raise ValueError('Die Passwörter stimmen nicht überein.')
+            host=private_host(input(f'IPv4 address of this tablet [{default}]: ').strip() or default)
+            print('Leave the password empty for home network access without a password.')
+            print('Without a password, every device on the reachable home network can operate charging and heaters.')
+            password=getpass.getpass('Network password (12+ characters, or Enter for none): ')
+            if password:
+                record={**password_record(password),'authentication':'password'}
+                if not hmac.compare_digest(password.encode('utf-8'),getpass.getpass('Repeat network password: ').encode('utf-8')):raise ValueError('The passwords do not match.')
+            else:
+                record={'authentication':'none','salt':None,'password_hash':None,'iterations':0}
             del password
             expiry,fingerprint=create_certificate(args.data_dir,host)
             value={'enabled':True,'host':host,'port':args.port,**record,'certificate_expires':expiry}
             atomic_write(path,json.dumps(value,indent=2).encode('utf-8'))
-            certificate=args.data_dir/'network/CitiFoxCharger-Heimnetz.cer'
+            certificate=args.data_dir/'network/CitiFoxCharger-Home-Network.cer'
             try:shutil.copy2(certificate,Path(__file__).parent/certificate.name)
             except OSError:pass
-            print(f'Heimnetz-Adresse: https://{host}:{args.port}/\nBenutzername: citifox')
-            print(f'Öffentliches Zertifikat für die anderen Geräte: {certificate}\nSHA256: {fingerprint}')
-            print('Zertifikat auf den zugreifenden Geräten vertrauen, dann mit dem Netzwerkpasswort anmelden. Anleitung: NETZWERK.md')
+            print(f'Home network URL: https://{host}:{args.port}/')
+            print('Username: citifox' if record['authentication']=='password' else 'Password: none. All reachable home network devices can operate this dashboard.')
+            print(f'Public certificate for other devices: {certificate}\nSHA256: {fingerprint}')
+            print('Trust the certificate on client devices. See NETWORK.md for access instructions.')
         print(control.action('restart',args.data_dir,args.backend_port,no_browser=True))
         control.request('/api/session')
         network=control.request('/api/config')['network']
         if bool(network['enabled']) != (not args.disable):
             raise ControlError(network['message'])
         if not args.disable:
-            print('Auf diesem Tablet einmal Netzwerk-Firewall.cmd als Administrator ausführen. Das Windows-Netzwerk muss als Privat eingestuft sein.')
+            print('Run Setup-Firewall.cmd as administrator once on this tablet. Windows must classify the network as Private.')
         return 0
     except (ValueError,ControlError) as error:
         print(str(error))
         return 1
     except (OSError,subprocess.SubprocessError):
         # Do not print a captured PowerShell exception/stdout: it may contain private material.
-        print('Einrichtung nicht bestätigt. Windows/.NET, private Tablet-IP und gespeicherten MySkoda-Zugang prüfen. Bei Firewall-Einrichtung als Administrator ausführen. Details zur sicheren Einrichtung: NETZWERK.md')
+        print('Setup is unconfirmed. Check Windows/.NET, the private tablet IP and saved MyŠkoda access. Run firewall setup as administrator. See NETWORK.md for secure setup details.')
         return 1
 
 

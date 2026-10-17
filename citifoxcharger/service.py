@@ -25,7 +25,7 @@ class Service:
         self.last_command = None
         self.command_after = 0
         self.events = []
-        self.network = {"enabled":False,"message":"Heimnetz-Zugang ist ausgeschaltet. Auf dem Tablet Netzwerk-Einrichten.cmd ausführen."}
+        self.network = {"enabled":False,"message":"Home network access is disabled. Run Setup-Network.cmd on the tablet."}
         self.charging = ChargingSession(self, self.web)
         self.worker_stop = threading.Event()
         self.worker = None
@@ -50,7 +50,7 @@ class Service:
                     or not isinstance(car.get("operations"), list)
                     or any(action not in ("startCharging", "stopCharging") for action in car["operations"])):
                 return
-            car["stale"] = not -300 <= time.time()-captured <= self.config.value["skoda"]["stale_seconds"]
+            car["stale"] = not -300 <= time.time()-captured <= self.config.value["skoda"]["stale_seconds"]            car['message'] = 'Restored previous vehicle data with their original timestamps.'
             self.cache["skoda"] = car
             self.last_success["skoda"] = time.monotonic()-age
             self.car.key_expires_at = car.get("key_expires_at")
@@ -120,9 +120,9 @@ class Service:
                     with self.lock:
                         if self.charging.active:
                             try:
-                                self.charging.save(status="paused", message="Überwachung unterbrochen. Daten und lokale Speicherung prüfen.")
+                                self.charging.save(status="paused", message="Monitoring interrupted. Check data and local storage.")
                             except OSError:
-                                self.charging.value.update(status="paused", message="Überwachung unterbrochen. Lokale Speicherung prüfen.")
+                                self.charging.value.update(status="paused", message="Monitoring interrupted. Check local storage.")
                 self.worker_stop.wait(2)
         self.worker = threading.Thread(target=run, daemon=True, name="charging-monitor")
         self.worker.start()
@@ -137,26 +137,26 @@ class Service:
         with self.lock:
             if self.charging.active:
                 if not self.charging.value.get("stop_requested"):
-                    raise ValueError("Eine Ladeüberwachung läuft. Bitte zuerst Laden stoppen und die Bestätigung abwarten.")
+                    raise ValueError("Charging monitoring is active. Stop charging first and wait for confirmation.")
                 if self.web is None:
-                    raise ValueError("Lokaler Smartfox-Zugriff für die Stoppprüfung fehlt.")
+                    raise ValueError("Local Smartfox access is missing for the stop check.")
                 if self.web is not None:
                     try:self.cache.setdefault("smartfox",{})["charger"] = self.web.read(self.config.value["smartfox"])
                     except SmartfoxControlError:
-                        raise ValueError("Smartfox kann den Stillstand gerade nicht bestätigen. Bitte Verbindung prüfen.") from None
+                        raise ValueError("Smartfox cannot confirm that charging stopped. Please check the connection.") from None
                 if not self.charging.local_stop_allows_shutdown():
-                    raise ValueError("Stopp wird noch geprüft. Beenden ist möglich, sobald Smartfox A+ oder Aus und keine Ladeleistung bestätigt. Bitte kurz warten.")
+                    raise ValueError("The stop is being checked. Exit is allowed once Smartfox confirms A+ or Off with no charging power. Please wait.")
                 self.charging.save(status="closed",ended_by_user=True,vehicle_stop_confirmed=False,
-                                   message="Überwachung bewusst beendet: Smartfox meldet keine Ladeleistung. Fahrzeug-Stoppbestätigung steht noch aus.",closed_at=utcnow())
+                                   message="Monitoring explicitly closed: Smartfox reports no charging power. Vehicle stop confirmation is still pending.",closed_at=utcnow())
             self.save_rate_state()
             self.stopping = True
 
     def prepare_restart(self):
         with self.lock:
             if self.stopping:
-                raise ValueError("Die App wird bereits beendet.")
+                raise ValueError("The app is already stopping.")
             if (self.secrets.key or self.charging.active) and not self.secrets.persisted:
-                raise ValueError("Vor dem Neustart den API-Schlüssel unter Einstellungen mit Windows verschlüsselt speichern.")
+                raise ValueError("Before restarting, save the API key with Windows encryption in Settings.")
             self.charging.save()
             self.save_rate_state()
             self.stopping = True
@@ -176,24 +176,24 @@ class Service:
     def save_config(self, value):
         with self.lock:
             if self.charging.active:
-                raise ValueError("Bitte die laufende Ladeüberwachung zuerst beenden.")
+                raise ValueError("Please end the active charging session first.")
             self.config.save(validate(value))
             self.reset()
-            self.event("Konfiguration gespeichert.")
+            self.event("Configuration saved.")
 
     def set_key(self, key, persist):
         with self.lock:
             self.secrets.set(key, persist)
             self.reset()
-            self.event("API-Schlüssel hinterlegt.")
+            self.event("API key configured.")
 
     def clear_key(self):
         with self.lock:
             if self.charging.active:
-                raise ValueError("Bitte die laufende Ladeüberwachung zuerst beenden. Einen abgelaufenen Schlüssel kannst du ersetzen.")
+                raise ValueError("Please end the active charging session first. An expired key can be replaced.")
             self.secrets.clear()
             self.reset()
-            self.event("API-Schlüssel entfernt.")
+            self.event("API key removed.")
 
     def update(self, source):
         now = time.monotonic()
@@ -267,10 +267,10 @@ class Service:
             "CONNECT_CABLE", "CONSERVING", "READY_FOR_CHARGING", "CHARGING_INTERRUPTED")
         if car.get("available") and not car.get("stale") and captured is not None and captured >= command["requested_epoch"] and matches:
             command["status"] = "observed"
-            command["message"] = "Passender Fahrzeugstatus nach dem Befehl empfangen."
+            command["message"] = "Matching vehicle status received after the command."
         elif time.time() - command["requested_epoch"] > 600:
             command["status"] = "unconfirmed"
-            command["message"] = "Kein bestätigender Fahrzeugstatus innerhalb von 10 Minuten. Bitte Fahrzeug/App prüfen."
+            command["message"] = "No confirming vehicle status within 10 minutes. Please check the vehicle/app."
 
     def status(self):
         with self.lock:
@@ -296,7 +296,7 @@ class Service:
 
     def force_charge(self, target, request_id, allow_stale=False):
         with self.lock:
-            if self.stopping:raise IntegrationError("blocked","Die App wird gerade neu gestartet oder beendet.")
+            if self.stopping:raise IntegrationError("blocked","The app is restarting or stopping.")
             self.power.update(not self.stopping)
             try:
                 return self.charging.start(target, request_id, allow_stale)
@@ -305,55 +305,55 @@ class Service:
 
     def refresh_now(self):
         with self.lock:
-            if self.stopping:raise IntegrationError("blocked","Die App wird gerade neu gestartet oder beendet.")
+            if self.stopping:raise IntegrationError("blocked","The app is restarting or stopping.")
             if not self.secrets.key or not self.config.value["skoda"]["vin"]:
-                return {"message": "Bitte zuerst den Fahrzeugzugang einrichten.", "status": self.status()}
+                return {"message": "Please configure vehicle access first.", "status": self.status()}
             now = time.monotonic()
             if now < self.manual_refresh_after:
                 wait = math.ceil(self.manual_refresh_after - now)
-                return {"message": f"Erneute Fahrzeugabfrage in {wait} Sekunden möglich.", "status": self.status()}
+                return {"message": f"Next vehicle query in {wait} seconds.", "status": self.status()}
             self.manual_refresh_after = now + 60
             if now - self.last_attempt.get("skoda", 0) < 60:
                 wait = math.ceil(60 - (now - self.last_attempt.get("skoda", 0)))
                 self.manual_refresh_after = now + wait
-                return {"message": f"Fahrzeug wurde gerade abgefragt. Erneut in {wait} Sekunden.", "status": self.status()}
+                return {"message": f"The vehicle was queried recently. Try again in {wait} seconds.", "status": self.status()}
             if self.car.clock() < self.car.blocked_until:
-                return {"message": "Škoda verlangt noch eine Abfragepause.", "status": self.status()}
+                return {"message": "Škoda still requires a request cooldown.", "status": self.status()}
             self.next_due["skoda"] = 0
             self.update("skoda")
-            self.event("Fahrzeugdaten erneut bei Škoda abgefragt.")
-            return {"message": "Verfügbare Fahrzeugdaten neu abgefragt.", "status": self.status()}
+            self.event("Vehicle data queried again from Škoda.")
+            return {"message": "Available vehicle data queried again.", "status": self.status()}
 
     def stop_charge(self, request_id):
         with self.lock:
-            if self.stopping:raise IntegrationError("blocked","Die App wird gerade neu gestartet oder beendet.")
+            if self.stopping:raise IntegrationError("blocked","The app is restarting or stopping.")
             self.update("skoda")
             self.update("smartfox")
             if self.web is None:
-                raise IntegrationError("blocked", "Smartfox-Anbindung ist nicht eingerichtet.")
+                raise IntegrationError("blocked", "Smartfox integration is not configured.")
             return self.charging.stop(request_id)
 
     def change_target(self, target):
         with self.lock:
             if self.stopping:
-                raise IntegrationError("blocked", "Die App wird gerade neu gestartet oder beendet.")
+                raise IntegrationError("blocked", "The app is restarting or stopping.")
             result = self.charging.change_target(target)
-            self.event(f"Manuelles Ladeziel auf {target} % geändert.")
+            self.event(f"Manual charge target changed to {target}%.")
             return result
 
     def set_heater_mode(self, device, mode, request_id):
         with self.lock:
             if device not in ("heater", "heater2", "hot_water") or mode not in ("auto", "manual", "off"):
-                raise ValueError("Ungültiger Heizstab-Modus.")
+                raise ValueError("Invalid heater mode.")
             if request_id in self.heater_results:
                 previous = self.heater_results[request_id]
                 if (previous["device"],previous["mode"]) != (device,mode):
                     raise ValueError("Befehlskennung bereits anderweitig verwendet.")
                 return copy.deepcopy(previous)
             if self.stopping or self.web is None:
-                raise IntegrationError("blocked", "Heizstab-Steuerung ist gerade nicht verfügbar.")
+                raise IntegrationError("blocked", "Heater control is currently unavailable.")
             # Keep even uncertain outcomes idempotent; a repeat requires a deliberate new request.
-            result = {"device":device,"mode":mode,"status":"unconfirmed","message":"Heizstab-Umschaltung noch unbestätigt."}
+            result = {"device":device,"mode":mode,"status":"unconfirmed","message":"Heater mode change is unconfirmed."}
             self.heater_results[request_id] = result
             if len(self.heater_results) > 100:
                 del self.heater_results[next(iter(self.heater_results))]
@@ -363,29 +363,29 @@ class Service:
                 self.next_due["smartfox"] = 0
                 result["message"] = str(error)
                 raise IntegrationError("heater_unconfirmed", str(error)) from None
-            name = {"heater":"Heizstab","heater2":"Heizstab 2","hot_water":"Warmwasser"}[device]
-            result.update(status="confirmed",message=name+" ist auf "+{"auto":"Automatik.","manual":"Manuell.","off":"Aus."}[mode])
+            name = {"heater":"Heater","heater2":"Heater 2","hot_water":"Hot water"}[device]
+            result.update(status="confirmed",message=name+" is set to "+{"auto":"Automatic.","manual":"Manual.","off":"Off."}[mode])
             self.event(result["message"])
             return copy.deepcopy(result)
 
     def set_charger_mode(self, mode, request_id):
         with self.lock:
             if mode not in ("OFF","A+","M+"):
-                raise ValueError("Nur Aus, A+ und M+ sind vorgesehen.")
+                raise ValueError("Only Off, A+ and M+ are supported here.")
             if self.stopping or self.web is None:
-                raise IntegrationError("blocked","Ladestation-Steuerung ist gerade nicht verfügbar.")
+                raise IntegrationError("blocked","Charger control is currently unavailable.")
             if mode != "OFF" and self.charging.value.get("stop_guard") and self.charging.active:
-                raise IntegrationError("blocked","Automatischer Stopp wird noch geprüft. Die Ladestation bleibt bis zur Fahrzeugbestätigung auf Aus.")
+                raise IntegrationError("blocked","Automatic stop is being checked. The charger stays Off until the vehicle confirms the stop.")
             if mode == "M+" and (not self.charging.active or self.charging.value.get("stop_requested")):
-                raise IntegrationError("blocked","M+ bitte über Manuell laden mit aktivem Prozentziel starten.")
+                raise IntegrationError("blocked","Use Force charge with an active percentage target to select M+.")
             if mode == "M+" and (not self.can_command("start") or not self.can_command("stop")):
-                raise IntegrationError("blocked","Für M+ sind aktuelle Fahrzeugdaten und Start/Stopp-Zugriff erforderlich.")
+                raise IntegrationError("blocked","M+ requires current vehicle data and start/stop access.")
             if request_id in self.heater_results:
                 result = self.heater_results[request_id]
                 if (result["device"],result["mode"]) != ("charger",mode):
                     raise ValueError("Befehlskennung bereits anderweitig verwendet.")
                 return copy.deepcopy(result)
-            result = {"device":"charger","mode":mode,"status":"unconfirmed","message":"Wallbox-Modus unbestätigt."}
+            result = {"device":"charger","mode":mode,"status":"unconfirmed","message":"Wallbox mode is unconfirmed."}
             self.heater_results[request_id] = result
             if len(self.heater_results)>100:
                 del self.heater_results[next(iter(self.heater_results))]
@@ -398,21 +398,21 @@ class Service:
                 self.next_due["smartfox"] = 0
                 result["message"] = str(error)
                 raise IntegrationError("charger_unconfirmed",str(error)) from None
-            result.update(status="confirmed",message="Ladestation ist auf "+("Aus." if mode == "OFF" else mode+"."))
+            result.update(status="confirmed",message="The charger is set to "+("Off." if mode == "OFF" else mode+"."))
             self.event(result["message"])
             return copy.deepcopy(result)
 
     def command(self, action, request_id, allow_stale=False):
         with self.lock:
-            if self.stopping:raise IntegrationError("blocked","Die App wird gerade neu gestartet oder beendet.")
+            if self.stopping:raise IntegrationError("blocked","The app is restarting or stopping.")
             if request_id in self.command_results:
                 return copy.deepcopy(self.command_results[request_id])
             self.update("skoda")
             if not self.can_command(action, allow_stale):
-                raise IntegrationError("blocked", "Befehl gesperrt: aktuelle Fahrzeugdaten, unterstützte Aktion und gültiger API-Zugriff erforderlich. Nach einem Befehl gilt eine Pause von 30 Sekunden.")
+                raise IntegrationError("blocked", "Command blocked: current vehicle data, a supported action and valid API access are required. Commands have a 30-second cooldown.")
             self.command_after = time.monotonic() + 30
             command = {"action": action, "requested_at": utcnow(), "requested_epoch": time.time(),
-                       "status": "accepted", "message": "Škoda hat den Befehl angenommen. Fahrzeugstatus noch unbestätigt."}
+                       "status": "accepted", "message": "Škoda accepted the command. Vehicle status is not confirmed yet."}
             try:
                 self.car.command(action, self.config.value["skoda"], self.secrets.key)
             except IntegrationError as error:
@@ -427,5 +427,5 @@ class Service:
             self.command_results[request_id] = copy.deepcopy(command)
             if len(self.command_results) > 100:
                 del self.command_results[next(iter(self.command_results))]
-            self.event(("Start" if action == "start" else "Stopp") + ": " + command["message"])
+            self.event(("Start" if action == "start" else "Stop") + ": " + command["message"])
             return copy.deepcopy(command)

@@ -22,7 +22,7 @@ class InstanceLock:
                 fcntl.flock(self.stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             self.stream.close()
-            raise ValueError("Die CitiFoxCharger läuft bereits für diesen Datenordner.") from None
+            raise ValueError("CitiFoxCharger is already running for this data folder.") from None
 
     def close(self):
         if self.stream.closed:

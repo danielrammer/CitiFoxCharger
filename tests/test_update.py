@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from update import update, UpdateError
-from ladezentrale.lifecycle import ControlError
+from citifoxcharger.lifecycle import ControlError
 
 
 class FakeControl:
@@ -17,10 +17,10 @@ class FakeControl:
     def health(self):return {'version':'1.6.1'} if self.active else None
     def request(self,path):return {'key':{'configured':True,'persisted':self.persisted}}
     def action(self,action,*args,**kwargs):
-        if self.blocked:raise ControlError('Eine Ladeueberwachung laeuft.')
+        if self.blocked:raise ControlError('A charging session is being monitored.')
         self.actions.append(action)
         self.active=False
-        return 'Backend beendet.'
+        return 'Backend stopped.'
 
 
 @unittest.skipUnless(shutil.which('git'),'Git required')
@@ -136,7 +136,7 @@ class BatchWindowTests(unittest.TestCase):
             def read():
                 for line in process.stdout:
                     lines.append(line)
-                    if 'Zum Schliessen' in line:ready.set()
+                    if 'Press any key' in line:ready.set()
             reader=threading.Thread(target=read,daemon=True);reader.start()
             try:
                 self.assertTrue(ready.wait(12),''.join(lines))
@@ -149,7 +149,7 @@ class BatchWindowTests(unittest.TestCase):
                 if process.poll() is None:process.kill();process.wait(timeout=3)
                 process.stdin.close();process.stdout.close()
     def test_windows_remain_open_after_success_and_failure(self):
-        for name in ('Update.cmd','Stoppen.cmd','Netzwerk-Einrichten.cmd','Netzwerk-Firewall.cmd'):
+        for name in ('Update.cmd','Stop.cmd','Setup-Network.cmd','Setup-Firewall.cmd'):
             for code in (0,7):
                 with self.subTest(name=name,code=code):self.exercise(name,code)
     def test_updater_still_pauses_and_preserves_exit_code_after_its_batch_is_replaced(self):

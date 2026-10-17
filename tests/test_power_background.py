@@ -2,8 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from ladezentrale.power import PowerGuard, SYSTEM_REQUIRED, EXECUTION_REQUIRED
-from ladezentrale.background import spawn_backend, dashboard_running, wait_until_ready
+from citifoxcharger.power import PowerGuard, SYSTEM_REQUIRED, EXECUTION_REQUIRED
+from citifoxcharger.background import spawn_backend, dashboard_running, wait_until_ready
 
 
 class FakePower:
@@ -57,7 +57,7 @@ class PowerTests(unittest.TestCase):
 
 
 class BackgroundTests(unittest.TestCase):
-    @patch('ladezentrale.background.subprocess.Popen')
+    @patch('citifoxcharger.background.subprocess.Popen')
     def test_detached_process_uses_files_not_console_and_preserves_paths(self, process):
         with tempfile.TemporaryDirectory(prefix='background test ') as directory:
             child=spawn_backend(['--no-browser','--data-dir',directory],Path(directory))
@@ -70,7 +70,7 @@ class BackgroundTests(unittest.TestCase):
             self.assertTrue(call.kwargs.get('creationflags') or call.kwargs.get('start_new_session'))
             self.assertTrue((Path(directory)/'background.log').exists())
 
-    @patch('ladezentrale.background.urllib.request.build_opener')
+    @patch('citifoxcharger.background.urllib.request.build_opener')
     def test_health_requires_product_identity(self, opener):
         response=opener.return_value.open.return_value.__enter__.return_value
         response.read.return_value=b'{"status":"ok","app":"AnotherApp"}'
@@ -78,18 +78,18 @@ class BackgroundTests(unittest.TestCase):
         response.read.return_value=b'{"app":"CitiFoxCharger"}'
         self.assertTrue(dashboard_running(8765))
 
-    @patch('ladezentrale.background.urllib.request.build_opener', side_effect=OSError)
+    @patch('citifoxcharger.background.urllib.request.build_opener', side_effect=OSError)
     def test_missing_server_is_not_running(self, opener):
         self.assertFalse(dashboard_running(8765))
 
-    @patch('ladezentrale.background.dashboard_running')
+    @patch('citifoxcharger.background.dashboard_running')
     def test_exited_child_is_not_reported_as_success(self, healthy):
         child=MagicMock()
         child.poll.return_value=1
         self.assertFalse(wait_until_ready(child,8765))
         healthy.assert_not_called()
 
-    @patch('ladezentrale.background.dashboard_running',return_value=True)
+    @patch('citifoxcharger.background.dashboard_running',return_value=True)
     def test_live_child_with_product_health_is_ready(self, healthy):
         child=MagicMock()
         child.poll.return_value=None

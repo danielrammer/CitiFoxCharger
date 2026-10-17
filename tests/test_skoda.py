@@ -4,8 +4,8 @@ import time
 import unittest
 from datetime import datetime, timezone, timedelta
 from email.utils import format_datetime
-from ladezentrale.config import DEFAULT
-from ladezentrale.skoda import SkodaAdapter, IntegrationError, NoRedirect, retry_seconds
+from citifoxcharger.config import DEFAULT
+from citifoxcharger.skoda import SkodaAdapter, IntegrationError, NoRedirect, retry_seconds
 
 VIN = "TMBJB9NY5RF999999"
 KEY = "test-key-not-a-real-credential"

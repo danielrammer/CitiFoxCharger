@@ -1,189 +1,126 @@
-# CitiFoxCharger für Windows · 1.6.2
+# CitiFoxCharger for Windows · 1.7.0
 
-Für Škoda Citigo e iV, SMARTFOX Pro 2 mit Firmware EM3 00.01.16.08 und Charger Pro an Ladeplatz 1.
+A local dashboard for a Škoda Citigo e iV and a SMARTFOX Pro 2 energy manager with a Charger Pro at charging point 1. The installed SMARTFOX profile is **EM3 00.01.16.08**, address **192.168.0.81**.
 
-## Start und Update
+Documentation, program filenames, command scripts and command-window messages are English. The browser interface offers **Deutsch / English** in **Settings → Appearance → Language**. The preference is saved in each browser. A German browser initially uses German; other browsers use English.
 
-Den gesamten ZIP-Inhalt entpacken und **Start.cmd** doppelklicken. Voraussetzung: Python 3.11 oder neuer. Keine Zusatzpakete erforderlich. Die Skripte prüfen `py -3` und verwenden sonst `python` aus dem Suchpfad. Das Startskript öffnet **Brave im Vollbild** unter **http://127.0.0.1:8765/**. Brave wird an den üblichen Windows-Installationsorten und im Suchpfad gesucht; fehlt Brave oder schlägt dessen Start fehl, öffnet sich der Standardbrowser. **F11** verlässt das Vollbild. Bei bereits laufendem Brave kann dessen Fensterverwaltung das Startflag übergehen; dann F11 drücken oder Brave einmal vollständig schließen.
+## Installation and first start
 
-Die Betriebsansicht ist für ein Tablet mit einem 1280 × 800-Panel **im Hochformat (800 × 1280)** angepasst: große Schrift, große Tasten und ein breiter Slider mit großem Griff. Auch Querformat und kleinere Fenster bleiben bedienbar. Die App dreht den Windows-Bildschirm nicht selbst.
+1. Install Python **3.11 or newer** on the Windows tablet. The application uses the Python standard library; no additional Python packages are required. Network certificate setup also requires Windows with .NET Framework **4.7.2 or newer**.
+2. Extract the complete Windows package into a new folder. For an upgrade, stop the old backend before starting the new copy. Git installations can use **Update.cmd**.
+3. Run **Start.cmd**. It starts the backend in the background and opens Brave in full screen at **http://127.0.0.1:8765/**. If Brave is unavailable, the default browser opens. Press **F11** to leave full screen. An already running browser can ignore startup flags; F11 remains available.
+4. Open **Settings**, enter the complete 17-character VIN and add a MyŠkoda API key. Keys are created in MyŠkoda under Profile → Smart Home; the [key-management link](https://go.skoda.eu/api-keys) opens the supported app flow. Never put the key in source code or share it in chat.
+5. Choose **Save on this PC with Windows encryption** if the key must survive restarts. Windows binds the encrypted file to that user. Moving the encrypted file to another PC is not a replacement for entering the key there.
 
-**Start.cmd** und der gleichwertige Einstieg **Start-Hintergrund.cmd** starten das Backend ohne dauerhaft offenes Konsolenfenster und öffnen Brave im Vollbild. Ein erneuter Aufruf öffnet die bereits laufende Instanz. Der Browser darf anschließend geschlossen oder der Bildschirm ausgeschaltet werden. Unter **Einstellungen → App beenden** lässt sich das Hintergrundprogramm beenden; während einer aktiven Ladung ist diese Taste gesperrt. Nach lokal bestätigtem Ladestillstand und Stoppwunsch ist sie auch ohne neue Fahrzeugmeldung verfügbar.
+The target layout is an **800 × 1280 portrait viewport** on a 1280 × 800 tablet panel. More compact layouts support Windows scaling and landscape operation. The app does not rotate Windows itself.
 
-**Stoppen.cmd** beendet das Backend geordnet. Bei laufender Ladung oder fehlendem Stoppwunsch bleibt das Beenden gesperrt. Nach angefordertem Stopp ist es auch ohne neue Fahrzeugmeldung möglich, sobald mindestens fünf Sekunden vergangen sind und frisch von Smartfox A+ oder Aus, ein nicht ladender Wallboxstatus und höchstens 0,1 kW bestätigt sind. Dafür liest das Skript über das Backend die lokale Anzeige erneut; es sendet keinen weiteren Fahrzeugbefehl. Die Sitzung wird als bewusst geschlossen gespeichert, ohne eine bestätigte Fahrzeugantwort vorzutäuschen. Bei fehlenden/alten lokalen Daten, M+, Fehler oder weiterer Ladeleistung bleibt Beenden gesperrt. Fremde Prozesse und der Browser werden nicht beendet.
+## Command scripts
 
-**Neustarten.cmd** startet das Backend geordnet neu und öffnet Brave im Vollbild. Das funktioniert auch während einer Ladeüberwachung, wenn der API-Schlüssel mit Windows verschlüsselt gespeichert ist. Ziel, Sitzung, ausstehende Datenfrist und API-Abfragepausen bleiben erhalten. Es wird kein neuer Ladestart gesendet. Der Browser wird erst nach Bestätigung einer neuen Backend-Instanz geöffnet; bei nicht bestätigtem Neustart nennt das Skript den Fehler. Läuft die App noch nicht, wird sie gestartet. Für einen anderen Port: `Neustarten.cmd --port 8766`; ohne Browser: `Neustarten.cmd --no-browser`. Bei laufender Instanz verwendet deren Backend seinen bisherigen Datenordner und Port weiter. Bei einem Kaltstart kann `--data-dir "C:\Pfad\zum\Datenordner"` angegeben werden.
+| Script | Purpose |
+|---|---|
+| **Start.cmd** | Start the background backend and open Brave in full screen. Reuse an existing instance. |
+| **Start-Background.cmd** | Equivalent background-start entry point. |
+| **Stop.cmd** | Stop the backend cleanly after charging has stopped; never kill unrelated Python processes. |
+| **Restart.cmd** | Restart the existing backend/profile and resume monitoring without sending another charging start. |
+| **Update.cmd** | Fetch and fast-forward the private Git repository after a safe backend shutdown. |
+| **Setup-Network.cmd** | Configure optional HTTPS home network access, with or without a password. |
+| **Setup-Firewall.cmd** | As administrator, allow the configured HTTPS listener on the private local subnet. |
+| **Diagnostics.cmd** | Export a small support report without VIN, credentials or raw responses. |
+| **Test.cmd** | Run automated tests with simulated devices. |
 
-Der letzte Fahrzeugwert wird beim geordneten Neustart mit seinem ursprünglichen Zeitstempel übernommen. Das verhindert, dass die für Stopp reservierten letzten Anfragen für einen Startabruf verbraucht werden. Übernommene Daten altern normal weiter und gelten nicht als neue Fahrzeugmeldung. Die Ablage ist an FIN und Schlüssel gebunden; der Schlüssel selbst steht dort nicht. Ein bereits offenes Browserfenster nach Neustart gegebenenfalls mit **F5** neu laden.
+Update, Stop, network setup, firewall setup, Diagnostics and Test windows stay open until a key is pressed after success or failure. The Start scripts retain background operation without a permanent console window. Restart displays errors if restart cannot be confirmed.
 
-Bei einem Update die alte App zuerst unter **Einstellungen → App beenden** schließen; bei einer alten oder manuell gestarteten Konsolenversion stattdessen Strg+C verwenden. Erst danach die Programmdateien ersetzen. Der Datenordner behält aus Kompatibilitätsgründen seinen bisherigen Namen. Einstellungen und optional verschlüsselter Schlüssel liegen separat unter **%LOCALAPPDATA%\Ladezentrale**. Ohne aktivierte Windows-Speicherung muss der API-Schlüssel nach einem Neustart erneut eingegeben werden.
-
-Alternativ im Programmordner:
+The scripts try a working `py -3` interpreter and fall back to `python` on PATH. Direct launch examples:
 
 ```powershell
-py -3 run.py
+python run.py
+python run.py --port 8765 --no-browser
+python run.py --background --browser brave --fullscreen
+python manage.py restart --no-browser
 ```
 
-Anderen Port verwenden:
+For a custom profile, pass `--data-dir "C:\MyDataFolder"` to the Python entry point or applicable management script. Use the same profile consistently. A per-profile lock prevents duplicate monitors even on different ports.
+
+## Updating from GitHub
+
+**Update.cmd** requires Git for Windows and a GitHub sign-in authorized for the private `danielrammer/CitiFoxCharger` repository. The MyŠkoda key is unrelated to GitHub authentication.
+
+In a Git installation the updater verifies the expected origin, branch **main**, a clean worktree and fast-forward ancestry. It fetches first, then shuts down the backend cleanly and runs:
 
 ```powershell
-py -3 run.py --port 8766
+git pull --ff-only --no-rebase origin main
 ```
 
-Brave mit Vollbild aus der Konsole starten: `py -3 run.py --browser brave --fullscreen`. Standardbrowser verwenden: `py -3 run.py --browser default`. Nur das Backend starten: `py -3 run.py --no-browser`. Pro Datenordner verhindert eine lokale Sperre mehrere gleichzeitig laufende Ladeüberwachungen, auch bei verschiedenen Ports.
+Local edits, untracked program files, diverged history or failed fetches abort the update. There is no reset, stash, forced merge or overwrite of local edits. An active charging session blocks shutdown; stop charging in the app and wait for confirmation first. A key held only in RAM must be saved with Windows encryption before an update can close the backend.
 
-## Betriebsansicht
+An extracted ZIP has no Git history. On first use the updater clones into the separate neighbouring **CitiFoxCharger-Git** folder. It can reuse an existing matching checkout, but never overwrites an unrelated folder. The original ZIP folder remains. From then on use **Start.cmd** and **Update.cmd** in the displayed Git folder. Run Start.cmd yourself after a successful update; the updater never starts the backend or charging automatically. It stays open with the result. Use `Update.cmd --port 8774` for a non-default local backend port. Custom profiles/ports should be started using the matching `run.py` arguments.
 
-Die Startseite **Laden & Energie** zeigt Ladung und die kompakte Energieübersicht gemeinsam. Hell, Dunkel oder System lassen sich unter **Einstellungen → Darstellung** wählen; die Sonne/Mond-Taste schaltet direkt um. Die Auswahl bleibt in diesem Browser gespeichert.
+## Existing settings and English filenames
 
-Oben stehen SOC, aktuelle Smartfox-Ladeleistung, Ladestatus, Ziel-Slider und die Tasten für Start/Stopp. Eine deutliche Pfeilanimation führt Energie zum Autosymbol, die Batterie zeigt bewegte Streifen und der Status pulsiert. Das läuft nur bei frischer lokaler Leistung über 0,1 kW, ersatzweise bei frischem Fahrzeugstatus CHARGING ohne aktuelle lokale Leistung. Der SOC-Balken bleibt auf dem wirklich gemeldeten Wert. Reduzierte Bewegung im Betriebssystem unterdrückt die Animationen.
+New installations default to **%LOCALAPPDATA%\CitiFoxCharger**. If **%LOCALAPPDATA%\Ladezentrale** already exists, that historical profile remains the default so credentials, charge targets, quota pauses and the instance lock stay together. No credential or session folder is moved or deleted. `--data-dir` explicitly selects another profile. The old folder name is a compatibility detail, not a second monitor.
 
-**Letzte Fahrzeugmeldung** nennt den ursprünglichen Ladezeitstempel des Autos; **Zuletzt erfolgreich abgerufen** nennt den letzten erfolgreichen Cloud-Abruf. Alle Zeiten erscheinen in der lokalen Windows-Zeitzone. „Veraltet“ zeigt zusätzlich das Alter der Fahrzeugmeldung. Ein neuer Abruf setzt deren Alter nicht zurück.
+The Python package is now **citifoxcharger**. Script names are **Stop.cmd**, **Restart.cmd**, **Setup-Network.cmd**, **Setup-Firewall.cmd**, **Start-Background.cmd** and **Diagnostics.cmd**. The technical documents are **INTERFACES.md**, **NETWORK.md** and **TEST-REPORT.md**. Extract into a fresh folder or update through Git to avoid old program files remaining alongside the new names.
 
-Die **geschätzte Restzeit** zum Sliderziel wird nur mit frischem SOC und höchstens 30 Sekunden alter gemessener Ladeleistung über 0,1 kW gezeigt. Modell: 32,3 kWh nutzbare Akkukapazität × fehlende Prozent / aktuelle kW / angenommener Wirkungsgrad 90 %. Die Kapazität stammt aus der [offiziellen Citigo-e-iV-Beschreibung](https://www.skoda-storyboard.com/en/press-kits/skoda-citigo%E1%B5%89-iv-skoda-superb-iv-press-kit/skoda-citigo%E1%B5%89-iv-zero-emission-range-of-up-to-260-km/); der Wirkungsgrad ist eine Annahme, kein gemessener Fahrzeugwert. Auf fünf Minuten aufgerundet, bei gleichbleibender Leistung. Temperatur, Ladeverluste, Pausen und alte SOC-Meldungen innerhalb des Frischefensters begrenzen die Genauigkeit. Die Schätzung steuert keinen Stopp und verändert weder SOC noch Ziel.
+## Charging controls
 
-Darunter stehen Hausverbrauch, Netzbezug/Einspeisung und vier Verbraucherkacheln. Hausverbrauch folgt der Herstellerberechnung Erzeugung + Netzleistung − Batterieleistung und enthält auch die gesteuerten Verbraucher. Heizstab zeigt gemeldete kW, Prozent und Temperatur; Heizstab 2 und Warmwasser zeigen Relaiszustand und zugeordnete Temperatur, ohne erfundene elektrische Leistung. Fehlende Werte erscheinen als „—“. Diese Ansicht verwendet denselben lokalen XML-Abruf und erzeugt keine zusätzlichen Škoda-Anfragen.
+The main page shows the reported battery percentage, current local charging power, charging state, an editable target slider, **Force charge** and **Stop**. A moving energy stream, smiling car, striped battery and pulsing indicator show charging only when fresh local power exceeds 0.1 kW, or fresh vehicle CHARGING is available without a local measurement. HTTP 202 alone does not animate charging. The battery percentage is never artificially increased. Reduced-motion preferences disable movement.
 
-### Betriebsarten der Verbraucher
+### Force charge
 
-- **Heizstab / Heizstab 2 / Warmwasser:** Aus, Automatik oder Manuell. Beim analogen Heizstab bleibt die in Smartfox konfigurierte manuelle Prozentleistung erhalten und wird in der Auswahl genannt. Keine Temperaturgrenze oder Gerätekonfiguration wird überschrieben. Bei Relais-Manuell bzw. Aus wird ein vorhandener manueller Timer wie in der Herstelleroberfläche beendet.
-- **Ladestation:** ausschließlich Aus, A+ oder M+. Aus bleibt als ausdrücklicher Wunsch auch nach Neustart und bei Abschluss einer Zielüberwachung erhalten. Mit A+ wird wieder der normale Betrieb gewählt. M+ im Leerlauf benutzt denselben kombinierten Start mit Prozentziel wie **Manuell laden**. Während einer aktiven Zielüberwachung ändert die Auswahl nur die Wallbox; sie sendet keinen weiteren Fahrzeugstart. Fehlender Fahrzeugzugriff oder laufender Stopp sperrt M+.
+1. Select a target between **1 and 100%**, above the reported SOC.
+2. The app changes Charger 1 to **M+**, verifies the returned mode and waits at least three seconds, up to fifteen seconds, for fresh readiness with an offered current of at least 6 A.
+3. Only then is one vehicle start sent. Failed readiness sends no vehicle start and attempts a return to A+.
+4. The backend monitors the target independently of browser timers. A valid report at or above the target, even if now old, requests a conservative stop.
 
-Die Schaltwege wurden im ausgelieferten Hersteller-JavaScript dieser Firmware geprüft. Eine öffentliche CGI-API-Spezifikation fehlt. Es werden nur die konkret zugeordneten Ausgänge angeboten: Heizstab am Analogausgang, Heizstab 2 an Relais 1, Warmwasser an Relais 2 und Charger 1. Jede Umschaltung wird zurückgelesen. Fehlende Zuordnung, andere Firmware oder fehlende Bestätigung führen zu einem Fehler. Die neuen Wärme-/Aus-Befehle wurden ausschließlich mit simulierten Geräten getestet; reale Bedienung erfolgt durch den Benutzer.
+You can change the slider during monitoring. Releasing it saves the new local target without another start. Lowering it to/below an already reported SOC can request a stop. Once stopping begins, target changes are locked. The application does not program the native vehicle charge limit.
 
-### Manuell laden
+### Automatic target stop and missing data
 
-1. Einen Ziel-Ladestand zwischen 1 und 100 % wählen. Das Ziel muss über dem aktuellen Akkustand liegen.
-2. **Manuell laden** drücken. Die ausdrücklich freigegebene Smartfox-Websteuerung schaltet zuerst Charger 1 auf **M+** und liest den Modus zur Bestätigung zurück. Danach wartet die App bis zu 15 Sekunden auf frische Herstellerdaten mit Ladebereitschaft, aktivem M+ und mindestens 6 A Stromvorgabe; die Anlaufprüfung dauert mindestens drei Sekunden. Erst danach sendet sie genau einmal **Start** an den Citigo. Bei ausbleibender Freigabe erfolgt kein Fahrzeugstart, und die App versucht, zu A+ zurückzukehren.
-3. Das Backend überwacht den Škoda-Ladestand. Sobald eine gültige Fahrzeugmeldung das Ziel erreicht oder überschreitet, schaltet es Smartfox zunächst auf **Aus**, fordert Fahrzeug-**Stopp** an und wartet auf eine neuere Stoppbestätigung. Das gilt auch für einen als alt markierten SOC oberhalb des Ziels sowie bei blockiertem Cloud-Stopp. Erst nach bestätigtem Fahrzeugstopp wird **A+** wiederhergestellt; ausdrücklich gewähltes Aus bleibt erhalten.
+An automatic stop first requests and reads back **Off** at the wallbox, then requests the vehicle stop. Cloud failure or exhausted quota cannot skip that local attempt. Off is held until a newer, non-charging vehicle report confirms the stop. A future-dated report beyond the allowed clock tolerance cannot release the hold. Local Off retries remain independent of cloud command backoff. The UI blocks A+/M+ during this hold.
 
-Der **Slider bleibt während des Ladens verstellbar**. Nach Loslassen wird das neue Prozentziel gespeichert, ohne einen weiteren Start zu senden. Liegt das Ziel bereits beim oder unter dem frisch gemeldeten SOC, fordert die App Stopp an. Auch ein alter, bereits zu hoher SOC veranlasst einen vorsorglichen Stopp; eine laufende Fünf-Minuten-Frist wird durch Zieländerungen nicht verlängert. Nach angefordertem Stopp ist das Ziel gesperrt, damit eine Erhöhung den Stopp nicht unbeabsichtigt aufhebt.
+After confirmation, A+ is restored unless Off was explicitly selected. A+ allows normal surplus/scheduled operation and is not a guaranteed power interruption. A confirmed Off setting is a mode confirmation; physical power and vehicle confirmation are separate observations. The app reports unconfirmed outcomes rather than claiming success.
 
-### Start erneut freigeben
+The target is checked against cloud vehicle reports, not a continuously measured native battery limit. Delayed reports can cause overshoot before the threshold is known. The reported 82%/86% incident on backend 1.6.0 was ended manually by the user. Version 1.6.1 fixed identified stop gaps; an exact root cause and a successful real automatic target-stop cycle on the tablet still require confirmation.
 
-Ein angenommener Start kann ohne tatsächliche Ladung bleiben. **Start erneut freigeben** wird angeboten, wenn die Wallbox frische Daten mit „ladebereit“ und höchstens 0,1 kW liefert, kein Stopp läuft und Škoda gültigen Start-/Stopp-Zugriff sowie einen ausreichend aktuellen SOC liefert. Zusätzlich müssen seit dem Versuch mindestens 30 Sekunden vergangen sein und entweder eine neuere nicht ladende Fahrzeugmeldung vorliegen oder der Versuch seit zehn Minuten unbestätigt sein.
+An explicitly permitted start with older SOC has a persistent **five-minute deadline** for a new report captured after the start. Without it the app requests a stop and holds Off. This can explain early stops, but is not established as the actual cause of the reported early interruptions. Later loss of data allows at most five minutes of recovery and no more than **15 minutes since the last valid report**, or a shorter configured freshness limit. It does not leave M+ active indefinitely.
 
-Nur ein ausdrücklicher neuer Tastendruck sendet einen weiteren Start. Das bisherige Prozentziel bleibt fest. Doppelte Anfragen mit derselben Kennung lösen keinen weiteren Start aus. Bei tatsächlicher Ladung, alten Wallboxdaten oder laufendem Stopp bleibt der erneute Start gesperrt. Die Betriebsansicht nennt den Sperrgrund und verwendet bei frischen lokalen Daten „Eingesteckt · ladebereit“. Der Cloud-Status bleibt separat erhalten.
+### Older data and retrying a start
 
-### Mit älterem Ladestand starten
+The **Use the last reported battery level** checkbox allows one explicit manual start only when SOC is known and no older than 24 hours, a successful API/capability read is at most five minutes old, and local readiness with no charging power is at most 30 seconds old. The displayed timestamps and stale label remain unchanged. It does not override a missing key, unsupported operation, server cooldown or active stop.
 
-Bei **Daten veraltet** erscheint unter dem Slider gegebenenfalls **Zuletzt gemeldeten Ladestand verwenden**. Erst nach bewusstem Anhaken wird **Manuell laden** bzw. **Start erneut freigeben** aktiv. Die Freigabe gilt für diesen einen Start; Prozentwert, Fahrzeugzeit und Veraltet-Markierung bleiben unverändert.
+**Retry start** requires fresh local readiness, no physical charging above 0.1 kW, available start/stop access and at least 30 seconds since the previous attempt. A newer non-charging report or ten minutes of unconfirmed outcome is also required. A new deliberate click sends one new start and preserves the existing target. Duplicate request IDs do not repeat commands. Starts are never automatically replayed, including after restart.
 
-Voraussetzungen: gültiger API-Zugang, innerhalb der letzten fünf Minuten erfolgreich abgefragte Start-/Stopp-Fähigkeiten, bekannter SOC mit Fahrzeugzeit höchstens 24 Stunden alt sowie frische lokale Smartfox-Daten mit Ladebereitschaft und höchstens 0,1 kW. Fehlende Daten, abgelaufener Schlüssel, Serverpause, tatsächliche Ladung oder laufender Stopp werden dadurch nicht übergangen. Beim erneuten Start bleiben zusätzlich die bestehende Wartezeit und das Prozentziel erhalten. Fehlt die Freigabe wegen einer älteren Cloud-Abfrage, kann **↻** im Rahmen des API-Kontingents erneut abfragen.
+**Stop** sends a vehicle stop and attempts the normal-mode return even if the cloud command fails. An existing automatic Off hold remains effective. Unknown stop outcomes can be retried only after newer CHARGING telemetry, with bounded attempts. A newer stopped report can confirm the stop without another command.
 
-Nach einem solchen Start wartet das Backend höchstens **fünf Minuten auf eine neue, nach dem Start erfasste SOC-Meldung**. Bleibt sie aus, stellt es Smartfox auf **Aus** und fordert einen Fahrzeugstopp an. Erst eine neuere Fahrzeug-Stoppbestätigung gibt A+ wieder frei. Eine fehlgeschlagene Rückstellung wird weiter versucht. Die Frist bleibt nach einem Backend-Neustart erhalten; Start wird nicht wiederholt. Ein neuer Fahrzeugwert beendet diese Sonderprüfung, anschließend gilt die normale Zielüberwachung. Ein unbestätigter Start mit unbekanntem Ausgang behält die Prüfung ebenfalls bei.
+## Home energy and outputs
 
-Eine bestätigte Aus-Einstellung ist zunächst eine Modusbestätigung: Die lokale Verbindung oder die tatsächliche Stromabschaltung kann ebenfalls fehlschlagen. Der Status bleibt bis zur passenden neuen Fahrzeugmeldung unbestätigt. Bei alten Daten ist auch der angezeigte Prozentwert kein sicherer aktueller Wert.
+The compact energy panel shares the charging page. House use follows the installed vendor calculation **production + grid − battery** and includes controlled consumers. Positive grid power is import; negative is export. The moving dot covers the full line. Heater shows measured kW, percentage and temperature. Heater 2 and Hot water show relay state and assigned temperature; relay power is never invented. Missing values appear as **—**.
 
-### Stoppen
+- **Heater / Heater 2 / Hot water:** Off, Automatic or Manual. The analog heater keeps its existing manual percentage. Relay Manual/Off cancels an existing manual timer as the vendor UI does. Temperature limits and schedules are not edited.
+- **Charger:** Off, A+ or M+. Explicit Off persists. Idle M+ uses the same monitored Force charge flow. During monitoring a permitted mode change does not send another vehicle start.
 
-**Stoppen** fordert einen Fahrzeugstopp an und versucht auch bei einem Cloud-Fehler, Smartfox auf **A+** zurückzustellen. Stopp ist auch direkt nach einem Start möglich. Ein veralteter Ladezeitstempel sperrt einen neuen Start ohne die oben beschriebene ausdrückliche Freigabe; ein Stoppsignal bleibt bei bestätigter, zuletzt erfolgreich abgefragter Stopp-Fähigkeit und gültigem API-Zugang möglich.
+Controls are limited to the installed output assignments and exact firmware. The device-side names remain unchanged for matching the verified outputs. A firmware mismatch, missing assignment or failed readback blocks control. Modbus remains read-only. See [INTERFACES.md](INTERFACES.md) for evidence and limitations.
 
-Ein angenommener Befehl ist noch keine bestätigte Ladungsänderung. Die App wartet auf einen passenden neueren Fahrzeugstatus. Wenn der Ausgang eines Stopps unklar bleibt, wird er nur bei neuerer Telemetrie mit weiterhin laufender Ladung erneut versucht, höchstens drei Mal. Der Fahrzeugstart wird niemals automatisch wiederholt.
+## Freshness and estimated duration
 
-### Normalbetrieb
+**Last vehicle report** is the original vehicle capture time. **Last successful query** is when the API response arrived. A cloud query does not guarantee a new measurement in the car. The documented public API has no verified wake-up/force-refresh operation; community integrations use different authentication and do not prove support for this Citigo.
 
-Außerhalb einer manuellen Sitzung ist **A+** vorgesehen, ausgenommen ausdrücklich gewähltes Aus oder ein bewusst beendeter, noch geschützter automatischer Stopp. Steht Smartfox auf **A**, wird **A+** eingestellt. Die App ändert keine Wochenzeitschaltuhr oder Fahrzeug-Ladeprofile.
+The refresh button respects a one-minute minimum spacing, server cooldowns and the command quota reserve. Normal polling is shared by every browser/device. Two requests are reserved for commands; remaining quota is distributed across reads. The API documentation currently describes 20 requests per hour and VIN, with response headers authoritative.
 
-A+ bedeutet laut Smartfox-Handbuch Überschussladen mit zusätzlicher Berücksichtigung der **Smartfox-Wochenzeitschaltuhr**. Die Zeitsteuerung im Fahrzeug ist eine eigene Ebene. M+ verwendet die bereits in Smartfox konfigurierten Energie- oder Zeitparameter und dessen Fallback. Diese Einstellungen können M+ vor dem Prozentziel beenden; die App verändert sie nicht automatisch.
+The displayed time estimate uses **32.3 kWh usable capacity**, an assumed **90% charging efficiency** and constant fresh local power. It rounds up to five minutes. Capacity source: [Škoda Citigo e iV specifications](https://www.skoda-storyboard.com/en/press-kits/skoda-citigo%E1%B5%89-iv-skoda-superb-iv-press-kit/skoda-citigo%E1%B5%89-iv-zero-emission-range-of-up-to-260-km/). Temperature, losses, schedules and reporting delay limit accuracy. Old/missing SOC or local power older than 30 seconds suppresses the numerical estimate. The estimate does not control charging or alter SOC.
 
-## Zielüberwachung
+## Background operation and exit
 
-Die Überwachung läuft in einem Hintergrund-Thread des Backends. Der Browser darf geschlossen werden. **Der Windows-PC und das Backend müssen weiterlaufen.** Energiesparmodus, Netzwerkverlust oder abgelaufener Schlüssel können eine Zielabschaltung verzögern oder verhindern. Ein Sitzungszustand wird lokal gespeichert. Nach einem Neustart wird eine vorhandene Überwachung anhand frischer Daten fortgesetzt; es wird kein Startbefehl wiederholt.
+The backend keeps monitoring after the browser closes or the screen turns off. During an active session it requests Windows SystemRequired and ExecutionRequired, not DisplayRequired. It releases those requests when monitoring ends or the backend stops. Use mains power and suitable Windows sleep settings; explicit sleep, shutdown and platform power policies can still interrupt execution. No Windows service, scheduled startup or power-plan change is installed.
 
-Während einer aktiven Zielüberwachung fordert die App von Windows **SystemRequired und ExecutionRequired** an. Damit soll das Backend auch bei automatischer Bildschirmabschaltung weiterarbeiten. Eine DisplayRequired-Anforderung wird nicht gesetzt: Der Bildschirm darf nach dem Windows-Zeitplan ausgehen. Die Anforderungen werden nach bestätigtem Sitzungsende oder beim Beenden des Backends freigegeben. Windows-Energiepläne werden nicht dauerhaft verändert. Die Betriebsansicht zeigt den Status während einer aktiven Überwachung.
+**Stop.cmd** refuses to abandon an active charge. After an explicit stop it can close without waiting indefinitely for cloud confirmation only when at least five seconds have passed and a fresh local read confirms A+/Off, non-charging wallbox status and 0–0.1 kW. The session is marked explicitly closed, not falsely vehicle-confirmed. Old data, M+, errors or power flow block exit. A stored automatic Off hold is not silently released after restart.
 
-**Das Wandtablet am Netzteil betreiben.** Auf Modern-Standby-Geräten begrenzt Windows solche Anforderungen im Akkubetrieb nach Ablauf des Schlafzeitlimits. Manuell ausgelöster Standby, Ruhezustand, Ausschalten und Abmelden können die Überwachung unterbrechen; ein ausgeschalteter Bildschirm allein braucht das nicht. Für den ersten Betrieb auf dem konkreten Tablet zusätzlich unter Windows **Energiesparen im Netzbetrieb: Nie**, aber **Bildschirm ausschalten: nach Wunsch** einstellen und einmal mit dunklem Bildschirm prüfen. Die App setzt keinen Admin-Dienst und keinen Autostart auf. [Microsoft erklärt die Grenzen von Energieanforderungen](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-powersetrequest).
+**Restart.cmd** requires a persisted key if a key or active session exists. It saves the session and quota state, releases worker/lock/power handles and starts the same profile. A changed instance ID confirms restart. It never repeats a vehicle start. Reload an already open browser if needed.
 
-Für automatisches Wiederaufnehmen nach einem Programm- oder Windows-Neustart muss der Schlüssel über die vorhandene Option mit Windows verschlüsselt gespeichert sein; ein reiner RAM-Schlüssel ist nach Prozessende weg. `background.log` im Datenordner enthält Start-/Fehlermeldungen ohne absichtliche Ausgabe von FIN oder API-Schlüssel.
+## Home network access and diagnostics
 
-Das Prozentziel wird anhand der Cloud-Fahrzeugmeldungen geprüft. Der Stopp wird beim ersten gültigen SOC-Wert ab Ziel angefordert, auch wenn diese Meldung inzwischen als alt gilt. Der tatsächliche SOC kann durch Melde- oder Befehlsverzögerungen darüber liegen. Die native Fahrzeug-Ladegrenze wird durch diese App nicht geändert.
+Run **Setup-Network.cmd** on the tablet to choose password-protected or passwordless **HTTPS** access. Leaving the password empty explicitly permits **every device on the reachable home network to operate charging and heaters**. Network access is disabled until configured. The private-IP listener, certificate trust and private-subnet firewall setup are described in [NETWORK.md](NETWORK.md). Key/device setup and backend administration remain local, including without a network password.
 
-Die lokale Ansicht und die Smartfox-Leistung aktualisieren sich standardmäßig alle zehn Sekunden; nach mehr als 30 Sekunden gilt die Leistung für die Anzeige als veraltet. Während einer Ladung verteilt die App die verfügbaren Škoda-Abfragen anhand der RateLimit-Header bis zur nächsten Kontingenterneuerung und reserviert zwei Aufrufe für Befehle. Ohne verwertbare Limitangaben gilt während der Ladung mindestens das konfigurierte Intervall bzw. 180 Sekunden, im Leerlauf mindestens zehn Minuten. Bei bekanntem ausreichendem Kontingent kann das Ladeintervall bis auf 60 Sekunden sinken. Befehle und Abfragen teilen sich das Kontingent; Serverpausen bleiben verbindlich.
+Run **Diagnostics.cmd before restarting** when investigating a problem. It writes **CitiFoxCharger-Diagnostics.json** beside the script, querying an existing local backend, including older versions. If unavailable it clearly labels saved data as potentially older. The report includes selected SOC/target/timestamps/quota/wallbox/monitor state, but no VIN, passwords, keys, raw responses, IP address or free-form errors. Use `Diagnostics.cmd --port 8774`, `--data-dir "C:\MyDataFolder"`, `--offline` or `--output "C:\Reports\report.json"` as needed. Normal backend monitoring remains active during the read; the script sends no start/stop request itself.
 
-Die Taste **↻** fragt die verfügbaren Fahrzeugdaten ausdrücklich neu bei Škoda ab, frühestens 60 Sekunden nach der letzten Anfrage. Reservierte Befehlsaufrufe und Serverlimits werden dabei nicht aufgebraucht bzw. umgangen. Eine häufigere Cloud-Abfrage erzeugt keinen neuen Fahrzeugmesswert. Im geprüften [offiziellen API-Vertrag](https://public.api.connect.skoda-auto.cz/docs/myskoda-public-api.yaml) ist kein gesonderter Weck- oder Zwangsaktualisierungsbefehl dokumentiert. Maßgeblich für „Daten veraltet“ bleibt der Zeitstempel der Fahrzeugmeldung.
-
-Die separate [Community-Integration MySkoda](https://github.com/skodaconnect/homeassistant-myskoda/blob/main/docs/entities.md#wake-up-car) besitzt einen echten Weckbefehl über die nicht öffentliche App-Schnittstelle. Dessen Zugang verwendet eine andere Anmeldung als unseren öffentlichen API-Schlüssel; Home Assistant ist dafür technisch nicht zwingend. Die Bibliothek begrenzt das Wecken und warnt vor fahrzeugseitigem Schutz der 12-V-Batterie. Funktion und zulässiges Kontingent am konkreten Citigo sind nicht bestätigt. Dieser alternative Adapter ist daher **nicht eingebaut oder als verfügbar dargestellt**. Es werden weder Klimatisierung noch wiederholte Ladebefehle als vermeintlicher Daten-Refresh ausgelöst.
-
-## Smartfox-Status und Steuerfreigabe
-
-Modbus TCP bleibt **ausschließlich lesend**: 192.168.0.81, Port 502, Unit ID 1, FC03. Die gewünschten PDU-Adressen 40999, 41015 und 42111 bleiben als Rohwerte in der Diagnose erhalten. 41015 ist laut älterer Herstellerliste kein bestätigtes Ladeleistungsregister; 42111 bleibt ungeklärt.
-
-Die tatsächliche Anzeige von **A+**, **M+** und Leistung wird ergänzend aus der lokalen Herstelleranzeige `values.xml` für genau **EM3 00.01.16.08** gelesen. Die Zuordnung wurde am ausgelieferten Hersteller-JavaScript geprüft. Die Register werden dafür nicht umgedeutet.
-
-Die Umschaltung verwendet einen eng begrenzten Adapter: ausschließlich Charger 1, Aus/A+/M+ sowie die angeforderten drei Wärmeausgänge, feste lokale Pfade und anschließende Rückleseprüfung. Die CGI-Befehle werden von der Hersteller-Weboberfläche selbst verwendet, sind aber nicht öffentlich als API spezifiziert. **Der Benutzer hat diese lokale Websteuerung am 16.10.2026 ausdrücklich freigegeben. Sie ist in diesem Stand aktiviert.** Der reale Test A+ → M+ → A+ war mit Rückleseprüfung erfolgreich. Andere Firmware, nicht erreichbare Anzeige oder fehlende Modusbestätigung sperren den kombinierten Start.
-
-## MyŠkoda einrichten
-
-Unter **Einstellungen** die vollständige 17-stellige FIN eintragen und speichern. Einen in MyŠkoda für dieses Fahrzeug erstellten API-Schlüssel lokal hinterlegen. Die Schlüsselverwaltung befindet sich nach Nutzerberichten unter **Profil → Smart Home**; alternativ den [offiziellen Link](https://go.skoda.eu/api-keys) auf dem Smartphone öffnen.
-
-Der Schlüssel bleibt wahlweise im Arbeitsspeicher oder wird mit Windows DPAPI benutzergebunden verschlüsselt gespeichert. Er wird nicht in Statusantworten zurückgegeben und nicht protokolliert. Kein Kontopasswort und keine S-PIN erforderlich. Aktive Sitzungen verhindern das Entfernen des Schlüssels oder einen Gerätewechsel; ein abgelaufener Schlüssel kann ersetzt werden.
-
-Der SOC-Abruf wurde für das Fahrzeug des Benutzers praktisch bestätigt. Der Benutzer bestätigte nach einem Startbefehl auch die tatsächliche Ladung. Die lokale Smartfox-Schaltung A+ → M+ → A+ wurde real bestätigt. Der gemeinsame Ablauf und die SOC-Zielabschaltung wurden mit simulierten Geräten getestet; eine komplette neue reale Sitzung bis zum Prozentziel steht noch aus.
-
-## Fehler und Diagnose
-
-- **Nicht eingerichtet:** FIN und API-Schlüssel hinterlegen.
-- **Daten veraltet:** Wenn angeboten, **Zuletzt gemeldeten Ladestand verwenden** bewusst anhaken und anschließend starten. Nach fünf Minuten ohne neue SOC-Meldung fordert die App Stopp an und hält die Wallbox bis zur Fahrzeug-Stoppbestätigung auf Aus. Sonst mit **↻** neu abfragen und Sperrgrund prüfen. Die MyŠkoda-App kann einen anderen Zeitpunkt anzeigen als der Ladezeitstempel; eine Cloud-Abfrage erzwingt keine neue Messung im Fahrzeug.
-- **Smartfox-Umschaltung gesperrt:** Firmware, lokaler Zugriff oder Modusbestätigung passen nicht. Bei einer bewusst deaktivierten Adapterfreigabe bleibt der kombinierte Start ebenfalls gesperrt.
-- **Zielüberwachung eingeschränkt:** Neue verlässliche Fahrzeugdaten oder API-Zugriff fehlen; die Abschaltung kann nicht bestätigt werden.
-- **Rückkehr zu A+ steht aus:** Fahrzeugstopp und Smartfox-Modus werden separat geprüft. Die App behauptet keinen erfolgreichen Moduswechsel ohne Rückleseprüfung.
-- **Schlüssel abgelaufen / Abfragepause:** Schlüssel erneuern bzw. das angezeigte Limit abwarten.
-
-Die ausführliche technische Herleitung steht in [SCHNITTSTELLEN.md](SCHNITTSTELLEN.md), der Teststand in [PRUEFBERICHT.md](PRUEFBERICHT.md).
-
-## Zugriff von anderen Geräten im Heimnetz
-
-Optionaler, mit Passwort geschützter HTTPS-Zugang zum Anzeigen und Bedienen ist vorbereitet. Das Tablet betreibt weiterhin genau eine Ladeüberwachung. Zur Einrichtung auf dem Tablet **Netzwerk-Einrichten.cmd**, anschließend **Netzwerk-Firewall.cmd** als Administrator ausführen und das erzeugte öffentliche Zertifikat auf den zugreifenden Geräten übernehmen. Erst danach ist die angezeigte `https://Tablet-IP:8766/`-Adresse nutzbar. Der Zugang bleibt bis zur lokalen Einrichtung ausgeschaltet. Vollständige Schritte: **[NETZWERK.md](NETZWERK.md)**.
-
-## Speicherung und Zugriffsschutz
-
-Die lokale Verwaltung bindet an 127.0.0.1. Der optionale zusätzliche HTTPS-Listener bindet nur an eine konfigurierte private Tablet-IPv4-Adresse und verlangt ein eigenes Netzwerkpasswort. Origin-/Host-Prüfung, lokale Sitzung, HttpOnly-/SameSite-Cookie, CSRF und feste Škoda-HTTPS-Domain mit Zertifikatsprüfung bleiben aktiv. Geräte- und Schlüsseleinrichtung sowie Backend-Beenden/Neustart bleiben ausschließlich lokal. Es wird keine Router-Portweiterleitung eingerichtet. Die Oberfläche hat keine externen Skripte, Schriften oder Analysezugriffe.
-
-Dateien im Datenordner: `config.json` mit FIN und Einstellungen, optional `skoda-key.dpapi`, `charging-session.json` mit Ziel und Sitzungsstatus sowie `vehicle-cache.json` und `rate-limits.json` für geordneten Neustart. Bei optionaler Netzwerkeinrichtung kommen `network.json` mit Passwort-Hash und die Zertifikatsablage `network/` hinzu; der private TLS-Schlüssel ist benutzergebunden mit Windows-DPAPI verschlüsselt. Die Sitzung enthält eine FIN-Zuordnung, keinen API-Schlüssel. Beim Weitergeben des Datenordners personenbezogene Angaben berücksichtigen.
-
-Ein eigener Datenordner kann mit `--data-dir "C:\MeinOrdner\Ladezentrale-Daten"` gesetzt werden. Das Beenden des Backends stoppt eine reale Ladung nicht automatisch. Nach Prozessende kann die App auch keine Zielabschaltung ausführen.
-
-## Tests
-
-**Test.cmd** oder:
-
-```powershell
-py -3 -m unittest discover -s tests -v
-```
-
-202 Tests, ohne reale Fahrzeug- oder Wallboxbefehle. Geprüft sind Protokolle, Sicherheit, verschlüsselte Schlüsselablage, kombinierte Abläufe, Fehler, neue Sitzungen nach einem Stopp, Neustartzustände, Hintergrundüberwachung ohne Browser, Kontingentsteuerung, Instanzsperre, Brave-Start, getrennter Hintergrundprozess, sichere Beendigung und Freigabe der Windows-Energieanforderungen nach dem 90-%-Ziel. Zusätzlich geprüft: ausdrücklicher Start mit älterem SOC, eng begrenzte Freigabe, persistente Fünf-Minuten-Frist, neue SOC-Meldungen, A+-Rückstellung bei abgelehntem/gesperrtem Cloud-Stopp, Energieeinheiten/Vorzeichen/Sensorzuordnung, Zieländerungen ohne Start und geschützter Neustart mit erhaltenem Zustand.
-
-## Repository
-
-Privates GitHub-Repository: [danielrammer/CitiFoxCharger](https://github.com/danielrammer/CitiFoxCharger). Lokale Arbeitskopie: `D:\Repositories\CitiFoxCharger`. Konfiguration, Schlüssel, Fahrzeugcache, Kontingentdaten und Ladesitzungen gehören nicht ins Repository; die Laufzeitdaten liegen weiterhin separat im oben genannten Windows-Datenordner.
-
-## Kompakte Tabletfläche
-
-Die Betriebsansicht passt sich der nutzbaren Browserfläche an. Für 1280 × 800 im Querformat stehen Laden und Energie nebeneinander; für 800 × 1280 im Hochformat untereinander. Bei üblichen Windows-Skalierungen werden Abstände reduziert, die vier Verbraucher in einer Reihe gehalten und dekorative Symbole/zusätzliche Normalhinweise ausgeblendet. Die Aktionstasten bleiben mindestens 48 Pixel, Modusauswahlen mindestens 44 Pixel hoch. Fahrzeug- und Abrufzeit bleiben sichtbar. Erfolgsnachrichten verändern die Seitenhöhe nicht. Bei sehr kleinen Flächen oder langen Fehlermeldungen kann weiterhin Scrollen erforderlich sein; Einstellungen bleiben eine eigene, scrollbar bedienbare Seite.
-
-
-### Zielstopp und fehlende Fahrzeugdaten · Korrektur 1.6.1
-
-Ein gemeldeter SOC von 86 % bei 82-%-Ziel löst den automatischen Stopp auch bei alter Meldung aus. Die lokale Abschaltung erfolgt vor dem Cloud-Befehl und unabhängig von Abfragekontingent oder Fahrzeugerreichbarkeit. Der Modus Aus wird zurückgelesen; das ist zunächst eine Modusbestätigung, noch kein Beweis für null Ladeleistung oder den Fahrzeugstopp. Bei fehlender Bestätigung meldet die App den Fehler und versucht die lokale Abschaltung unabhängig von Cloud-Wartezeiten erneut.
-
-Nach einem ausdrücklich freigegebenen Start mit altem SOC bleibt die Fünf-Minuten-Prüfung erhalten. Sie kann die vom Benutzer beobachteten frühen Abbrüche erklären; ohne Tablet-Diagnose ist dies nicht als deren tatsächliche Ursache belegt. Nach späterem Datenverlust wartet die App höchstens fünf Minuten auf Erholung, insgesamt jedoch höchstens 15 Minuten seit der letzten gültigen Fahrzeugmeldung (eine kürzer konfigurierte Gültigkeit bleibt wirksam). Danach wird ebenfalls vorsorglich gestoppt. Fehlende Daten führen damit nicht mehr zu unbegrenztem M+.
-
-Während des automatischen Stopps bleibt die Wallbox auf Aus. Erst eine neuere, nicht in der Zukunft liegende Fahrzeugmeldung über den Stillstand gibt den normalen Modus wieder frei. Die Oberfläche sperrt in dieser Phase A+/M+. Ein ausdrücklich beendeter Backendprozess hebt den gespeicherten Schutz nach Neustart nicht unbemerkt auf. Nach bewusst geschlossener Überwachung kann A+ wieder ausdrücklich gewählt werden.
-
-Die Prozentgrenze ist weiterhin eine lokale Überwachung und keine in das Auto programmierte Obergrenze. Verzögerte Meldungen können ein Überschreiten vor dem Erkennen verursachen. Die Schutzfristen werden nicht entfernt, um Ladung mit unbekanntem SOC vorzutäuschen. Ein fehlerfreier echter Durchlauf auf dem Tablet ist nach dieser Korrektur noch zu prüfen.
-
-### Diagnose vom Tablet
-
-**Vor Update oder Neustart** im neuen Programmordner **Diagnose.cmd** ausführen. Es fragt standardmäßig das schon laufende lokale Backend auf Port 8765 ab, auch wenn dieses noch 1.6.0 ist. Die normale Backend-Überwachung bleibt dabei aktiv; das Skript selbst sendet keinen Start-/Stoppbefehl. Falls kein Backend antwortet, werden ausdrücklich als möglicherweise älter gekennzeichnete gespeicherte Werte verwendet.
-
-Die Datei **CitiFoxCharger-Diagnose.json** entsteht neben dem Skript. Sie enthält ausgewählte Ziel-, SOC-, Zeit-, Kontingent-, Wallbox- und Überwachungsdaten, aber keine FIN, Schlüssel, Passwörter, Sitzungstoken, IP-Adresse, Rohantworten oder freien Fehlermeldungen. Diese Datei kann zur Fehlersuche weitergegeben werden. Bei abweichendem Backend-Port beispielsweise `Diagnose.cmd --port 8774`; für einen anderen Datenordner zusätzlich `--data-dir "C:\MeinOrdner"`. `--offline` verzichtet auf den Backend-Abruf. Erst danach den alten Backendprozess geordnet beenden, die neue Version übernehmen und starten.
-
-
-## Update-Skript und offene Ergebnisfenster · 1.6.2
-
-**Update.cmd** aktualisiert das private Repository mit `git pull --ff-only --no-rebase origin main`. Git fuer Windows und eine GitHub-Anmeldung mit Zugriff auf das private Repository sind erforderlich. Der Updater prueft origin, den Branch main und einen sauberen Arbeitsstand. Eigene Aenderungen, fehlende Verbindung und ein nicht vorspulbarer Verlauf brechen ab, ohne Reset, Stash oder Ueberschreiben. Vor dem Aendern der Programmdateien wird das Backend geordnet beendet. Eine aktive Ladung wird nicht automatisch gestoppt. Ein nur im RAM hinterlegter API-Schluessel blockiert das Update, bis er mit Windows verschluesselt gespeichert ist. Nach dem Update **Start.cmd** im angezeigten Ordner ausfuehren.
-
-Bei einer entpackten ZIP ohne Git-Historie wird ein separater Nachbarordner **CitiFoxCharger-Git** angelegt und das private Repository geklont. Ein schon vorhandener passender Git-Ordner wird wiederverwendet. Der bisherige Programmordner und die separate Datenablage bleiben erhalten. Ab dann Start.cmd und Update.cmd aus dem Git-Ordner benutzen. Das Skript startet das Backend oder das Auto nicht selbst. Abweichende lokale Backend-Ports lassen sich als `Update.cmd --port 8774` angeben.
-
-**Update.cmd**, **Stoppen.cmd**, **Netzwerk-Einrichten.cmd** und **Netzwerk-Firewall.cmd** bleiben bei Erfolg und Fehler offen, bis eine Taste gedrueckt wird. Start.cmd behaelt den Hintergrundstart ohne dauerhaftes Konsolenfenster. Geprueft wurden echte lokale Git-Repositorys fuer Fast-forward, eigene Aenderungen, aktive Ueberwachung, RAM-Schluessel, fremdes origin, ZIP-Ersteinrichtung/Wiederverwendung, vorhandene Ordner, divergierten Verlauf und fehlgeschlagenen Fetch. Echte Windows-Batch-Tests mit harmlosen Ersatzprogrammen pruefen die Pause und erhaltene Rueckgabecodes bei Erfolg/Fehler sowie das Ersetzen der Update.cmd waehrend ihrer Ausfuehrung. Kein reales Backend wurde dafuer beendet.
+See [TEST-REPORT.md](TEST-REPORT.md) for validation and outstanding hardware checks.

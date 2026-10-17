@@ -5,10 +5,10 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
-from diagnose import main, report, saved_status
+from diagnostics import main, report, saved_status
 
 
-class DiagnoseTests(unittest.TestCase):
+class DiagnosticsTests(unittest.TestCase):
     def test_report_omits_secrets_identity_arbitrary_text_and_raw_sections(self):
         data = {'skoda': {'soc':86, 'vin':'PRIVATE-VIN', 'key':'PRIVATE-KEY',
                          'read_at':'PRIVATE-KEY', 'message':'PRIVATE-KEY', 'stale':True},
@@ -72,7 +72,7 @@ class DiagnoseTests(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as folder:
                 output=Path(folder)/'report.json'
-                with patch('sys.argv',['diagnose.py','--port',str(server.server_port),
+                with patch('sys.argv',['diagnostics.py','--port',str(server.server_port),
                                        '--data-dir',folder,'--output',str(output)]):
                     self.assertEqual(main(),0)
                 result=json.loads(output.read_text(encoding='utf-8'))

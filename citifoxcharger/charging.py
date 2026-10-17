@@ -23,14 +23,14 @@ class ChargingSession:
                 data = json.loads(self.path.read_text(encoding="utf-8"))
                 if not isinstance(data, dict) or type(data.get("target_percent")) is not int or not 1 <= data["target_percent"] <= 100:
                     raise ValueError()
-                self.value = data
+                self.value = data                restored = {'complete':'The previous charging session completed.',                            'closed':'The previous monitoring session was explicitly closed.',                            'error':'The previous session needs attention. Please check the vehicle and Smartfox.'}                if data.get('status') in restored:                    self.value['message'] = restored[data['status']]
                 # Restart never repeats a start. Recover through current telemetry and stop/restore only.
                 if data.get("status") == "starting":
-                    self.value.update(status="interrupted", message="Startstatus nach Neustart wird geprüft. Kein erneuter Startbefehl.")
+                    self.value.update(status="interrupted", message="Checking the start state after restart. No repeated start command.")
                 elif data.get("status") in ACTIVE:
-                    self.value["message"] = "Überwachung nach Neustart wird wieder aufgenommen."
+                    self.value["message"] = "Monitoring is resuming after restart."
             except (ValueError, UnicodeError):
-                self.value.update(status="error", message="Gespeicherte Ladeüberwachung ist ungültig. Bitte prüfen.")
+                self.value.update(status="error", message="The saved charging session is invalid. Please check it.")
 
     @property
     def active(self):
@@ -42,7 +42,7 @@ class ChargingSession:
 
     @property
     def normal_name(self):
-        return "Aus" if self.normal_mode == "OFF" else "A+"
+        return "Off" if self.normal_mode == "OFF" else "A+"
 
     def save(self, replace=False, **changes):
         candidate = {**({} if replace else self.value), **changes}
@@ -65,19 +65,19 @@ class ChargingSession:
         car = self.service.cache.get("skoda", {})
         if not value["can_force"] and not value["force_reason"]:
             if self.active and self.value.get("stop_requested"):
-                value["force_reason"] = "Ein Stopp wird noch bestätigt."
+                value["force_reason"] = "A stop is awaiting confirmation."
             elif self.active and type(web.get("power_kw")) in (int, float) and web["power_kw"] > 0.1:
                 pass
             elif time.monotonic() < self.service.command_after:
-                value["force_reason"] = "Der gerade gesendete Befehl wird geprüft. Bitte kurz warten."
+                value["force_reason"] = "The last command is being checked. Please wait."
             elif value["can_force_with_stale"]:
-                value["force_reason"] = "Zum Start bitte den zuletzt gemeldeten Ladestand ausdrücklich freigeben."
+                value["force_reason"] = "To start, explicitly allow the last reported charge level."
             elif car.get("stale", True):
-                value["force_reason"] = "Aktueller Fahrzeug-Ladestand fehlt. Bitte neue Fahrzeugdaten abwarten."
+                value["force_reason"] = "Current vehicle charge level is unavailable. Please wait for new vehicle data."
             elif not self.service.can_command("start"):
-                value["force_reason"] = "Startzugriff oder Abfragekontingent ist noch nicht verfügbar."
+                value["force_reason"] = "Start access or request quota is not available yet."
             elif self.active and not self.value.get("stop_requested"):
-                value["force_reason"] = "Der vorherige Start ist noch nicht abschließend geprüft oder die Wallbox meldet keine frische Ladebereitschaft."
+                value["force_reason"] = "The previous start is not confirmed or the wallbox has no fresh readiness report."
         return value
 
     def local_stop_allows_shutdown(self):
@@ -131,36 +131,36 @@ class ChargingSession:
 
     def start(self, target, request_id, allow_stale=False):
         if type(allow_stale) is not bool:
-            raise ValueError("Freigabe für ältere Fahrzeugdaten muss Ja oder Nein sein.")
+            raise ValueError("Permission to use older vehicle data must be true or false.")
         if type(target) is not int or not 1 <= target <= 100:
-            raise ValueError("Ziel-Ladestand muss zwischen 1 und 100 % liegen.")
+            raise ValueError("Target charge level must be between 1 and 100%.")
         if request_id == self.value.get("request_id"):
             if target != self.value.get("target_percent"):
-                raise ValueError("Diese Befehlskennung gehört zu einem anderen Ziel.")
+                raise ValueError("This request ID belongs to a different target.")
             return self.state()
         retrying = self.active
         if retrying and (not self.can_retry_start(allow_stale) or target != self.value["target_percent"]):
-            raise IntegrationError("session_active", "Eine manuelle Ladeüberwachung läuft bereits.")
+            raise IntegrationError("session_active", "A manual charging session is already being monitored.")
         self.service.update("skoda")
         if not self.service.can_command("start", allow_stale) or not self.service.can_command("stop"):
-            raise IntegrationError("blocked", "Aktuelle Fahrzeugdaten und Start/Stopp-Zugriff erforderlich.")
+            raise IntegrationError("blocked", "Current vehicle data and start/stop access are required.")
         captured = timestamp(self.service.cache.get("skoda", {}).get("captured_at"))
         using_stale = captured is not None and time.time() - captured > self.service.config.value["skoda"]["stale_seconds"]
         if using_stale and (not allow_stale or not self.can_start_with_stale()):
-            raise IntegrationError("blocked", "Start mit älterem Ladestand erfordert eine frische, bestätigte Ladebereitschaft.")
+            raise IntegrationError("blocked", "Starting with older data requires fresh, confirmed wallbox readiness.")
         soc = self.service.cache.get("skoda", {}).get("soc")
         if type(soc) is not int or soc >= target:
-            raise IntegrationError("target_reached", "Der Ziel-Ladestand muss über dem aktuellen Akkustand liegen.")
+            raise IntegrationError("target_reached", "The target must be above the current battery level.")
         charger = self.web.read(self.service.config.value["smartfox"])
         self.service.cache.setdefault("smartfox", {})["charger"] = charger
         if not charger["control_available"]:
             raise IntegrationError("smartfox_unverified", charger["control_reason"])
         if using_stale and not self.wallbox_ready():
-            raise IntegrationError("blocked", "Smartfox meldet keine frische Ladebereitschaft.")
+            raise IntegrationError("blocked", "Smartfox has no fresh readiness report.")
         # Persist intent before any hardware effect, bound to this vehicle.
         self.save(replace=True, status="starting", target_percent=target, vin=self.service.config.value["skoda"]["vin"],
                   request_id=request_id, started_at=utcnow(), last_start_epoch=time.time(),
-                  message="Smartfox-Ladefreigabe wird geprüft. Fahrzeugstart wurde noch nicht gesendet.")
+                  message="Checking Smartfox charging permission. No vehicle start has been sent yet.")
         try:
             self.service.cache.setdefault("smartfox", {})["charger"] = self.web.set_mode(self.service.config.value["smartfox"], "M+")
             self.service.cache["smartfox"]["charger"] = self.web.wait_ready(self.service.config.value["smartfox"])
@@ -170,31 +170,31 @@ class ChargingSession:
             result = self.service.command("start", request_id, allow_stale)
             if result["status"] != "accepted":
                 if result["status"] == "unknown" and using_stale:
-                    self.save(status="paused", message="Start unbestätigt. Fünf-Minuten-Prüfung auf neue Fahrzeugdaten läuft.")
+                    self.save(status="paused", message="Start is unconfirmed. The five-minute check for new vehicle data is active.")
                     try:
                         self.restore_auto()
                     except SmartfoxControlError:
                         pass
                     return self.state()
                 raise IntegrationError("start_failed", result["message"])
-            self.save(status="monitoring", message=("Start mit älterem Ladestand angefordert. Neue Fahrzeugdaten werden innerhalb von fünf Minuten erwartet."
-                                                    if using_stale else f"Start angefordert. Ladestart noch nicht bestätigt; Ziel {target} % wird überwacht."))
+            self.save(status="monitoring", message=("Start requested with an older charge level. New vehicle data are expected within five minutes."
+                                                    if using_stale else f"Start requested. Charging is unconfirmed; target {target} % is monitored."))
         except (SmartfoxControlError, IntegrationError) as error:
             # Try restoring normal mode; do not pretend rollback or the vehicle start succeeded.
             try:
                 self.service.cache.setdefault("smartfox", {})["charger"] = self.web.set_mode(self.service.config.value["smartfox"], "A+")
                 self.save(status="error", message=str(error))
             except SmartfoxControlError:
-                self.save(status="restore_pending", message="Start fehlgeschlagen. Rückkehr zu A+ ist noch nicht bestätigt.")
+                self.save(status="restore_pending", message="Start failed. Return to A+ is not confirmed yet.")
             raise IntegrationError("start_failed", str(error)) from None
         return self.state()
 
     def change_target(self, target):
         if type(target) is not int or not 1 <= target <= 100:
-            raise ValueError("Ziel-Ladestand muss zwischen 1 und 100 % liegen.")
+            raise ValueError("Target charge level must be between 1 and 100%.")
         if not self.state()["can_adjust_target"]:
-            raise IntegrationError("target_locked", "Das Ziel kann nur während einer laufenden Überwachung ohne angeforderten Stopp geändert werden.")
-        self.save(target_percent=target, message=f"Neues Ziel {target} % gespeichert.")
+            raise IntegrationError("target_locked", "The target can only change during active monitoring before a stop is requested.")
+        self.save(target_percent=target, message=f"New target {target} % gespeichert.")
         self.next_attempt = 0
         self.tick()  # A lower target may request stop on fresh SOC; never starts the car.
         return self.state()
@@ -213,7 +213,7 @@ class ChargingSession:
         # Durable stop intent before the upstream call. Also protects a user-requested stop below target.
         self.save(status="paused", stop_requested=True, awaiting_fresh_soc=False, stop_intent_epoch=time.time(),
                   stop_guard=automatic or self.value.get("stop_guard", False),
-                  vin=self.service.config.value["skoda"]["vin"], message="Stopp wird angefordert.")
+                  vin=self.service.config.value["skoda"]["vin"], message="Requesting a stop.")
         if self.value.get("stop_guard"):
             # A+ can supply power according to schedules; secure the local stop before a cloud timeout.
             try:
@@ -226,7 +226,7 @@ class ChargingSession:
                 raise IntegrationError("stop_unconfirmed", result["message"])
         except IntegrationError as error:
             self.save(status="paused", stop_failures=self.value.get("stop_failures", 0) + 1,
-                      last_stop_failure_epoch=time.time(), message="Stopp nicht bestätigt. Überwachung wartet auf neue Fahrzeugdaten.")
+                      last_stop_failure_epoch=time.time(), message="Stop is unconfirmed. Monitoring is waiting for new vehicle data.")
             self.next_attempt = time.monotonic() + 60
             raise IntegrationError("stop_unconfirmed", str(error)) from None
         finally:
@@ -237,10 +237,10 @@ class ChargingSession:
                 self.save(auto_restored=False)
         self.save(status="stop_pending", stop_id=request_id, stop_requested_at=result["requested_at"],
                   stop_requested_epoch=result["requested_epoch"],
-                  message="Ziel erreicht. Laden wird beendet." if automatic else "Laden wird beendet.")
+                  message="Target reached. Charging is stopping." if automatic else "Charging is stopping.")
         # Restore A+ immediately after accepted stop; completion still needs newer non-charging telemetry.
         if not self.value.get("auto_restored"):
-            self.save(message=f"Stopp angefordert. Rückkehr zu {self.normal_name} ist noch nicht bestätigt.")
+            self.save(message=f"Stop requested. Return to {self.normal_name} is not confirmed yet.")
         return self.state()
 
     def automatic_stop(self, reason, cause="target"):
@@ -250,14 +250,14 @@ class ChargingSession:
             self.stop(request_id, automatic=True)
         except IntegrationError:
             self.next_attempt = time.monotonic() + 60
-        secured = "Smartfox ist auf Aus. Fahrzeugstopp wird noch geprüft." if self.value.get("auto_restored") else "Wallbox-Aus ist noch unbestätigt. Bitte Ladung prüfen."
+        secured = "Smartfox is Off. Vehicle stop confirmation is pending." if self.value.get("auto_restored") else "Wallbox Off is unconfirmed. Please check charging."
         self.save(stop_reason=reason, stop_cause=cause, message=reason + " " + secured)
 
     def finish_stop(self, message):
         # Release the temporary OFF only after newer vehicle telemetry confirms stopped.
         self.save(stop_guard=False)
         self.restore_auto()
-        self.save(status="complete", message=message + f" Smartfox ist auf {self.normal_name}.", completed_at=utcnow())
+        self.save(status="complete", message=message + f" Smartfox is set to {self.normal_name}.", completed_at=utcnow())
 
     def tick(self):
         # Local OFF retries remain independent of any one-minute cloud backoff.
@@ -270,7 +270,7 @@ class ChargingSession:
                 try:
                     self.restore_auto()
                 except SmartfoxControlError:
-                    self.save(auto_restored=False, message="Automatischer Stopp: Wallbox-Aus noch unbestätigt. Bitte Ladung prüfen.")
+                    self.save(auto_restored=False, message="Automatic stop: wallbox Off is unconfirmed. Please check charging.")
         if time.monotonic() < self.next_attempt:
             return
         self.next_attempt = time.monotonic() + 10
@@ -293,7 +293,7 @@ class ChargingSession:
             return
         car = self.service.cache.get("skoda", {})
         if self.value.get("vin") and self.value["vin"] != self.service.config.value["skoda"]["vin"]:
-            self.save(status="error", message="FIN wurde geändert. Überwachung wurde nicht auf ein anderes Fahrzeug übertragen.")
+            self.save(status="error", message="The VIN changed. Monitoring was not transferred to another vehicle.")
             return
         status = self.value["status"]
         charger = self.service.cache.get("smartfox", {}).get("charger", {})
@@ -302,11 +302,11 @@ class ChargingSession:
             try:
                 self.restore_auto()
             except SmartfoxControlError:
-                self.value["message"] = f"Stopp unbestätigt. Auch die Rückkehr zu {self.normal_name} steht noch aus."
+                self.value["message"] = f"Stop is unconfirmed. Return to {self.normal_name} is still pending."
         if status == "restore_pending":
             try:
                 self.restore_auto()
-                self.save(status="error", message=f"Modus {self.normal_name} bestätigt. Fahrzeugstatus bitte prüfen.")
+                self.save(status="error", message=f"Mode {self.normal_name} confirmed. Please check the vehicle status.")
             except SmartfoxControlError:
                 pass
             return
@@ -316,31 +316,31 @@ class ChargingSession:
             stopped = state in ("CONNECT_CABLE", "CONSERVING", "READY_FOR_CHARGING", "CHARGING_INTERRUPTED")
             if car.get("available") and not car.get("stale", True) and captured is not None and self.value.get("stop_requested_epoch", float("inf")) <= captured <= time.time() + 5 and stopped:
                 try:
-                    self.finish_stop("Laden beendet.")
+                    self.finish_stop("Charging ended.")
                 except SmartfoxControlError:
-                    self.save(message=f"Fahrzeug hat gestoppt. Rückkehr zu {self.normal_name} steht aus.")
+                    self.save(message=f"The vehicle stopped. Return to {self.normal_name} is pending.")
             elif time.time() - self.value.get("stop_requested_epoch", time.time()) > 600:
                 self.save(status="paused", last_stop_failure_epoch=self.value.get("stop_requested_epoch"),
                           stop_failures=self.value.get("stop_failures", 0) + 1,
-                          message="Stopp noch nicht bestätigt. Warte auf neuen Fahrzeugstatus.")
+                          message="Stop is still unconfirmed. Waiting for a newer vehicle status.")
             return
         captured = timestamp(car.get("captured_at"))
         # An old report at/above the goal is sufficient for a conservative stop, never for a start.
         if (not self.value.get("stop_requested") and type(car.get("soc")) is int and
                 captured is not None and captured <= time.time() + 5 and car["soc"] >= self.value["target_percent"]):
-            self.automatic_stop(f"Ziel {self.value['target_percent']} % laut letzter Fahrzeugmeldung erreicht.")
+            self.automatic_stop(f"Ziel {self.value['target_percent']}% reached according to the last vehicle report.")
             return
         if self.value.get("awaiting_fresh_soc"):
             captured = timestamp(car.get("captured_at"))
             if (car.get("available") and not car.get("stale", True) and type(car.get("soc")) is int
                     and captured is not None and self.value["last_start_epoch"] <= captured <= time.time() + 5):
-                self.save(awaiting_fresh_soc=False, status="monitoring", message="Neue Fahrzeugdaten empfangen. Ziel wird überwacht.")
+                self.save(awaiting_fresh_soc=False, status="monitoring", message="New vehicle data received. The target is monitored.")
                 status = "monitoring"
             elif time.time() >= self.value["fresh_soc_deadline"]:
-                self.automatic_stop("Keine neuen Fahrzeugdaten innerhalb von fünf Minuten.", cause="missing_initial_soc")
+                self.automatic_stop("No new vehicle data within five minutes.", cause="missing_initial_soc")
                 return
             else:
-                self.value["message"] = "Start angefordert. Warte auf einen neuen Fahrzeug-Ladestand; ohne neue Daten wird nach fünf Minuten Stopp angefordert."
+                self.value["message"] = "Start requested. Waiting for a new vehicle charge level; a stop will be requested after five minutes without new data."
                 return
         max_age = min(900, self.service.config.value["skoda"]["stale_seconds"])
         current_soc = (car.get("available") and not car.get("stale", True) and type(car.get("soc")) is int
@@ -356,37 +356,37 @@ class ChargingSession:
                 if captured is not None and captured <= time.time() + 5:
                     deadline = min(deadline, captured + max_age)
                 if time.time() >= deadline:
-                    self.automatic_stop("Zielüberwachung ohne aktuelle Fahrzeugdaten nicht möglich.", cause="missing_soc")
+                    self.automatic_stop("The target cannot be monitored without current vehicle data.", cause="missing_soc")
                     return
             if status != "paused":
-                self.save(status="paused", message="Warte auf aktuelle Fahrzeugdaten. Ohne neue Daten wird die Ladung vorsorglich beendet.")
+                self.save(status="paused", message="Waiting for current vehicle data. Charging will stop as a precaution if no new data arrive.")
             return
         if self.value.get("data_missing_since") is not None:
             self.save(data_missing_since=None)
         if status == "starting":
             # A process/file error after a start may leave an uncertain result: do not resend a start.
-            self.save(status="interrupted", message="Startstatus wird anhand der Fahrzeugdaten geprüft.")
+            self.save(status="interrupted", message="Checking the start state against vehicle data.")
             return
         if status == "interrupted" and car.get("state") in ("CONNECT_CABLE", "CONSERVING", "READY_FOR_CHARGING", "CHARGING_INTERRUPTED"):
             try:
                 self.restore_auto()
-                self.save(status="error", message=f"Unterbrochener Start: Fahrzeug lädt nicht. Smartfox ist auf {self.normal_name}.")
+                self.save(status="error", message=f"Interrupted start: the vehicle is not charging. Smartfox is set to {self.normal_name}.")
             except SmartfoxControlError:
-                self.save(status="restore_pending", message=f"Unterbrochener Start. Rückkehr zu {self.normal_name} steht aus.")
+                self.save(status="restore_pending", message=f"Interrupted start. Return to {self.normal_name} is pending.")
             return
         captured = timestamp(car.get("captured_at"))
         failure_epoch = self.value.get("last_stop_failure_epoch")
         if (failure_epoch and captured is not None and failure_epoch < captured <= time.time() + 5 and
                 car.get("state") in ("CONNECT_CABLE", "CONSERVING", "READY_FOR_CHARGING", "CHARGING_INTERRUPTED")):
             try:
-                self.finish_stop("Fahrzeugstopp bestätigt.")
+                self.finish_stop("Vehicle stop confirmed.")
             except SmartfoxControlError:
-                self.value["message"] = f"Fahrzeug hat gestoppt. Rückkehr zu {self.normal_name} steht aus."
+                self.value["message"] = f"The vehicle stopped. Return to {self.normal_name} is pending."
             return
         if failure_epoch and (captured is None or captured <= failure_epoch or car.get("state") != "CHARGING"):
             return  # Never blindly replay an uncertain command; fresh charging telemetry is required.
         if self.value.get("stop_failures", 0) >= 3:
-            self.value["message"] = "Laden konnte nicht bestätigt gestoppt werden. Bitte Fahrzeug und Smartfox prüfen."
+            self.value["message"] = "Charging could not be confirmed stopped. Please check the vehicle and Smartfox."
             return
         if car["soc"] >= self.value["target_percent"] or self.value.get("stop_requested"):
             if self.service.can_command("stop"):
@@ -398,13 +398,13 @@ class ChargingSession:
             return
         charger = self.service.cache.get("smartfox", {}).get("charger", {})
         if charger.get("available") and charger.get("mode") != "M+":
-            self.value["message"] = f"Ziel {self.value['target_percent']} % wird weiter überwacht. Smartfox ist auf {charger.get('mode') or 'unbekannt'} gewechselt."
+            self.value["message"] = f"Ziel {self.value['target_percent']} % is still monitored. Smartfox changed to {charger.get('mode') or 'unbekannt'} gewechselt."
         elif charger.get("available") and charger.get("mode") == "M+":
             if self.can_retry_start():
-                self.value["message"] = f"Keine Ladung bestätigt. Du kannst den Start erneut freigeben; Ziel {self.value['target_percent']} % bleibt erhalten."
+                self.value["message"] = f"Charging is unconfirmed. You can explicitly retry the start; target {self.value['target_percent']} % bleibt erhalten."
             elif type(charger.get("power_kw")) in (int, float) and charger["power_kw"] > 0.1:
-                self.value["message"] = f"Manuelles Laden bis {self.value['target_percent']} % wird überwacht."
+                self.value["message"] = f"Manual charging to {self.value['target_percent']} % is monitored."
             else:
-                self.value["message"] = f"Smartfox ist auf M+. Fahrzeugstart noch nicht bestätigt; Ziel {self.value['target_percent']} % wird überwacht."
+                self.value["message"] = f"Smartfox is on M+. Vehicle start is unconfirmed; target {self.value['target_percent']} % is monitored."
         if status in ("paused", "interrupted"):
-            self.save(status="monitoring", message=f"Manuelles Laden bis {self.value['target_percent']} % wird überwacht.")
+            self.save(status="monitoring", message=f"Manual charging to {self.value['target_percent']} % is monitored.")
