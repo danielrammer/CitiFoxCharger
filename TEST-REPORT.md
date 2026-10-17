@@ -1,4 +1,4 @@
-# Validation report · 1.7.3
+# Validation report · 1.7.4
 
 Date: **17 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
@@ -7,6 +7,8 @@ Date: **17 October 2026**. Environment: Windows, Python 3.14. Device and vehicle
 The 1.6.2 update/window checkpoint passed **202 tests** and was pushed to the private repository before the English migration. Version 1.7.0 renames the Python package and command/document files, translates CLI/backend/documentation to English, retains an optional German/English browser view and adds explicit passwordless HTTPS setup. That release was pushed before the separate 1.7.1 light-theme contrast adjustment.
 
 The complete 1.7.3 offline suite passed **230 tests**; the prior 1.7.2 suite passed 218 tests. The prior 1.7.1 suite passed 208 tests. Version 1.7.2 adds the post-update startup choice and distinguishes browser startup from backend-only startup. Test coverage includes the following behavior; hardware limitations are separate.
+
+For 1.7.4, **28 targeted Git-update, startup-choice and Windows command-window tests passed**. This release changes update/file handling and ignore rules; charging and network logic are unchanged from the validated 1.7.3 baseline.
 
 Version 1.7.3 fixes a reported deadlock after the tablet slept on a low battery: the vehicle showed unreachable/unknown command outcome, the UI disabled Stop using cloud permissions, and backend shutdown required a stop intent. Local stop availability is now separate from cloud capability. Every stop secures Off before cloud access. Tests cover offline stop, failed local Off, mode changes, shutdown intent and no fabricated vehicle confirmation. The recovery command was also exercised against the actual 1.6.2 backend code with simulated devices: it secured Off, recorded the stop, passed the legacy shutdown guard and did not replay a start. The reported tablet itself remains unmodified until the user installs the package.
 
@@ -38,7 +40,7 @@ Diagnostics tests check old-backend compatibility, GET-only collection, clearly 
 
 ### Git updater and command windows
 
-Real temporary local Git repositories test fast-forward, dirty/untracked files, diverged history, missing remote, unexpected origin, ZIP bootstrap/reuse and refusal to overwrite an unrelated directory. Fake backend control tests protect active monitoring and RAM-only credentials. Actual Windows batch processes verify that Update, Stop, Setup-Network and Setup-Firewall wait for a key after both success and failure and preserve return codes. Update.cmd remains safe when its own file changes during the Git pull. No production backend is stopped for these tests.
+Real temporary local Git repositories test fast-forward, tracked edits, allowed untracked reports, diverged history, missing remote, unexpected origin, ZIP bootstrap/reuse and refusal to overwrite an unrelated directory. Version 1.7.4 adds regression checks for diagnosis aliases created before new ignore rules arrive, arbitrary local filenames with spaces/Unicode, staged new program files, ignored/untracked incoming collisions, file/directory conflicts and an ignored file created after preflight. Local data must survive every case. Updates apply the exact fetched commit without auto-stash or overwriting ignored files. Fake backend control tests protect active monitoring and RAM-only credentials. Actual Windows batch processes verify that Update, Stop, Setup-Network and Setup-Firewall wait for a key after both success and failure and preserve return codes. Update.cmd remains safe when its own file changes during the Git update. No production backend is stopped for these tests.
 
 Startup-choice tests cover explicit browser/backend-only selection, empty input/cancellation/EOF with no start, invalid choices, startup failures, and no menu after a failed update. Launch uses a fresh Python process from the returned Git folder, retaining a custom port and profile with spaces. Real Windows start scripts run harmless argument-recording stubs; backend-only startup is verified to suppress browser opening for both new and reused instances. The updater menu flag is checked in actual batch execution. No real browser, vehicle or energy manager is started by these tests.
 

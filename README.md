@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.7.3
+# CitiFoxCharger for Windows · 1.7.4
 
 A local dashboard for a Škoda Citigo e iV and a SMARTFOX Pro 2 energy manager with a Charger Pro at charging point 1. The installed SMARTFOX profile is **EM3 00.01.16.08**, address **192.168.0.81**.
 
@@ -48,13 +48,16 @@ For a custom profile, pass `--data-dir "C:\MyDataFolder"` to the Python entry po
 
 **Update.cmd** requires Git for Windows and a GitHub sign-in authorized for the private `danielrammer/CitiFoxCharger` repository. The MyŠkoda key is unrelated to GitHub authentication.
 
-In a Git installation the updater verifies the expected origin, branch **main**, a clean worktree and fast-forward ancestry. It fetches first, then shuts down the backend cleanly and runs:
+In a Git installation the updater verifies the expected origin, branch **main**, no tracked program changes and fast-forward ancestry. It fetches first, checks for local filename conflicts and then shuts down the backend cleanly. It applies exactly the checked commit using:
 
 ```powershell
-git pull --ff-only --no-rebase origin main
+git fetch origin main
+git merge --ff-only --no-autostash --no-overwrite-ignore FETCH_HEAD
 ```
 
-Local edits, untracked program files, diverged history or failed fetches abort the update. There is no reset, stash, forced merge or overwrite of local edits. An active charging session blocks shutdown; stop charging in the app and wait for confirmation first. A key held only in RAM must be saved with Windows encryption before an update can close the backend.
+Local reports and other untracked files do not block updates and remain untouched. Common diagnosis filenames, including **Diagnosis.json**, **CitiFoxCharger-Diagnose.json** and **CitiFoxCharger-Diagnostics.json**, are ignored by Git. Tracked edits (including staged new files), real file/directory collisions, diverged history or failed fetches still abort the update. Collision checks include ignored files and run before backend shutdown and again before applying the update; Git also refuses to overwrite ignored files created after those checks. There is no reset, stash, forced merge or deletion of local files. An active charging session blocks shutdown; stop charging in the app and wait for confirmation first. A key held only in RAM must be saved with Windows encryption before an update can close the backend.
+
+If an older **Update.cmd** refuses an extra diagnosis file before it can fetch this correction, run `git pull --ff-only` once in the Git program folder. Future **Update.cmd** runs use the corrected checks; there is no need to delete diagnosis files.
 
 An extracted ZIP has no Git history. On first use the updater clones into the separate neighbouring **CitiFoxCharger-Git** folder. It can reuse an existing matching checkout, but never overwrites an unrelated folder. The original ZIP folder remains. From then on use the scripts in the displayed Git folder. After a successful update, **Update.cmd** offers:
 

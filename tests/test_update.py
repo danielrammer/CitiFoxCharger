@@ -71,6 +71,88 @@ class GitUpdateTests(unittest.TestCase):
         with self.assertRaises(UpdateError):self.run_update(control)
         self.assertEqual(control.actions,[])
         self.assertEqual((self.checkout/'version.txt').read_text(),'user edit')
+
+    def test_untracked_reports_and_other_local_files_survive_the_update(self):
+        self.newer()
+        files=('Diagnosis.json','CitiFoxCharger-Diagnose.json','CitiFoxCharger-Diagnostics.json',
+               'local notes/session.json',' notes with spaces and ä.json')
+        for name in files:
+            path=self.checkout/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'keep local bytes')
+        control=FakeControl(active=True)
+        self.run_update(control)
+        self.assertEqual(control.actions,['stop'])
+        self.assertEqual((self.checkout/'version.txt').read_text(),'new')
+        for name in files:self.assertEqual((self.checkout/name).read_bytes(),b'keep local bytes')
+
+    def test_new_ignore_rules_allow_reports_created_before_the_first_update(self):
+        names=('Diagnosis.json','diagnostics.json','CitiFoxCharger-Diagnose.json','CitiFoxCharger-Diagnostics.json')
+        for name in names:(self.checkout/name).write_text('keep')
+        shutil.copyfile(Path(__file__).resolve().parents[1]/'.gitignore',self.seed/'.gitignore')
+        self.git('-C',str(self.seed),'add','.gitignore')
+        self.newer()
+        self.run_update()
+        for name in names:
+            self.assertEqual((self.checkout/name).read_text(),'keep')
+            self.assertEqual(self.git('-C',str(self.checkout),'check-ignore',name).strip(),name)
+
+    def test_untracked_collision_blocks_before_backend_shutdown(self):
+        (self.checkout/'Diagnosis.json').write_text('local report')
+        (self.seed/'Diagnosis.json').write_text('incoming file')
+        self.git('-C',str(self.seed),'add','Diagnosis.json');self.newer()
+        control=FakeControl(active=True)
+        with self.assertRaisesRegex(UpdateError,'local file conflicts'):self.run_update(control)
+        self.assertEqual(control.actions,[])
+        self.assertEqual((self.checkout/'Diagnosis.json').read_text(),'local report')
+        self.assertEqual((self.checkout/'version.txt').read_text(),'old')
+
+    def test_ignored_collision_also_blocks_before_backend_shutdown(self):
+        (self.checkout/'.git/info/exclude').write_text('Diagnosis.json\n')
+        (self.checkout/'Diagnosis.json').write_text('local report')
+        (self.seed/'Diagnosis.json').write_text('incoming file')
+        self.git('-C',str(self.seed),'add','Diagnosis.json');self.newer()
+        control=FakeControl(active=True)
+        with self.assertRaisesRegex(UpdateError,'local file conflicts'):self.run_update(control)
+        self.assertEqual(control.actions,[])
+        self.assertEqual((self.checkout/'Diagnosis.json').read_text(),'local report')
+
+    def test_local_file_is_preserved_when_upstream_adds_a_directory_at_that_path(self):
+        (self.checkout/'new module').write_text('local file')
+        (self.seed/'new module').mkdir();(self.seed/'new module/code.py').write_text('# incoming')
+        self.git('-C',str(self.seed),'add','new module');self.newer()
+        control=FakeControl(active=True)
+        with self.assertRaises(UpdateError):self.run_update(control)
+        self.assertEqual(control.actions,[])
+        self.assertEqual((self.checkout/'new module').read_text(),'local file')
+
+    def test_local_directory_is_preserved_when_upstream_adds_a_file_at_that_path(self):
+        (self.checkout/'new module').mkdir();(self.checkout/'new module/keep.json').write_text('local report')
+        (self.seed/'new module').write_text('incoming file')
+        self.git('-C',str(self.seed),'add','new module');self.newer()
+        control=FakeControl(active=True)
+        with self.assertRaises(UpdateError):self.run_update(control)
+        self.assertEqual(control.actions,[])
+        self.assertEqual((self.checkout/'new module/keep.json').read_text(),'local report')
+
+    def test_staged_new_program_files_still_block_the_update(self):
+        (self.checkout/'custom.py').write_text('# local program change')
+        self.git('-C',str(self.checkout),'add','custom.py')
+        control=FakeControl(active=True)
+        with self.assertRaisesRegex(UpdateError,'Tracked program changes'):self.run_update(control)
+        self.assertEqual(control.actions,[])
+        self.assertEqual((self.checkout/'custom.py').read_text(),'# local program change')
+
+    def test_merge_does_not_overwrite_an_ignored_file_created_after_preflight(self):
+        (self.seed/'Diagnosis.json').write_text('incoming file')
+        self.git('-C',str(self.seed),'add','Diagnosis.json');self.newer()
+        (self.checkout/'.git/info/exclude').write_text('Diagnosis.json\n')
+        original=subprocess.run
+        def create_before_merge(command,*args,**kwargs):
+            if 'merge' in command:(self.checkout/'Diagnosis.json').write_text('late local report')
+            return original(command,*args,**kwargs)
+        with patch('update.subprocess.run',side_effect=create_before_merge):
+            with self.assertRaises(UpdateError):self.run_update()
+        self.assertEqual((self.checkout/'Diagnosis.json').read_text(),'late local report')
+        self.assertEqual((self.checkout/'version.txt').read_text(),'old')
     def test_active_monitor_refuses_update_without_modifying_program(self):
         self.newer()
         with self.assertRaises(ControlError):self.run_update(FakeControl(active=True,blocked=True))

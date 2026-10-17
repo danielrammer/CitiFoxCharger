@@ -39,7 +39,7 @@ def update(directory, port=8765, data_dir=None, *, control=None, git_binary=None
                                 text=True, encoding='utf-8', errors='replace')
         if result.returncode:
             raise UpdateError('Git step failed: ' + args[0] + '. Nothing will be reset.')
-        return result.stdout.strip() if capture else None
+        return (result.stdout if '-z' in args else result.stdout.strip()) if capture else None
 
     if Path(git('rev-parse', '--show-toplevel', capture=True)).resolve() != target:
         raise UpdateError('The program folder is not the repository root.')
@@ -48,16 +48,33 @@ def update(directory, port=8765, data_dir=None, *, control=None, git_binary=None
     if git('symbolic-ref', '--short', 'HEAD', capture=True) != 'main':
         raise UpdateError('This updater requires main. The current branch is unchanged.')
 
-    def require_clean():
-        if git('status', '--porcelain', '--untracked-files=normal', capture=True):
-            raise UpdateError('Local or untracked program changes exist. Check them first. No reset, stash or overwrite was performed.')
+    def require_tracked_clean():
+        if git('status', '--porcelain', '--untracked-files=no', capture=True):
+            raise UpdateError('Tracked program changes exist. Check them first. No reset, stash or overwrite was performed.')
 
-    require_clean()
+    def protect_local_files():
+        # Include ignored files: Git may otherwise overwrite them during a merge.
+        local = git('ls-files', '--others', '-z', capture=True).split('\0')
+        incoming = git('ls-tree', '-r', '--name-only', '-z', 'FETCH_HEAD', capture=True).split('\0')
+        def normal(path):
+            path = path.rstrip('/')
+            return path.casefold() if os.name == 'nt' else path
+        incoming = [normal(path) for path in incoming if path]
+        for path in local:
+            if not path:
+                continue
+            name = normal(path)
+            if any(name == other or name.startswith(other+'/') or other.startswith(name+'/') for other in incoming):
+                raise UpdateError(f'A local file conflicts with an incoming program path: {path!r}. '
+                                  'Move that file outside the program folder first. Nothing was overwritten.')
+
+    require_tracked_clean()
     print('Checking GitHub for updates ...', flush=True)
     git('fetch', 'origin', 'main')
     ancestor = subprocess.run([binary, '-C', str(target), 'merge-base', '--is-ancestor', 'HEAD', 'FETCH_HEAD'], capture_output=True)
     if ancestor.returncode:
         raise UpdateError('Local and GitHub history cannot be updated by fast-forward. Check Git history. No reset was performed.')
+    protect_local_files()
 
     client = control or LocalControl(port)
     if client.health() is not None:
@@ -68,8 +85,10 @@ def update(directory, port=8765, data_dir=None, *, control=None, git_binary=None
         print('Stopping the backend cleanly. This does not stop an active charge.', flush=True)
         print(client.action('stop', data_dir, port, no_browser=True), flush=True)
 
-    require_clean()
-    git('pull', '--ff-only', '--no-rebase', 'origin', 'main')
+    require_tracked_clean()
+    protect_local_files()
+    # Apply exactly the preflighted fetch; a second fetch could introduce new collisions.
+    git('merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', 'FETCH_HEAD')
     print('\nUpdate complete. Program folder:', target, flush=True)
     print('No charging start was sent. You can use Start.cmd or Start-Background.cmd in THIS folder.', flush=True)
     return target
