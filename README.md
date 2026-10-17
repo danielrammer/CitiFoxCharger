@@ -1,4 +1,4 @@
-# CitiFoxCharger für Windows · 1.6.0
+# CitiFoxCharger für Windows · 1.6.1
 
 Für Škoda Citigo e iV, SMARTFOX Pro 2 mit Firmware EM3 00.01.16.08 und Charger Pro an Ladeplatz 1.
 
@@ -55,9 +55,9 @@ Die Schaltwege wurden im ausgelieferten Hersteller-JavaScript dieser Firmware ge
 
 1. Einen Ziel-Ladestand zwischen 1 und 100 % wählen. Das Ziel muss über dem aktuellen Akkustand liegen.
 2. **Manuell laden** drücken. Die ausdrücklich freigegebene Smartfox-Websteuerung schaltet zuerst Charger 1 auf **M+** und liest den Modus zur Bestätigung zurück. Danach wartet die App bis zu 15 Sekunden auf frische Herstellerdaten mit Ladebereitschaft, aktivem M+ und mindestens 6 A Stromvorgabe; die Anlaufprüfung dauert mindestens drei Sekunden. Erst danach sendet sie genau einmal **Start** an den Citigo. Bei ausbleibender Freigabe erfolgt kein Fahrzeugstart, und die App versucht, zu A+ zurückzukehren.
-3. Das Backend überwacht den Škoda-Ladestand. Sobald eine aktuelle Fahrzeugmeldung das Ziel erreicht oder überschreitet, fordert es **Stopp** an und stellt Smartfox auf **A+** zurück.
+3. Das Backend überwacht den Škoda-Ladestand. Sobald eine gültige Fahrzeugmeldung das Ziel erreicht oder überschreitet, schaltet es Smartfox zunächst auf **Aus**, fordert Fahrzeug-**Stopp** an und wartet auf eine neuere Stoppbestätigung. Das gilt auch für einen als alt markierten SOC oberhalb des Ziels sowie bei blockiertem Cloud-Stopp. Erst nach bestätigtem Fahrzeugstopp wird **A+** wiederhergestellt; ausdrücklich gewähltes Aus bleibt erhalten.
 
-Der **Slider bleibt während des Ladens verstellbar**. Nach Loslassen wird das neue Prozentziel gespeichert, ohne einen weiteren Start zu senden. Liegt das Ziel bereits beim oder unter dem frisch gemeldeten SOC, fordert die App Stopp an. Bei alten Fahrzeugdaten wartet sie weiter auf eine frische Meldung; eine laufende Fünf-Minuten-Frist wird durch Zieländerungen nicht verlängert. Nach angefordertem Stopp ist das Ziel gesperrt, damit eine Erhöhung den Stopp nicht unbeabsichtigt aufhebt.
+Der **Slider bleibt während des Ladens verstellbar**. Nach Loslassen wird das neue Prozentziel gespeichert, ohne einen weiteren Start zu senden. Liegt das Ziel bereits beim oder unter dem frisch gemeldeten SOC, fordert die App Stopp an. Auch ein alter, bereits zu hoher SOC veranlasst einen vorsorglichen Stopp; eine laufende Fünf-Minuten-Frist wird durch Zieländerungen nicht verlängert. Nach angefordertem Stopp ist das Ziel gesperrt, damit eine Erhöhung den Stopp nicht unbeabsichtigt aufhebt.
 
 ### Start erneut freigeben
 
@@ -71,9 +71,9 @@ Bei **Daten veraltet** erscheint unter dem Slider gegebenenfalls **Zuletzt gemel
 
 Voraussetzungen: gültiger API-Zugang, innerhalb der letzten fünf Minuten erfolgreich abgefragte Start-/Stopp-Fähigkeiten, bekannter SOC mit Fahrzeugzeit höchstens 24 Stunden alt sowie frische lokale Smartfox-Daten mit Ladebereitschaft und höchstens 0,1 kW. Fehlende Daten, abgelaufener Schlüssel, Serverpause, tatsächliche Ladung oder laufender Stopp werden dadurch nicht übergangen. Beim erneuten Start bleiben zusätzlich die bestehende Wartezeit und das Prozentziel erhalten. Fehlt die Freigabe wegen einer älteren Cloud-Abfrage, kann **↻** im Rahmen des API-Kontingents erneut abfragen.
 
-Nach einem solchen Start wartet das Backend höchstens **fünf Minuten auf eine neue, nach dem Start erfasste SOC-Meldung**. Bleibt sie aus, fordert es einen Fahrzeugstopp an und versucht auch bei Cloud-Ausfall oder abgelehntem Stopp, Smartfox auf **A+** zurückzustellen. Eine fehlgeschlagene Rückstellung wird weiter versucht. Die Frist bleibt nach einem Backend-Neustart erhalten; Start wird nicht wiederholt. Ein neuer Fahrzeugwert beendet diese Sonderprüfung, anschließend gilt die normale Zielüberwachung. Ein unbestätigter Start mit unbekanntem Ausgang behält die Prüfung ebenfalls bei.
+Nach einem solchen Start wartet das Backend höchstens **fünf Minuten auf eine neue, nach dem Start erfasste SOC-Meldung**. Bleibt sie aus, stellt es Smartfox auf **Aus** und fordert einen Fahrzeugstopp an. Erst eine neuere Fahrzeug-Stoppbestätigung gibt A+ wieder frei. Eine fehlgeschlagene Rückstellung wird weiter versucht. Die Frist bleibt nach einem Backend-Neustart erhalten; Start wird nicht wiederholt. Ein neuer Fahrzeugwert beendet diese Sonderprüfung, anschließend gilt die normale Zielüberwachung. Ein unbestätigter Start mit unbekanntem Ausgang behält die Prüfung ebenfalls bei.
 
-Das ist keine garantierte Abschaltung des Ladestroms: Der Cloud-Stopp kann scheitern, und A+ erlaubt weiterhin das normale Überschuss-/Zeitprogramm. Der Status bleibt bis zur passenden neuen Fahrzeugmeldung unbestätigt. Bei alten Daten ist auch der angezeigte Prozentwert kein sicherer aktueller Wert.
+Eine bestätigte Aus-Einstellung ist zunächst eine Modusbestätigung: Die lokale Verbindung oder die tatsächliche Stromabschaltung kann ebenfalls fehlschlagen. Der Status bleibt bis zur passenden neuen Fahrzeugmeldung unbestätigt. Bei alten Daten ist auch der angezeigte Prozentwert kein sicherer aktueller Wert.
 
 ### Stoppen
 
@@ -83,7 +83,7 @@ Ein angenommener Befehl ist noch keine bestätigte Ladungsänderung. Die App war
 
 ### Normalbetrieb
 
-Außerhalb einer manuellen Sitzung ist **A+** vorgesehen. Steht Smartfox auf **A**, wird **A+** eingestellt. Die App ändert keine Wochenzeitschaltuhr oder Fahrzeug-Ladeprofile.
+Außerhalb einer manuellen Sitzung ist **A+** vorgesehen, ausgenommen ausdrücklich gewähltes Aus oder ein bewusst beendeter, noch geschützter automatischer Stopp. Steht Smartfox auf **A**, wird **A+** eingestellt. Die App ändert keine Wochenzeitschaltuhr oder Fahrzeug-Ladeprofile.
 
 A+ bedeutet laut Smartfox-Handbuch Überschussladen mit zusätzlicher Berücksichtigung der **Smartfox-Wochenzeitschaltuhr**. Die Zeitsteuerung im Fahrzeug ist eine eigene Ebene. M+ verwendet die bereits in Smartfox konfigurierten Energie- oder Zeitparameter und dessen Fallback. Diese Einstellungen können M+ vor dem Prozentziel beenden; die App verändert sie nicht automatisch.
 
@@ -97,7 +97,7 @@ Während einer aktiven Zielüberwachung fordert die App von Windows **SystemRequ
 
 Für automatisches Wiederaufnehmen nach einem Programm- oder Windows-Neustart muss der Schlüssel über die vorhandene Option mit Windows verschlüsselt gespeichert sein; ein reiner RAM-Schlüssel ist nach Prozessende weg. `background.log` im Datenordner enthält Start-/Fehlermeldungen ohne absichtliche Ausgabe von FIN oder API-Schlüssel.
 
-Das Prozentziel wird anhand der Cloud-Fahrzeugmeldungen geprüft. Der Stopp erfolgt beim ersten neuen, gültigen SOC-Wert ab Ziel. Der tatsächliche SOC kann durch Melde- oder Befehlsverzögerungen darüber liegen. Die native Fahrzeug-Ladegrenze wird durch diese App nicht geändert.
+Das Prozentziel wird anhand der Cloud-Fahrzeugmeldungen geprüft. Der Stopp wird beim ersten gültigen SOC-Wert ab Ziel angefordert, auch wenn diese Meldung inzwischen als alt gilt. Der tatsächliche SOC kann durch Melde- oder Befehlsverzögerungen darüber liegen. Die native Fahrzeug-Ladegrenze wird durch diese App nicht geändert.
 
 Die lokale Ansicht und die Smartfox-Leistung aktualisieren sich standardmäßig alle zehn Sekunden; nach mehr als 30 Sekunden gilt die Leistung für die Anzeige als veraltet. Während einer Ladung verteilt die App die verfügbaren Škoda-Abfragen anhand der RateLimit-Header bis zur nächsten Kontingenterneuerung und reserviert zwei Aufrufe für Befehle. Ohne verwertbare Limitangaben gilt während der Ladung mindestens das konfigurierte Intervall bzw. 180 Sekunden, im Leerlauf mindestens zehn Minuten. Bei bekanntem ausreichendem Kontingent kann das Ladeintervall bis auf 60 Sekunden sinken. Befehle und Abfragen teilen sich das Kontingent; Serverpausen bleiben verbindlich.
 
@@ -124,7 +124,7 @@ Der SOC-Abruf wurde für das Fahrzeug des Benutzers praktisch bestätigt. Der Be
 ## Fehler und Diagnose
 
 - **Nicht eingerichtet:** FIN und API-Schlüssel hinterlegen.
-- **Daten veraltet:** Wenn angeboten, **Zuletzt gemeldeten Ladestand verwenden** bewusst anhaken und anschließend starten. Nach fünf Minuten ohne neue SOC-Meldung fordert die App Stopp und A+ an. Sonst mit **↻** neu abfragen und Sperrgrund prüfen. Die MyŠkoda-App kann einen anderen Zeitpunkt anzeigen als der Ladezeitstempel; eine Cloud-Abfrage erzwingt keine neue Messung im Fahrzeug.
+- **Daten veraltet:** Wenn angeboten, **Zuletzt gemeldeten Ladestand verwenden** bewusst anhaken und anschließend starten. Nach fünf Minuten ohne neue SOC-Meldung fordert die App Stopp an und hält die Wallbox bis zur Fahrzeug-Stoppbestätigung auf Aus. Sonst mit **↻** neu abfragen und Sperrgrund prüfen. Die MyŠkoda-App kann einen anderen Zeitpunkt anzeigen als der Ladezeitstempel; eine Cloud-Abfrage erzwingt keine neue Messung im Fahrzeug.
 - **Smartfox-Umschaltung gesperrt:** Firmware, lokaler Zugriff oder Modusbestätigung passen nicht. Bei einer bewusst deaktivierten Adapterfreigabe bleibt der kombinierte Start ebenfalls gesperrt.
 - **Zielüberwachung eingeschränkt:** Neue verlässliche Fahrzeugdaten oder API-Zugriff fehlen; die Abschaltung kann nicht bestätigt werden.
 - **Rückkehr zu A+ steht aus:** Fahrzeugstopp und Smartfox-Modus werden separat geprüft. Die App behauptet keinen erfolgreichen Moduswechsel ohne Rückleseprüfung.
@@ -152,7 +152,7 @@ Ein eigener Datenordner kann mit `--data-dir "C:\MeinOrdner\Ladezentrale-Daten"`
 py -3 -m unittest discover -s tests -v
 ```
 
-174 Tests, ohne reale Fahrzeug- oder Wallboxbefehle. Geprüft sind Protokolle, Sicherheit, verschlüsselte Schlüsselablage, kombinierte Abläufe, Fehler, neue Sitzungen nach einem Stopp, Neustartzustände, Hintergrundüberwachung ohne Browser, Kontingentsteuerung, Instanzsperre, Brave-Start, getrennter Hintergrundprozess, sichere Beendigung und Freigabe der Windows-Energieanforderungen nach dem 90-%-Ziel. Zusätzlich geprüft: ausdrücklicher Start mit älterem SOC, eng begrenzte Freigabe, persistente Fünf-Minuten-Frist, neue SOC-Meldungen, A+-Rückstellung bei abgelehntem/gesperrtem Cloud-Stopp, Energieeinheiten/Vorzeichen/Sensorzuordnung, Zieländerungen ohne Start und geschützter Neustart mit erhaltenem Zustand.
+191 Tests, ohne reale Fahrzeug- oder Wallboxbefehle. Geprüft sind Protokolle, Sicherheit, verschlüsselte Schlüsselablage, kombinierte Abläufe, Fehler, neue Sitzungen nach einem Stopp, Neustartzustände, Hintergrundüberwachung ohne Browser, Kontingentsteuerung, Instanzsperre, Brave-Start, getrennter Hintergrundprozess, sichere Beendigung und Freigabe der Windows-Energieanforderungen nach dem 90-%-Ziel. Zusätzlich geprüft: ausdrücklicher Start mit älterem SOC, eng begrenzte Freigabe, persistente Fünf-Minuten-Frist, neue SOC-Meldungen, A+-Rückstellung bei abgelehntem/gesperrtem Cloud-Stopp, Energieeinheiten/Vorzeichen/Sensorzuordnung, Zieländerungen ohne Start und geschützter Neustart mit erhaltenem Zustand.
 
 ## Repository
 
@@ -161,3 +161,20 @@ Privates GitHub-Repository: [danielrammer/CitiFoxCharger](https://github.com/dan
 ## Kompakte Tabletfläche
 
 Die Betriebsansicht passt sich der nutzbaren Browserfläche an. Für 1280 × 800 im Querformat stehen Laden und Energie nebeneinander; für 800 × 1280 im Hochformat untereinander. Bei üblichen Windows-Skalierungen werden Abstände reduziert, die vier Verbraucher in einer Reihe gehalten und dekorative Symbole/zusätzliche Normalhinweise ausgeblendet. Die Aktionstasten bleiben mindestens 48 Pixel, Modusauswahlen mindestens 44 Pixel hoch. Fahrzeug- und Abrufzeit bleiben sichtbar. Erfolgsnachrichten verändern die Seitenhöhe nicht. Bei sehr kleinen Flächen oder langen Fehlermeldungen kann weiterhin Scrollen erforderlich sein; Einstellungen bleiben eine eigene, scrollbar bedienbare Seite.
+
+
+### Zielstopp und fehlende Fahrzeugdaten · Korrektur 1.6.1
+
+Ein gemeldeter SOC von 86 % bei 82-%-Ziel löst den automatischen Stopp auch bei alter Meldung aus. Die lokale Abschaltung erfolgt vor dem Cloud-Befehl und unabhängig von Abfragekontingent oder Fahrzeugerreichbarkeit. Der Modus Aus wird zurückgelesen; das ist zunächst eine Modusbestätigung, noch kein Beweis für null Ladeleistung oder den Fahrzeugstopp. Bei fehlender Bestätigung meldet die App den Fehler und versucht die lokale Abschaltung unabhängig von Cloud-Wartezeiten erneut.
+
+Nach einem ausdrücklich freigegebenen Start mit altem SOC bleibt die Fünf-Minuten-Prüfung erhalten. Sie kann die vom Benutzer beobachteten frühen Abbrüche erklären; ohne Tablet-Diagnose ist dies nicht als deren tatsächliche Ursache belegt. Nach späterem Datenverlust wartet die App höchstens fünf Minuten auf Erholung, insgesamt jedoch höchstens 15 Minuten seit der letzten gültigen Fahrzeugmeldung (eine kürzer konfigurierte Gültigkeit bleibt wirksam). Danach wird ebenfalls vorsorglich gestoppt. Fehlende Daten führen damit nicht mehr zu unbegrenztem M+.
+
+Während des automatischen Stopps bleibt die Wallbox auf Aus. Erst eine neuere, nicht in der Zukunft liegende Fahrzeugmeldung über den Stillstand gibt den normalen Modus wieder frei. Die Oberfläche sperrt in dieser Phase A+/M+. Ein ausdrücklich beendeter Backendprozess hebt den gespeicherten Schutz nach Neustart nicht unbemerkt auf. Nach bewusst geschlossener Überwachung kann A+ wieder ausdrücklich gewählt werden.
+
+Die Prozentgrenze ist weiterhin eine lokale Überwachung und keine in das Auto programmierte Obergrenze. Verzögerte Meldungen können ein Überschreiten vor dem Erkennen verursachen. Die Schutzfristen werden nicht entfernt, um Ladung mit unbekanntem SOC vorzutäuschen. Ein fehlerfreier echter Durchlauf auf dem Tablet ist nach dieser Korrektur noch zu prüfen.
+
+### Diagnose vom Tablet
+
+**Vor Update oder Neustart** im neuen Programmordner **Diagnose.cmd** ausführen. Es fragt standardmäßig das schon laufende lokale Backend auf Port 8765 ab, auch wenn dieses noch 1.6.0 ist. Die normale Backend-Überwachung bleibt dabei aktiv; das Skript selbst sendet keinen Start-/Stoppbefehl. Falls kein Backend antwortet, werden ausdrücklich als möglicherweise älter gekennzeichnete gespeicherte Werte verwendet.
+
+Die Datei **CitiFoxCharger-Diagnose.json** entsteht neben dem Skript. Sie enthält ausgewählte Ziel-, SOC-, Zeit-, Kontingent-, Wallbox- und Überwachungsdaten, aber keine FIN, Schlüssel, Passwörter, Sitzungstoken, IP-Adresse, Rohantworten oder freien Fehlermeldungen. Diese Datei kann zur Fehlersuche weitergegeben werden. Bei abweichendem Backend-Port beispielsweise `Diagnose.cmd --port 8774`; für einen anderen Datenordner zusätzlich `--data-dir "C:\MeinOrdner"`. `--offline` verzichtet auf den Backend-Abruf. Erst danach den alten Backendprozess geordnet beenden, die neue Version übernehmen und starten.

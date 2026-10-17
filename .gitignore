@@ -17,3 +17,4 @@ brave-profile/
 !.env.example
 *.log
 *.zip
+CitiFoxCharger-Diagnose.json

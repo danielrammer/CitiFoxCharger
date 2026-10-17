@@ -1,16 +1,16 @@
-# Prüfbericht · Version 1.6.0
+# Prüfbericht · Version 1.6.1
 
-Stand: **16.10.2026**, Windows / Python 3.14.
+Stand: **17.10.2026**, Windows / Python 3.14.
 
 ## Automatisierte Prüfung
 
-**174 Tests erfolgreich**, zusätzlich JavaScript-Syntaxprüfung. Geräte und Fahrzeugbefehle sind in Tests simuliert. Lokale Testserver prüfen echte HTTP-/Sicherheitsabläufe; kein neuer realer Start/Stopp oder Wärmeschaltbefehl wird dafür gesendet.
+**191 Tests erfolgreich**, zusätzlich JavaScript-Syntaxprüfung. Geräte und Fahrzeugbefehle sind in Tests simuliert. Lokale Testserver prüfen echte HTTP-/Sicherheitsabläufe; kein neuer realer Start/Stopp oder Wärmeschaltbefehl wird dafür gesendet.
 
 Geprüft: Modbus-Leseregister, Protokollfehler, Wertebereiche, SOC-/FIN-/Fähigkeitsschema, Zeitstempel, Schlüsselablauf, Windows-DPAPI, RateLimit/Retry-After, Kontingentreserve, adaptive Abrufe, Host/Origin/CSRF/Sitzung, Loopback und keine Modbus-Schreibroute.
 
-Ladung: bestätigtes M+ vor Fahrzeugstart, Ladebereitschaft/Anlaufzeit, genau ein Start, fehlgeschlagene/unsichere Befehle, begrenzte Wiederholung nur mit neuen Daten, Prozentziel-Stopp ohne Browser, neue Sitzung ohne alten Stoppwunsch, Neustart ohne Startwiederholung und Bindung an die FIN. Bewusst freigegebener alter SOC behält seinen Zeitstempel und eine persistente Fünf-Minuten-Frist. Neue SOC-Meldung beendet diese Sonderprüfung; Cloudfehler verhindern die lokale Rückstellung nicht. A+ ist keine garantierte Unterbrechung des Stroms.
+Ladung: bestätigtes M+ vor Fahrzeugstart, Ladebereitschaft/Anlaufzeit, genau ein Start, fehlgeschlagene/unsichere Befehle, begrenzte Wiederholung nur mit neuen Daten, Prozentziel-Stopp ohne Browser, neue Sitzung ohne alten Stoppwunsch, Neustart ohne Startwiederholung und Bindung an die FIN. Bewusst freigegebener alter SOC behält seinen Zeitstempel und eine persistente Fünf-Minuten-Frist. Neue SOC-Meldung beendet diese Sonderprüfung; Cloudfehler verhindern das lokale Wallbox-Aus nicht. A+ wird bei einem automatischen Stopp erst nach neuerer Fahrzeug-Stoppbestätigung freigegeben.
 
-Zieländerung: Erhöhen ohne Start, Absenken bis zum frischen SOC löst Stopp aus, altes SOC erzwingt keinen Zielstopp, die Fünf-Minuten-Frist bleibt unverändert, nach Stoppwunsch ist das Ziel gesperrt. Explizites Wallbox-Aus bleibt im Leerlauf, nach Neustart und nach Zielabschluss erhalten. A+/M+-Wechsel während einer Sitzung sendet keinen erneuten Fahrzeugstart und erhält das Ziel. M+ ohne überwachte Sitzung ist in der reinen Modusroute gesperrt.
+Zieländerung: Erhöhen ohne Start, Absenken bis zum frischen SOC löst Stopp aus, altes SOC oberhalb des Ziels löst vorsorglichen Zielstopp aus, die Fünf-Minuten-Frist bleibt unverändert, nach Stoppwunsch ist das Ziel gesperrt. Explizites Wallbox-Aus bleibt im Leerlauf, nach Neustart und nach Zielabschluss erhalten. A+/M+-Wechsel während einer Sitzung sendet keinen erneuten Fahrzeugstart und erhält das Ziel. M+ ohne überwachte Sitzung ist in der reinen Modusroute gesperrt.
 
 Wärmeausgänge: alle drei Modi, exakte Analog-/Relais-Codes, vorhandene manuelle Leistung, Timerbeendigung vor Relais-Manuell/Aus, feste Zuordnung einschließlich Warmwasser an Relais 2, Firmware-/Freigabeprüfung, fehlender Sollwert, Rücklesefehler und wiederholte Befehlskennung. Energieanzeige prüft Einheiten, Netzvorzeichen, Herstellerformel, Sensorpositionen, fehlenden 850-°C-Wert und Relaiszustände ohne erfundene kW.
 
@@ -34,7 +34,7 @@ Windows-Energieanforderungen SystemRequired/ExecutionRequired, keine Bildschirma
 
 Pro 2 / EM3 00.01.16.08 und Charger 1 unter 192.168.0.81 sind lesend bestätigt. Rohregister 40999/41015/42111 bleiben ohne ungeprüfte Bedeutungsübernahme. Lokale Energie-/Modusfelder und die eng begrenzten CGI-Schaltpfade wurden in der ausgelieferten Herstelleroberfläche geprüft. Es gibt dafür keine öffentliche API-Spezifikation. M+/A+-Umschaltung wurde nach Benutzerfreigabe real zurückgelesen; neue Wärme-/Aus-Befehle wurden ausschließlich simuliert geprüft.
 
-Am konkreten Citigo sind SOC, Start-/Stopp-Fähigkeiten und der durch den Benutzer bestätigte Ladestart belegt. Eine vollständige reale Sitzung bis zur automatischen Prozentabschaltung steht aus. Die offizielle API enthält weiterhin keinen dokumentierten Weckbefehl. Der Community-Weckweg benötigt eine andere Anmeldung und ist für diesen Citigo nicht bestätigt oder eingebaut. Eine neue Cloud-Abfrage garantiert keinen neuen SOC.
+Am konkreten Citigo sind SOC, Start-/Stopp-Fähigkeiten und der durch den Benutzer bestätigte Ladestart belegt. Der Benutzer meldete auf dem Tablet 192.168.0.95 einen fehlenden automatischen Stopp: Ziel 82 %, real 86 %, anschließend vom Benutzer manuell gestoppt. Auch frühe Abbrüche wurden gemeldet. Die genaue Ursache am Tablet ist ohne dessen Diagnose noch nicht bestätigt; ein erfolgreicher realer Zielstopp der korrigierten Version steht aus. Die offizielle API enthält weiterhin keinen dokumentierten Weckbefehl. Der Community-Weckweg benötigt eine andere Anmeldung und ist für diesen Citigo nicht bestätigt oder eingebaut. Eine neue Cloud-Abfrage garantiert keinen neuen SOC.
 
 Der Zielstopp ist eine lokale Überwachung, keine native Fahrzeuggrenze. Melde-/Befehlsverzögerungen können zum Überschreiten führen. Native M+-Zeit-/Energiegrenzen bleiben bestehen. Kein Langzeittest über Energiesparzustände oder Mobilfunkabschaltungen. Das Backend muss laufen; expliziter Standby oder Ausschalten wird nicht übergangen. Am Wandtablet sind Netzversorgung und passende Windows-Energieeinstellungen erforderlich. Kein Dienst oder Autostart eingerichtet.
 
@@ -53,3 +53,10 @@ Eine angeforderte, aber vom Auto noch nicht bestätigte Abschaltung blockiert da
 ## Verfügbare Bildschirmhöhe
 
 Die gerätefreie Browserprüfung mit sichtbarer TEST-Kennzeichnung bestätigte ohne vertikalen oder horizontalen Überlauf: 800 × 1280, 640 × 1024, gerundet 534 × 854 (150-%-Skalierung eines 800 × 1280-Panels) und 1280 × 800. Auch der längere Hinweis bei altem SOC passte. Hochformat behält die Verbraucher in einer Reihe; Querformat nutzt zwei Hauptspalten. Wichtige Schaltziele bleiben mindestens 44/48 Pixel hoch. Das konkrete Wandtablet ist weiterhin nicht angeschlossen; abweichende Windows-Skalierung und Browserleisten können die Fläche verändern.
+
+
+## Regression Ziel 82 %, SOC 86 %
+
+Simuliert geprüft: alte 86-%-Meldung, blockierter/unerreichbarer Cloud-Stopp, Aus vor einem fehlschlagenden Cloud-Aufruf, spätere Datenalterung, begrenzte Erholung nach Lesefehler und Neustart während der Erholungsfrist. Aus bleibt bei unbestätigtem Stopp bestehen, fremde Modusänderung wird zurückgesetzt, lokaler Aus-Wiederholversuch wartet nicht auf Cloud-Backoff. Erst neuere, nicht mehr als fünf Sekunden in der Zukunft liegende Stillstandsmeldungen heben den Schutz auf. Schließen und Neustart führen keinen automatischen Start aus. Diagnoseexport prüft ausdrücklich den Ausschluss von Identität, Zugangsdaten und freien Texten.
+
+Der dokumentierte HTTPS-Zugang am genannten Tablet-Port 8766 antwortete bei der rein lesenden Verbindungsprüfung nicht. Es wurde kein Zertifikat umgangen, kein Passwort angefordert und kein Geräteschaltbefehl für diese Tests gesendet. Die aktive Browseransicht war durch die Browser-Zugriffsprüfung gesperrt; deshalb erfolgte keine visuelle Nachprüfung der einzigen geänderten Hinweiszeile. Layout und Animationen bleiben unverändert.

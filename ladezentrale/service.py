@@ -374,6 +374,8 @@ class Service:
                 raise ValueError("Nur Aus, A+ und M+ sind vorgesehen.")
             if self.stopping or self.web is None:
                 raise IntegrationError("blocked","Ladestation-Steuerung ist gerade nicht verfügbar.")
+            if mode != "OFF" and self.charging.value.get("stop_guard") and self.charging.active:
+                raise IntegrationError("blocked","Automatischer Stopp wird noch geprüft. Die Ladestation bleibt bis zur Fahrzeugbestätigung auf Aus.")
             if mode == "M+" and (not self.charging.active or self.charging.value.get("stop_requested")):
                 raise IntegrationError("blocked","M+ bitte über Manuell laden mit aktivem Prozentziel starten.")
             if mode == "M+" and (not self.can_command("start") or not self.can_command("stop")):
@@ -388,7 +390,8 @@ class Service:
             if len(self.heater_results)>100:
                 del self.heater_results[next(iter(self.heater_results))]
             # Explicit OFF must survive the ordinary A+ normalization and a pending target stop.
-            self.charging.save(user_charger_mode="OFF" if mode == "OFF" else None)
+            self.charging.save(user_charger_mode="OFF" if mode == "OFF" else None,
+                               stop_guard=self.charging.value.get("stop_guard", False) if self.charging.active else False)
             try:
                 self.cache.setdefault("smartfox",{})["charger"] = self.web.set_charger_mode(self.config.value["smartfox"],mode)
             except SmartfoxControlError as error:

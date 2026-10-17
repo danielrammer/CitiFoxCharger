@@ -326,11 +326,157 @@ class ChargingTests(unittest.TestCase):
             with self.subTest(target=target), self.assertRaises((ValueError, IntegrationError)): self.force(target)
         self.assertEqual(self.effects, [])
 
+    def test_82_percent_goal_stops_on_86_even_when_report_is_stale(self):
+        self.force(82)
+        self.service.cache['skoda'].update(soc=86,stale=True,
+            captured_at=(datetime.now(timezone.utc)-timedelta(minutes=30)).isoformat())
+        self.service.charging.next_attempt=0
+        self.service.charging.tick()
+        self.assertEqual(self.effects,['M+','start','OFF','stop'])
+        self.assertTrue(self.service.charging.value['stop_guard'])
+        self.assertEqual(self.service.charging.value['target_percent'],82)
+
+    def test_82_goal_locally_stops_on_86_with_cloud_unavailable_or_rate_blocked(self):
+        for unavailable in (False, True):
+            with self.subTest(unavailable=unavailable):
+                self.service.charging.save(replace=True,status='monitoring',target_percent=82,vin=VIN)
+                self.web.mode='M+'
+                self.effects.clear()
+                self.service.cache['skoda'].update(soc=86,stale=True,available=not unavailable)
+                self.service.car.blocked_until=time.monotonic()+300
+                self.service.charging.next_attempt=0
+                self.service.charging.tick()
+                self.assertEqual(self.effects,['OFF'])
+                self.assertTrue(self.service.charging.value['stop_requested'])
+                self.assertTrue(self.service.charging.value['auto_restored'])
+
+    def test_local_stop_is_secured_before_even_a_failing_cloud_call(self):
+        self.force(82)
+        original=self.service.car.request
+        def request(method,path,key):
+            if method=='POST' and path.endswith('/stop'):
+                self.assertEqual(self.web.mode,'OFF')
+                raise IntegrationError('network','Ausgang unbekannt',uncertain=True)
+            return original(method,path,key)
+        self.service.car.request=request
+        self.update_soc(82)
+        result=self.service.status()
+        self.assertEqual(self.web.mode,'OFF')
+        self.assertTrue(result['charging']['stop_requested'])
+        self.assertTrue(result['charging']['stop_guard'])
+        self.assertEqual(self.effects.count('start'),1)
+
+    def test_later_soc_age_expiry_does_not_leave_manual_charging_running(self):
+        self.force(82)
+        self.service.cache['skoda'].update(soc=75,stale=True,
+            captured_at=(datetime.now(timezone.utc)-timedelta(minutes=16)).isoformat())
+        self.service.charging.next_attempt=0
+        self.service.charging.tick()
+        self.assertEqual(self.effects,['M+','start','OFF','stop'])
+        self.assertIn('ohne aktuelle Fahrzeugdaten',self.service.charging.value['stop_reason'])
+
+    def test_configured_long_display_freshness_does_not_extend_charging_blindly(self):
+        self.force(82)
+        self.config.value['skoda']['stale_seconds']=3600
+        self.service.cache['skoda'].update(soc=75,stale=False,
+            captured_at=(datetime.now(timezone.utc)-timedelta(minutes=16)).isoformat())
+        self.service.charging.next_attempt=0
+        self.service.charging.tick()
+        self.assertIn('OFF',self.effects)
+
+    def test_temporary_data_loss_recovers_without_stopping_or_restarting(self):
+        self.force(82)
+        self.service.cache['skoda']['available']=False
+        self.service.charging.next_attempt=0
+        self.service.charging.tick()
+        self.assertEqual(self.service.charging.value['status'],'paused')
+        self.service.cache['skoda'].update(available=True,stale=False)
+        self.service.charging.next_attempt=0
+        self.service.charging.tick()
+        self.assertEqual(self.service.charging.value['status'],'monitoring')
+        self.assertIsNone(self.service.charging.value['data_missing_since'])
+        self.assertEqual(self.effects,['M+','start'])
+
+    def test_missing_data_deadline_survives_restart_and_stops_without_cloud(self):
+        self.force(82)
+        self.service.cache['skoda'].update(available=False,captured_at=None)
+        self.service.charging.next_attempt=0
+        self.service.charging.tick()
+        self.assertNotIn('OFF',self.effects)
+        self.service.charging.save(data_missing_since=time.time()-301)
+        self.service.charging=ChargingSession(self.service,self.web)
+        self.service.charging.tick()
+        self.assertEqual(self.effects,['M+','start','OFF'])
+        self.assertTrue(self.service.charging.value['stop_requested'])
+
+    def test_automatic_stop_holds_off_until_newer_vehicle_stop_confirmation(self):
+        self.force(82)
+        self.update_soc(82)
+        self.service.status()
+        self.service.charging.next_attempt=0
+        self.service.status()
+        self.assertEqual(self.web.mode,'OFF')
+        with self.assertRaises(IntegrationError):
+            self.service.set_charger_mode('A+','release-during-stop-0001')
+        self.update_soc(82,'READY_FOR_CHARGING')
+        result=self.service.status()
+        self.assertEqual(result['charging']['status'],'complete')
+        self.assertFalse(result['charging']['stop_guard'])
+        self.assertEqual(self.web.mode,'A+')
+        self.assertEqual(self.effects,['M+','start','OFF','stop','A+'])
+
+    def test_guard_reasserts_off_after_external_mode_change(self):
+        self.force(82)
+        self.update_soc(82)
+        self.service.status()
+        self.web.mode='M+'
+        self.service.next_due['smartfox']=0
+        self.service.charging.next_attempt=0
+        self.service.status()
+        self.assertEqual(self.web.mode,'OFF')
+        self.assertEqual(self.effects.count('stop'),1)
+
+    def test_locally_closed_guarded_session_keeps_off_after_restart(self):
+        self.force(82)
+        self.update_soc(82)
+        self.service.status()
+        self.service.charging.save(stop_intent_epoch=time.time()-10)
+        self.service.prepare_shutdown()
+        self.assertEqual(self.service.charging.value['status'],'closed')
+        self.service.charging=ChargingSession(self.service,self.web)
+        self.service.charging.tick()
+        self.assertEqual(self.web.mode,'OFF')
+        self.assertEqual(self.effects.count('start'),1)
+
+    def test_local_guard_retry_does_not_wait_for_cloud_backoff(self):
+        self.force(82)
+        self.web.allow_control=False
+        self.post_code=503
+        self.update_soc(82)
+        self.service.status()
+        self.assertGreater(self.service.charging.next_attempt,time.monotonic())
+        self.assertFalse(self.service.charging.value['auto_restored'])
+        self.web.allow_control=True
+        self.service.charging.tick()
+        self.assertEqual(self.web.mode,'OFF')
+        self.assertEqual(self.effects.count('stop'),1)
+
+    def test_future_vehicle_timestamp_does_not_release_guard_early(self):
+        self.force(82)
+        self.update_soc(82)
+        self.service.status()
+        self.service.cache['skoda'].update(state='READY_FOR_CHARGING',stale=False,
+            captured_at=(datetime.now(timezone.utc)+timedelta(minutes=2)).isoformat())
+        self.service.charging.next_attempt=0
+        self.service.charging.tick()
+        self.assertEqual(self.web.mode,'OFF')
+        self.assertEqual(self.service.charging.value['status'],'stop_pending')
+
     def test_target_stop_restores_a_plus_but_waits_for_new_vehicle_confirmation(self):
         self.force()
         self.update_soc(80)
         result = self.service.status()
-        self.assertEqual(self.effects, ["M+", "start", "stop", "A+"])
+        self.assertEqual(self.effects, ["M+", "start", "OFF", "stop"])
         self.assertEqual(result["charging"]["status"], "stop_pending")
         self.service.status()
         self.assertEqual(self.effects.count("stop"), 1)
@@ -344,7 +490,7 @@ class ChargingTests(unittest.TestCase):
         self.service.start_worker()
         self.assertTrue(self.stop_event.wait(timeout=4))
         with self.service.lock:
-            self.assertIn("A+", self.effects)
+            self.assertIn("OFF", self.effects)
 
     def test_ninety_percent_background_stop_holds_and_releases_power_request(self):
         self.force(90)
@@ -491,17 +637,17 @@ class ChargingTests(unittest.TestCase):
         self.service.charging.value["last_start_epoch"]-=601
         self.assertFalse(self.service.charging.can_retry_start(allow_stale=True))
 
-    def test_five_minute_deadline_requests_stop_and_restores_a_plus(self):
+    def test_five_minute_deadline_secures_local_off_before_cloud_stop(self):
         self.stale_start()
         self.service.charging.next_attempt=0
         self.service.status()
         self.assertNotIn("stop",self.effects)
         self.expire_freshness_deadline()
         result = self.service.status()
-        self.assertEqual(self.effects,["M+","start","stop","A+"])
+        self.assertEqual(self.effects,["M+","start","OFF","stop"])
         self.assertEqual(result["charging"]["status"],"stop_pending")
         self.assertFalse(result["charging"]["awaiting_fresh_soc"])
-        self.assertIn("unbestätigt",result["charging"]["message"])
+        self.assertIn("Fahrzeugstopp wird noch geprüft",result["charging"]["message"])
         self.service.charging.next_attempt=0
         self.service.status()
         self.assertEqual(self.effects.count("stop"),1)
@@ -516,7 +662,7 @@ class ChargingTests(unittest.TestCase):
         self.assertNotIn("stop",self.effects)
         self.update_soc(90)
         self.service.status()
-        self.assertEqual(self.effects[-2:],["stop","A+"])
+        self.assertEqual(self.effects[-2:],["OFF","stop"])
 
     def test_pre_start_report_cannot_clear_freshness_deadline(self):
         self.stale_start()
@@ -528,12 +674,12 @@ class ChargingTests(unittest.TestCase):
         self.service.status()
         self.assertIn("stop",self.effects)
 
-    def test_stop_rejection_at_deadline_still_restores_a_plus_without_replay(self):
+    def test_stop_rejection_at_deadline_keeps_local_off_without_replay(self):
         self.stale_start()
         self.post_code=503
         self.expire_freshness_deadline()
         result=self.service.status()
-        self.assertEqual(self.effects[-2:],["stop","A+"])
+        self.assertEqual(self.effects[-2:],["OFF","stop"])
         self.assertEqual(result["charging"]["status"],"paused")
         self.assertTrue(result["charging"]["stop_requested"])
         self.assertFalse(result["charging"]["can_force_with_stale"])
@@ -541,37 +687,37 @@ class ChargingTests(unittest.TestCase):
         self.service.status()
         self.assertEqual(self.effects.count("stop"),1)
 
-    def test_rate_blocked_stop_at_deadline_still_restores_a_plus(self):
+    def test_rate_blocked_stop_at_deadline_still_secures_local_off(self):
         self.stale_start()
         self.expire_freshness_deadline()
         self.service.car.blocked_until=time.monotonic()+60
         result=self.service.status()
-        self.assertEqual(self.effects,["M+","start","A+"])
+        self.assertEqual(self.effects,["M+","start","OFF"])
         self.assertTrue(result["charging"]["stop_requested"])
-        self.assertIn("unbestätigt",result["charging"]["message"])
+        self.assertIn("Fahrzeugstopp wird noch geprüft",result["charging"]["message"])
 
     def test_offline_vehicle_at_deadline_still_ends_mplus(self):
         self.stale_start()
         self.expire_freshness_deadline()
         self.service.cache["skoda"]["available"]=False
         result=self.service.status()
-        self.assertEqual(self.effects,["M+","start","A+"])
+        self.assertEqual(self.effects,["M+","start","OFF"])
         self.assertTrue(result["charging"]["stop_requested"])
         self.assertTrue(result["charging"]["auto_restored"])
 
-    def test_failed_a_plus_restoration_is_retried_without_repeating_stop(self):
+    def test_failed_local_off_is_retried_without_repeating_stop(self):
         self.stale_start()
         self.expire_freshness_deadline()
         self.web.allow_control=False
         result=self.service.status()
         self.assertFalse(result["charging"]["auto_restored"])
-        self.assertIn("Rückkehr zu A+ steht aus",result["charging"]["message"])
+        self.assertIn("Wallbox-Aus ist noch unbestätigt",result["charging"]["message"])
         self.web.allow_control=True
         self.service.charging.next_attempt=0
         result=self.service.status()
         self.assertTrue(result["charging"]["auto_restored"])
         self.assertEqual(self.effects.count("stop"),1)
-        self.assertEqual(self.web.mode,"A+")
+        self.assertEqual(self.web.mode,"OFF")
 
     def test_uncertain_stale_start_keeps_deadline_after_rollback(self):
         self.post_code=503
@@ -590,7 +736,7 @@ class ChargingTests(unittest.TestCase):
         self.service.charging=ChargingSession(self.service,self.web)
         self.assertTrue(self.service.charging.value["awaiting_fresh_soc"])
         self.service.status()
-        self.assertEqual(self.effects,["M+","start","stop","A+"])
+        self.assertEqual(self.effects,["M+","start","OFF","stop"])
 
     def test_stale_noncharging_report_never_confirms_stop(self):
         self.stale_start()
@@ -632,18 +778,18 @@ class ChargingTests(unittest.TestCase):
         self.force(90)
         result=self.service.change_target(35)
         self.assertEqual(result["status"],"stop_pending")
-        self.assertEqual(self.effects,["M+","start","stop","A+"])
+        self.assertEqual(self.effects,["M+","start","OFF","stop"])
         self.assertFalse(result["can_adjust_target"])
 
-    def test_target_change_with_old_soc_keeps_deadline_and_waits_for_new_soc(self):
+    def test_lower_target_reached_by_old_soc_stops_without_extending_deadline(self):
         self.stale_start()
         deadline=self.service.charging.value["fresh_soc_deadline"]
         result=self.service.change_target(35)
         self.assertEqual(result["fresh_soc_deadline"],deadline)
-        self.assertEqual(self.effects,["M+","start"])
+        self.assertEqual(self.effects,["M+","start","OFF","stop"])
         self.update_soc(41)
         self.service.status()
-        self.assertEqual(self.effects[-2:],["stop","A+"])
+        self.assertEqual(self.effects[-2:],["OFF","stop"])
 
     def test_target_validation_and_stopping_session_cannot_be_reopened(self):
         with self.assertRaises(IntegrationError): self.service.change_target(90)
