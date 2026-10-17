@@ -19,11 +19,12 @@ from test_power_background import FakePower
 VIN = "TMBJB9NY5RF999999"
 
 
-def xml(mode=2, firmware="EM3  00.01.16.08", power="2.93 <span>kW</span>", state=2, info=8, current=11.5, ttl=30):
+def xml(mode=2, firmware="EM3  00.01.16.08", power="2.93 <span>kW</span>", state=2, info=8, current=11.5, ttl=30, phase=1, phase_seconds=""):
     return (f'<values><value id="version">{firmware}</value><value id="hidCcMode1">{mode}</value>'
             f'<value id="cc1Power"><![CDATA[{power}]]></value><value id="hidCcMplusMode">[1,0,0,0,0]</value>'
             f'<value id="hidCcSt1">{state}</value><value id="hidCc1Info">{info}</value>'
-            f'<value id="hidCcControlCurrent">[{current},0,0,0,0]</value><value id="hidCcConnTimeout1">{ttl}</value></values>').encode()
+            f'<value id="hidCcControlCurrent">[{current},0,0,0,0]</value><value id="hidCcConnTimeout1">{ttl}</value>'
+            f'<value id="hidCc1Phase">{phase}</value><value id="hidCc1TempTime">{phase_seconds}</value></values>').encode()
 
 
 class SmartfoxWebTests(unittest.TestCase):
@@ -35,6 +36,35 @@ class SmartfoxWebTests(unittest.TestCase):
         self.assertEqual(result["mode"], "A+")
         self.assertEqual(result["power_kw"], 2.93)
         self.assertFalse(result["control_available"])
+
+    def test_phase_switching_is_verified_info_six_not_ready_even_with_current(self):
+        result=SmartfoxWeb(lambda *args:xml(4,info=6,current=16,phase=3,phase_seconds=120)).read(self.config)
+        self.assertTrue(result['phase_switching'])
+        self.assertFalse(result['ready_for_start'])
+        self.assertEqual(result['phase_switch_seconds'],120)
+        self.assertEqual(result['phase_count'],3)
+
+    def test_phase_timer_validation_and_unrecognized_phase_count(self):
+        for timer in ('','-1','NaN','12.5','99999','3601'):
+            with self.subTest(timer=timer):
+                result=SmartfoxWeb(lambda *args:xml(4,info=6,phase=2,phase_seconds=timer)).read(self.config)
+                self.assertIsNone(result['phase_switch_seconds'])
+                self.assertIsNone(result['phase_count'])
+                self.assertTrue(result['phase_switching'])
+
+    def test_old_connection_or_other_info_does_not_report_phase_switching(self):
+        for body in (xml(4,info=6,ttl=2,phase_seconds=120),xml(4,info=8,phase_seconds=120)):
+            with self.subTest(body=body):
+                result=SmartfoxWeb(lambda *args:body).read(self.config)
+                self.assertFalse(result['phase_switching'])
+                self.assertIsNone(result['phase_switch_seconds'])
+
+    def test_phase_switching_returns_to_the_backend_without_blocking_wait(self):
+        from unittest.mock import Mock
+        sleep=Mock()
+        result=SmartfoxWeb(lambda *args:xml(4,info=6),True,lambda:0,sleep).wait_ready(self.config)
+        self.assertTrue(result['phase_switching'])
+        sleep.assert_not_called()
 
     def test_writes_require_explicit_opt_in(self):
         paths = []
@@ -123,10 +153,14 @@ class FakeWeb:
         self.fail_mplus = False
         self.ready_calls, self.fail_ready = 0, False
         self.fail_heater = False
+        self.phase_switching,self.phase_seconds=False,120
     def read(self, config):
         return {"available": True, "mode": self.mode, "control_available": self.allow_control,
                 "control_reason": None if self.allow_control else "Nicht freigegeben",
-                "status_code":2, "telemetry_available":True,"power_kw":0.0,"read_at":datetime.now(timezone.utc).isoformat()}
+                "status_code":2, "telemetry_available":True,"power_kw":0.0,"read_at":datetime.now(timezone.utc).isoformat(),
+                "phase_switching":self.phase_switching,"phase_switch_seconds":self.phase_seconds if self.phase_switching else None,
+                "phase_count":1 if self.phase_switching else 3,"ready_for_start":not self.phase_switching,
+                "info_code":6 if self.phase_switching else 8}
     def set_mode(self, config, mode):
         if self.mode != mode:
             if not self.allow_control or (mode == "M+" and self.fail_mplus):
@@ -176,6 +210,103 @@ class ChargingTests(unittest.TestCase):
 
     def force(self, target=80):
         return self.service.force_charge(target, "manual-session-id-00001")
+
+    def phase_start(self):
+        self.web.phase_switching=True
+        return self.force()
+
+    def phase_tick(self):
+        self.service.next_due['smartfox']=0
+        self.service.charging.next_attempt=0
+        return self.service.status()
+
+    def phase_ready(self):
+        self.web.phase_switching=False
+        self.phase_tick()
+        self.service.charging.save(phase_ready_since_epoch=time.time()-4)
+        return self.phase_tick()
+
+    def test_phase_start_returns_pending_without_a_vehicle_command_and_is_idempotent(self):
+        result=self.phase_start()
+        self.assertEqual(result['status'],'starting')
+        self.assertTrue(result['phase_start_pending'])
+        self.assertTrue(result['can_stop'])
+        self.assertIn('120 s',result['message'])
+        self.force()
+        self.assertEqual(self.effects,['M+'])
+
+    def test_phase_start_waits_for_a_new_stable_ready_report_then_starts_once(self):
+        self.phase_start();self.web.phase_switching=False
+        self.phase_tick()
+        self.service.charging.next_attempt=0;self.service.status()
+        self.assertNotIn('start',self.effects)
+        self.service.charging.save(phase_ready_since_epoch=time.time()-4)
+        result=self.phase_tick()
+        self.assertEqual(result['charging']['status'],'monitoring')
+        self.assertFalse(result['charging']['phase_start_pending'])
+        self.phase_tick();self.phase_tick()
+        self.assertEqual(self.effects.count('start'),1)
+
+    def test_phase_wait_can_be_stopped_and_never_resumes_a_start(self):
+        self.phase_start()
+        self.service.stop_charge('stop-during-phase-0001')
+        self.web.phase_switching=False
+        self.phase_tick()
+        self.assertNotIn('start',self.effects)
+        self.assertEqual(self.web.mode,'OFF')
+        self.assertFalse(self.service.charging.value['phase_start_pending'])
+
+    def test_phase_wait_is_not_replayed_after_backend_restart(self):
+        self.phase_start()
+        self.service.charging=ChargingSession(self.service,self.web)
+        self.phase_tick()
+        self.assertFalse(self.service.charging.value['phase_start_pending'])
+        self.assertNotIn('start',self.effects)
+
+    def test_phase_wait_has_a_fixed_deadline_and_secures_off_on_timeout(self):
+        self.phase_start()
+        self.service.charging.save(phase_start_deadline_epoch=time.time()-1)
+        result=self.phase_tick()
+        self.assertEqual(self.web.mode,'OFF')
+        self.assertEqual(result['charging']['stop_cause'],'phase_wait')
+        self.assertNotIn('start',self.effects)
+
+    def test_target_reached_while_waiting_cancels_start(self):
+        self.phase_start();self.update_soc(85)
+        self.phase_tick()
+        self.assertEqual(self.web.mode,'OFF')
+        self.assertNotIn('start',self.effects)
+
+    def test_lost_vehicle_access_while_waiting_cancels_start(self):
+        self.phase_start()
+        self.service.cache['skoda'].update(available=False,operations=[])
+        self.phase_tick()
+        self.assertEqual(self.web.mode,'OFF')
+        self.assertNotIn('start',self.effects)
+
+    def test_lost_mplus_during_wait_cancels_start(self):
+        self.phase_start();self.web.mode='A+'
+        self.phase_tick()
+        self.assertEqual(self.web.mode,'OFF')
+        self.assertNotIn('start',self.effects)
+
+    def test_old_local_telemetry_cannot_finish_phase_preparation(self):
+        self.phase_start()
+        self.service.next_due['smartfox']=time.monotonic()+300
+        self.service.cache['smartfox']['charger'].update(phase_switching=False,ready_for_start=True,
+            read_at=(datetime.now(timezone.utc)-timedelta(minutes=1)).isoformat())
+        self.service.charging.next_attempt=0
+        result=self.service.status()
+        self.assertTrue(result['charging']['phase_start_pending'])
+        self.assertIn('fresh Smartfox',result['charging']['message'])
+        self.assertNotIn('start',self.effects)
+
+    def test_uncertain_phase_start_does_not_replay_the_vehicle_command(self):
+        self.phase_start();self.post_code=503
+        self.phase_ready();self.phase_tick();self.phase_tick()
+        self.assertEqual(self.effects.count('start'),1)
+        self.assertEqual(self.web.mode,'OFF')
+        self.assertFalse(self.service.charging.value['phase_start_pending'])
 
     def update_soc(self, soc, state="CHARGING"):
         charging = self.data["vehicle"]["charging"]

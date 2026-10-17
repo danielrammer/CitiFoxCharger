@@ -134,3 +134,10 @@ button,a,input,select,summary{-webkit-tap-highlight-color:transparent}button,sum
 :root:not([data-theme=dark]) :is(button,a,input,select,summary):focus-visible {
   outline-color: #0c6e51;
 }
+
+/* Amber indicates preparation, distinct from confirmed energy flow. */
+.status-dot.switching{background:#b37b1d;box-shadow:0 0 0 4px #e8c78444;animation:phase-wait-pulse 1.8s ease-in-out infinite}
+:root:not([data-theme=dark]) .session-status.phase-wait{background:#fff1d4;color:#725017;border:1px solid #c49c50}
+:root[data-theme=dark] .session-status.phase-wait{background:#443b25;color:#e3cb91;border:1px solid #8b713c}
+@keyframes phase-wait-pulse{50%{box-shadow:0 0 0 7px #e8c78411}}
+@media(prefers-reduced-motion:reduce){.status-dot.switching{animation:none}}

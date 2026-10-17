@@ -74,6 +74,13 @@ class SmartfoxWeb:
             except (ValueError, TypeError):
                 current = None
             telemetry = connection is not None and connection > 3
+            phase_switching = telemetry and info_code == 6
+            phase_count = integer("hidCc1Phase")
+            phase_count = phase_count if phase_count in (1,3) else None
+            timer = fields.get("hidCc1TempTime", "")
+            phase_seconds = int(timer) if phase_switching and re.fullmatch(r"[0-9]{1,4}", timer) else None
+            if phase_seconds is not None and phase_seconds > 3600:
+                phase_seconds = None
             connected = telemetry and state_code in (2, 3, 5, 6)
             states = {0: "No vehicle", 1: "No vehicle", 2: "Ready to charge", 3: "Charging",
                       4: "Wallbox error", 5: "Charging interrupted", 6: "Stopped at wallbox", 255: "No vehicle"}
@@ -96,7 +103,8 @@ class SmartfoxWeb:
             return {"available": True, "mode": MODES.get(raw_mode), "mode_code": raw_mode,
                     "power_kw": power, "read_at": read_at, "firmware": firmware,
                     "energy": energy,
-                    "status_code": state_code, "status_text": states.get(state_code, "Status unbekannt"),
+                    "status_code": state_code, "status_text": "Phase switching" if phase_switching else states.get(state_code, "Status unknown"),
+                    "phase_switching": phase_switching, "phase_switch_seconds": phase_seconds, "phase_count": phase_count,
                     "info_code": info_code, "offered_current_a": current, "telemetry_available": telemetry,
                     "connected": connected, "ready_for_start": ready,
                     "mplus_configuration": mplus_modes[0] if mplus_modes else None,
@@ -138,6 +146,8 @@ class SmartfoxWeb:
                 raise SmartfoxControlError("The wallbox requires local charging authorization. Vehicle start was not sent.")
             if value.get("status_code") == 4:
                 raise SmartfoxControlError("The wallbox reports an error. Vehicle start was not sent.")
+            if value.get("phase_switching"):
+                return value  # Continue through the cancellable backend preparation state.
             elapsed = self.clock() - began
             if value.get("ready_for_start") and elapsed >= settle_seconds:
                 return value

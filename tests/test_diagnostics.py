@@ -31,6 +31,20 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertIsNone(result['session']['status'])
         self.assertIsNone(result['charger']['mode'])
 
+    def test_phase_report_keeps_verified_fields_and_bounded_wait_state(self):
+        result=report({'skoda':{'state':'CHARGING_INTERRUPTED'},'smartfox':{'charger':{'info_code':6,'phase_switching':True,
+                         'phase_count':3,'phase_switch_seconds':120,'ready_for_start':False}},
+                       'charging':{'status':'starting','phase_start_pending':True,
+                         'phase_start_deadline_epoch':1000,'stop_cause':'phase_wait'}})
+        self.assertEqual(result['charger']['info_code'],6)
+        self.assertEqual(result['car']['state'],'CHARGING_INTERRUPTED')
+        self.assertTrue(result['charger']['phase_switching'])
+        self.assertEqual(result['charger']['phase_switch_seconds'],120)
+        self.assertFalse(result['charger']['ready_for_start'])
+        self.assertTrue(result['session']['phase_start_pending'])
+        self.assertEqual(result['session']['phase_start_deadline_epoch'],1000)
+        self.assertEqual(result['session']['stop_cause'],'phase_wait')
+
     def test_offline_report_reads_only_session_and_cached_vehicle(self):
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)

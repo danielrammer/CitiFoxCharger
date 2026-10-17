@@ -1,8 +1,10 @@
-# Validation report · 1.7.4
+# Validation report · 1.7.5
 
 Date: **17 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
 ## Existing baseline and new work
+
+The complete 1.7.5 offline suite passed **254 tests**. Sixteen additions cover verified phase-state/timer decoding, invalid/disconnected telemetry, a nonblocking HTTP preparation response, stable fresh readiness, one deferred vehicle start, Stop/restart cancellation, fixed timeout, target/access/mode loss, uncertain outcomes without replay and allowlisted diagnostic fields. Device requests are simulated. The browser phase view was checked in German and English, including Stop, at 800 × 1280, 640 × 1024, 534 × 854 and 1280 × 800 without page overflow. The optional countdown is a device value, not a locally fabricated timer.
 
 The 1.6.2 update/window checkpoint passed **202 tests** and was pushed to the private repository before the English migration. Version 1.7.0 renames the Python package and command/document files, translates CLI/backend/documentation to English, retains an optional German/English browser view and adds explicit passwordless HTTPS setup. That release was pushed before the separate 1.7.1 light-theme contrast adjustment.
 
@@ -45,6 +47,8 @@ Real temporary local Git repositories test fast-forward, tracked edits, allowed 
 Startup-choice tests cover explicit browser/backend-only selection, empty input/cancellation/EOF with no start, invalid choices, startup failures, and no menu after a failed update. Launch uses a fresh Python process from the returned Git folder, retaining a custom port and profile with spaces. Real Windows start scripts run harmless argument-recording stubs; backend-only startup is verified to suppress browser opening for both new and reused instances. The updater menu flag is checked in actual batch execution. No real browser, vehicle or energy manager is started by these tests.
 
 ## Hardware evidence and limits
+
+The user separately reported a start at 85% toward an 86% target followed by 0 kW after an uncertain duration. The supplied 1.7.4 live diagnostic report, generated at 11:56 Vienna time, records a start at 11:40:20, an unconfirmed start outcome and active monitoring with no saved stop intent, stop guard or stop cause. Smartfox remains M+, ready (status 2), at 0 kW. The unchanged 85% vehicle capture is from 11:42:24, despite a successful cloud query at 11:55:45. This supports that the app had not requested a stop by report time; it does not identify whether the car or charger interrupted power. Later missing-data protection can still request a precautionary stop. The new diagnostic allowlist includes vehicle state and verified phase/readiness fields. A real phase-switch-to-charging cycle remains necessary. Direct remote inspection was blocked by an untrusted TLS certificate; validation was not disabled. This release must not be presented as proof that the reported interruption or real target-stop behavior is resolved.
 
 The installed Pro 2 / Charger 1 / EM3 00.01.16.08 firmware and local display fields were read. A+ → M+ → A+ was read back successfully after user authorization. SOC and start/stop capabilities were received from the actual Citigo, and the user confirmed physical charging after a start.
 

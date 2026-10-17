@@ -26,7 +26,8 @@ class ChargingSession:
                 self.value = data                restored = {'complete':'The previous charging session completed.',                            'closed':'The previous monitoring session was explicitly closed.',                            'error':'The previous session needs attention. Please check the vehicle and Smartfox.'}                if data.get('status') in restored:                    self.value['message'] = restored[data['status']]
                 # Restart never repeats a start. Recover through current telemetry and stop/restore only.
                 if data.get("status") == "starting":
-                    self.value.update(status="interrupted", message="Checking the start state after restart. No repeated start command.")
+                    self.value.update(status="interrupted", phase_start_pending=False,
+                                      message="Checking the start state after restart. No repeated start command.")
                 elif data.get("status") in ACTIVE:
                     self.value["message"] = "Monitoring is resuming after restart."
             except (ValueError, UnicodeError):
@@ -168,21 +169,14 @@ class ChargingSession:
         try:
             self.service.cache.setdefault("smartfox", {})["charger"] = self.web.set_mode(self.service.config.value["smartfox"], "M+")
             self.service.cache["smartfox"]["charger"] = self.web.wait_ready(self.service.config.value["smartfox"])
-            started = time.time()
-            self.save(ready_at=utcnow(), last_start_epoch=started, awaiting_fresh_soc=using_stale,
-                      fresh_soc_deadline=started + 300 if using_stale else None)
-            result = self.service.command("start", request_id, allow_stale)
-            if result["status"] != "accepted":
-                if result["status"] == "unknown" and using_stale:
-                    self.save(status="paused", message="Start is unconfirmed. The five-minute check for new vehicle data is active.")
-                    try:
-                        self.restore_auto()
-                    except SmartfoxControlError:
-                        pass
-                    return self.state()
-                raise IntegrationError("start_failed", result["message"])
-            self.save(status="monitoring", message=("Start requested with an older charge level. New vehicle data are expected within five minutes."
-                                                    if using_stale else f"Start requested. Charging is unconfirmed; target {target} % is monitored."))
+            charger = self.service.cache["smartfox"]["charger"]
+            if charger.get("phase_switching"):
+                self.save(phase_start_pending=True, phase_start_deadline_epoch=time.time()+360,
+                          phase_allow_stale=allow_stale, phase_ready_since_epoch=None,
+                          message=self.phase_message(charger))
+                self.next_attempt = 0
+                return self.state()
+            self.start_vehicle(using_stale)
         except (SmartfoxControlError, IntegrationError) as error:
             # Try restoring normal mode; do not pretend rollback or the vehicle start succeeded.
             try:
@@ -192,6 +186,73 @@ class ChargingSession:
                 self.save(status="restore_pending", message="Start failed. Return to A+ is not confirmed yet.")
             raise IntegrationError("start_failed", str(error)) from None
         return self.state()
+
+    def start_vehicle(self, using_stale):
+        # Clear the deferred intent durably before a possibly uncertain network call.
+        started = time.time()
+        self.save(phase_start_pending=False, ready_at=utcnow(), last_start_epoch=started,
+                  awaiting_fresh_soc=using_stale, fresh_soc_deadline=started+300 if using_stale else None)
+        result = self.service.command("start", self.value["request_id"], using_stale)
+        if result["status"] != "accepted":
+            if result["status"] == "unknown" and using_stale:
+                self.save(status="paused", message="Start is unconfirmed. The five-minute check for new vehicle data is active.")
+                try:self.restore_auto()
+                except SmartfoxControlError:pass
+                return
+            raise IntegrationError("start_failed", result["message"])
+        target = self.value["target_percent"]
+        self.save(status="monitoring", message=("Start requested with an older charge level. New vehicle data are expected within five minutes."
+                                                if using_stale else f"Start requested. Charging is unconfirmed; target {target} % is monitored."))
+
+    @staticmethod
+    def phase_message(charger):
+        seconds = charger.get("phase_switch_seconds")
+        if type(seconds) is int and 0 <= seconds <= 3600:
+            return f"Phase switching in progress. Smartfox reports {seconds} s. Waiting for charging permission."
+        return "Phase switching in progress. Waiting for charging permission."
+
+    def tick_phase_start(self, charger):
+        now = time.time()
+        deadline = self.value.get("phase_start_deadline_epoch")
+        car = self.service.cache.get("skoda", {})
+        if (type(deadline) not in (int,float) or not math.isfinite(deadline) or now >= deadline):
+            self.automatic_stop("Phase switching timed out. No vehicle start was sent.", cause="phase_wait")
+            return
+        if type(car.get("soc")) is int and car["soc"] >= self.value["target_percent"]:
+            self.automatic_stop("Target reached while waiting for phase switching. No vehicle start was sent.", cause="target")
+            return
+        allow_stale = self.value.get("phase_allow_stale") is True
+        if not self.service.can_command("start",allow_stale) or not self.service.can_command("stop"):
+            self.automatic_stop("Vehicle access was lost during phase switching. No vehicle start was sent.", cause="phase_wait")
+            return
+        read_at = timestamp(charger.get("read_at"))
+        live = charger.get("available") and charger.get("telemetry_available") and read_at is not None and -5 <= now-read_at <= 30
+        if not live:
+            self.save(phase_ready_since_epoch=None, message="Waiting for fresh Smartfox data after phase switching.")
+            return
+        if charger.get("mode") != "M+" or charger.get("status_code") == 4 or charger.get("info_code") == 14:
+            self.automatic_stop("Charging permission was lost during phase switching. No vehicle start was sent.", cause="phase_wait")
+            return
+        if charger.get("phase_switching"):
+            self.save(phase_ready_since_epoch=None, message=self.phase_message(charger))
+            return
+        if not charger.get("ready_for_start"):
+            self.save(phase_ready_since_epoch=None, message="Phase switching completed. Waiting for charging permission.")
+            return
+        since = self.value.get("phase_ready_since_epoch")
+        if type(since) not in (int,float) or not math.isfinite(since):
+            self.save(phase_ready_since_epoch=now, message="Phase switching completed. Checking charging permission.")
+            return
+        if read_at < since+3:
+            return  # A newer local report must confirm stable readiness; no browser timers.
+        captured = timestamp(car.get("captured_at"))
+        using_stale = captured is not None and now-captured > self.service.config.value["skoda"]["stale_seconds"]
+        try:
+            self.start_vehicle(using_stale)
+            if self.value["status"] != "monitoring":
+                self.automatic_stop("Vehicle start is unconfirmed after phase switching.", cause="phase_wait")
+        except IntegrationError:
+            self.automatic_stop("Vehicle start is unconfirmed after phase switching.", cause="phase_wait")
 
     def change_target(self, target):
         if type(target) is not int or not 1 <= target <= 100:
@@ -216,7 +277,7 @@ class ChargingSession:
     def stop(self, request_id, automatic=False):
         # Durable stop intent before the upstream call. Also protects a user-requested stop below target.
         self.save(status="paused", stop_requested=True, awaiting_fresh_soc=False, stop_intent_epoch=time.time(),
-                  stop_guard=True,
+                  stop_guard=True, phase_start_pending=False, phase_ready_since_epoch=None,
                   vin=self.service.config.value["skoda"]["vin"], message="Requesting a stop.")
         if self.value.get("stop_guard"):
             # A+ can supply power according to schedules; secure the local stop before a cloud timeout.
@@ -283,7 +344,7 @@ class ChargingSession:
                     self.save(auto_restored=False, message="Automatic stop: wallbox Off is unconfirmed. Please check charging.")
         if time.monotonic() < self.next_attempt:
             return
-        self.next_attempt = time.monotonic() + 10
+        self.next_attempt = time.monotonic() + (2 if self.value.get("phase_start_pending") else 10)
         if not self.active:
             if self.normal_mode == "OFF":
                 self.value["normalization_pending"] = False
@@ -307,6 +368,9 @@ class ChargingSession:
             return
         status = self.value["status"]
         charger = self.service.cache.get("smartfox", {}).get("charger", {})
+        if status == "starting" and self.value.get("phase_start_pending") and not self.value.get("stop_requested"):
+            self.tick_phase_start(charger)
+            return
         if self.value.get("stop_requested") and (not self.value.get("auto_restored") or
                 (self.value.get("stop_guard") and charger.get("mode") != "OFF")):
             try:

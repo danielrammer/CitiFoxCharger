@@ -301,6 +301,28 @@ class ServerTests(unittest.TestCase):
         self.service.charging.save(status="complete")
         self.assertEqual(self.call("/api/app/quit", {})[0],200)
 
+    def test_phase_preparation_returns_to_http_and_can_be_stopped_without_start(self):
+        from test_charging import ChargingTests
+        fixture=ChargingTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        self.service=self.server.service=fixture.service
+        fixture.web.phase_switching=True
+        status,body,_=self.call('/api/charging/start',{'target_percent':86,'request_id':'phase-http-start-00001'})
+        self.assertEqual(status,200)
+        self.assertTrue(json.loads(body)['phase_start_pending'])
+        self.assertEqual(fixture.effects,['M+'])
+        status,body,_=self.call('/api/status')
+        self.assertEqual(status,200)
+        self.assertTrue(json.loads(body)['charging']['can_stop'])
+        status,body,_=self.call('/api/charging/stop',{'request_id':'phase-http-stop-00001'})
+        self.assertEqual(status,200)
+        self.assertFalse(json.loads(body)['phase_start_pending'])
+        fixture.web.phase_switching=False
+        fixture.phase_tick()
+        self.assertNotIn('start',fixture.effects)
+        self.assertEqual(fixture.web.mode,'OFF')
+
     def test_quit_can_close_locally_stopped_session_without_claiming_car_confirmation(self):
         from test_charging import FakeWeb
         effects=[]

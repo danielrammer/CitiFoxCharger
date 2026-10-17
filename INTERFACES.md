@@ -1,6 +1,6 @@
 # Verified interfaces
 
-Evidence reviewed on **16–17 October 2026**; application version **1.7.3**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
+Evidence reviewed on **16–17 October 2026**; application version **1.7.5**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
 
 ## SMARTFOX Pro 2 and Charger Pro 1
 
@@ -44,6 +44,10 @@ For Charger 1 the vendor UI uses `/setswcc.cgi?num=0&mode=<code>&value=100`. Thi
 The user explicitly authorized local web control on 16 October 2026. The adapter is limited to the specific private address/profile, Charger 1, Off/A+/M+ and the requested heating outputs. Without opt-in the class blocks writes. It uses no redirects/proxy and validates firmware/XML size/schema. Every mode change requires a matching readback. A real A+ → M+ → A+ cycle was read back successfully; vehicle start/stop and new heating/Off operations used in automated tests are simulated unless separately reported by the user.
 
 Status **2** is ready, **3** is charging. Info **2/8/10** represents active charging permission; **14** requests authorization. Connection counters ≤3 are treated as disconnected. After M+ the adapter waits at least three seconds and up to fifteen seconds for readiness with at least 6 A offered current. Readiness is permission, not proof of vehicle power draw, and is not an interpretation of register 42111.
+
+The installed vendor JavaScript defines `CC_SWITCH = 6` and maps `hidCc1Info` to that phase-switch state. Its display uses the optional `hidCc1TempTime` as remaining seconds. CitiFoxCharger shows it only with a fresh connection and info 6; absent or invalid seconds produce a waiting message without an invented countdown. `hidCc1Phase` accepts only the vendor's 1/3-phase indication. It is not a measurement of how many phases the Citigo actually draws. `hidCc1WaitTime` is not used as a phase timer.
+
+Verified phase switching returns promptly to the backend worker so the UI can show progress and accept Stop. The app sends one deferred vehicle start only after the phase flag clears and a newer local report confirms three seconds of readiness. The app imposes a fixed six-minute preparation limit and secures Off on timeout, lost mode/authorization or vehicle access. Stop and restart cancel deferred starts. Vehicle polling/quota rules remain unchanged. Live 0 kW takes precedence over a raw wallbox “Charging” label; no charging animation or duration estimate is shown during verified phase switching. The [manufacturer integration guide](https://www.smartfox.at/wp-content/uploads/2022/12/Anleitung-Einbindung-Ansteuerung-SMARTFOX-Car-Charger-KEBA-ABB-BMW-EATON-Ladestationen.pdf) describes safety checks that can make phase switching take several minutes; the installed firmware signal is the basis for the app state.
 
 A+ combines surplus operation with the SMARTFOX weekly schedule. Vehicle schedules are a separate layer. Existing M+ energy/time limits and fallback remain active and can end M+ before the percentage target. The app does not rewrite these settings or vehicle profiles.
 

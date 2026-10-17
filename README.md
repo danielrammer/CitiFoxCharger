@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.7.4
+# CitiFoxCharger for Windows · 1.7.5
 
 A local dashboard for a Škoda Citigo e iV and a SMARTFOX Pro 2 energy manager with a Charger Pro at charging point 1. The installed SMARTFOX profile is **EM3 00.01.16.08**, address **192.168.0.81**.
 
@@ -82,7 +82,7 @@ The main page shows the reported battery percentage, current local charging powe
 ### Force charge
 
 1. Select a target between **1 and 100%**, above the reported SOC.
-2. The app changes Charger 1 to **M+**, verifies the returned mode and waits at least three seconds, up to fifteen seconds, for fresh readiness with an offered current of at least 6 A.
+2. The app changes Charger 1 to **M+**, verifies the returned mode and normally waits at least three seconds, up to fifteen seconds, for fresh readiness with an offered current of at least 6 A. If Smartfox explicitly reports a **phase switch**, preparation continues in the background instead of failing after fifteen seconds. The page shows **Phase switching**, an amber indicator and Smartfox's remaining seconds when available. Stop remains usable. After switching, a new local report must confirm at least three seconds of readiness before the app sends one vehicle start. The preparation deadline is six minutes; timeout or lost permission secures Off. Restart never replays a pending start. These are app safety bounds, not a promised hardware duration.
 3. Only then is one vehicle start sent. Failed readiness sends no vehicle start and attempts a return to A+.
 4. The backend monitors the target independently of browser timers. A valid report at or above the target, even if now old, requests a conservative stop.
 
