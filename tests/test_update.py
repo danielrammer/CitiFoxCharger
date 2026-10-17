@@ -1,12 +1,16 @@
 import os
+import io
+import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from contextlib import redirect_stdout
 from unittest.mock import patch
-from update import update, UpdateError
+from update import update, choose_start, main, UpdateError
 from citifoxcharger.lifecycle import ControlError
 
 
@@ -118,8 +122,87 @@ class GitUpdateTests(unittest.TestCase):
         self.assertEqual(control.actions,[])
 
 
+class StartupChoiceTests(unittest.TestCase):
+    def setUp(self):
+        self.target=Path.cwd()/'updated program with spaces'
+        self.profile=Path.cwd()/'test profile with spaces'
+
+    def choose(self,answer,code=0):
+        with patch('builtins.input',return_value=answer),patch('update.subprocess.run',return_value=subprocess.CompletedProcess([],code)) as launch,redirect_stdout(io.StringIO()):
+            result=choose_start(self.target,8774,self.profile)
+        return result,launch
+
+    def test_browser_choice_runs_updated_code_with_the_same_port_and_profile(self):
+        result,launch=self.choose('1')
+        self.assertEqual(result,0)
+        launch.assert_called_once_with([sys.executable,str(self.target/'run.py'),'--background',
+            '--port','8774','--data-dir',str(self.profile),'--browser','brave','--fullscreen'],cwd=self.target)
+
+    def test_background_choice_never_requests_a_browser(self):
+        result,launch=self.choose('2')
+        self.assertEqual(result,0)
+        command=launch.call_args.args[0]
+        self.assertIn('--background',command)
+        self.assertIn('--no-browser',command)
+        self.assertNotIn('--browser',command)
+        self.assertNotIn('--fullscreen',command)
+        self.assertEqual(command[1],str(self.target/'run.py'))
+
+    def test_empty_cancel_and_closed_input_do_not_start_anything(self):
+        for value in ('','3',EOFError,KeyboardInterrupt):
+            with self.subTest(value=value),patch('builtins.input',side_effect=value if isinstance(value,type) else [value]),patch('update.subprocess.run') as launch,redirect_stdout(io.StringIO()):
+                self.assertEqual(choose_start(self.target,8774,self.profile),0)
+                launch.assert_not_called()
+
+    def test_invalid_choice_waits_for_a_valid_answer(self):
+        with patch('builtins.input',side_effect=['anything','3']) as answer,patch('update.subprocess.run') as launch,redirect_stdout(io.StringIO()):
+            self.assertEqual(choose_start(self.target,8774,self.profile),0)
+            self.assertEqual(answer.call_count,2)
+            launch.assert_not_called()
+
+    def test_start_failure_is_reported_without_repeating_update_or_start(self):
+        result,launch=self.choose('1',7)
+        self.assertEqual(result,1)
+        launch.assert_called_once()
+
+    def test_failed_update_never_offers_to_start(self):
+        with patch('sys.argv',['update.py','--choose-start']),patch('update.update',side_effect=UpdateError('test failure')),patch('update.choose_start') as choose,redirect_stdout(io.StringIO()):
+            self.assertEqual(main(),1)
+            choose.assert_not_called()
+
+    def test_main_prompts_only_when_requested_and_uses_the_returned_git_folder(self):
+        for prompt in (False,True):
+            argv=['update.py','--port','8774','--data-dir',str(self.profile)]+(['--choose-start'] if prompt else [])
+            with self.subTest(prompt=prompt),patch('sys.argv',argv),patch('update.update',return_value=self.target),patch('update.choose_start',return_value=0) as choose:
+                self.assertEqual(main(),0)
+                if prompt:choose.assert_called_once_with(self.target,8774,self.profile)
+                else:choose.assert_not_called()
+
+    def test_launch_os_error_is_reported_as_startup_failure_after_a_completed_update(self):
+        output=io.StringIO()
+        with patch('sys.argv',['update.py','--choose-start']),patch('update.update',return_value=self.target),patch('update.choose_start',side_effect=OSError),redirect_stdout(output):
+            self.assertEqual(main(),1)
+        self.assertIn('Update completed, but startup failed',output.getvalue())
+
+
 @unittest.skipUnless(os.name=='nt','Windows batch execution required')
 class BatchWindowTests(unittest.TestCase):
+    def test_start_scripts_forward_custom_profile_and_only_background_suppresses_the_browser(self):
+        with tempfile.TemporaryDirectory(prefix='citifox start ') as folder:
+            path=Path(folder)
+            (path/'run.py').write_text('import json,sys\nfrom pathlib import Path\nPath("argv.json").write_text(json.dumps(sys.argv[1:]))\n')
+            for name in ('Start.cmd','Start-Background.cmd'):
+                with self.subTest(name=name):
+                    shutil.copy2(Path(__file__).resolve().parents[1]/name,path/name)
+                    result=subprocess.run([os.environ.get('COMSPEC','cmd.exe'),'/d','/c',name,'--port','8774','--data-dir','profile with spaces'],cwd=path,
+                        stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=12,creationflags=subprocess.CREATE_NO_WINDOW)
+                    self.assertEqual(result.returncode,0,result.stdout)
+                    args=json.loads((path/'argv.json').read_text())
+                    self.assertEqual(args[-4:],['--port','8774','--data-dir','profile with spaces'])
+                    self.assertIn('--background',args)
+                    self.assertEqual('--no-browser' in args,name=='Start-Background.cmd')
+                    self.assertEqual('--fullscreen' in args,name=='Start.cmd')
+
     def exercise(self,name,exit_code,self_update=False):
         with tempfile.TemporaryDirectory(prefix='citifox batch ') as folder:
             path=Path(folder)
@@ -127,7 +210,7 @@ class BatchWindowTests(unittest.TestCase):
             stub='import sys\n'
             if self_update:
                 stub += "from pathlib import Path\nPath('Update.cmd').write_text('@echo off\\necho REPLACED\\n')\n"
-            stub+=f'print("TEST_COMPLETED",flush=True)\nsys.exit({exit_code})\n'
+            stub+=f'print("TEST_ARGUMENTS",sys.argv[1:],flush=True)\nprint("TEST_COMPLETED",flush=True)\nsys.exit({exit_code})\n'
             for script in ('manage.py','setup_network.py','update.py'):(path/script).write_text(stub)
             process=subprocess.Popen([os.environ.get('COMSPEC','cmd.exe'),'/d','/c',name],cwd=path,
                 stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,
@@ -145,6 +228,7 @@ class BatchWindowTests(unittest.TestCase):
                 self.assertEqual(process.wait(timeout=5),exit_code)
                 reader.join(timeout=2)
                 self.assertIn('TEST_COMPLETED',''.join(lines))
+                if name=='Update.cmd':self.assertIn('--choose-start',''.join(lines))
             finally:
                 if process.poll() is None:process.kill();process.wait(timeout=3)
                 process.stdin.close();process.stdout.close()

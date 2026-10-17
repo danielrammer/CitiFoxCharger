@@ -1,4 +1,4 @@
-# Validation report · 1.7.1
+# Validation report · 1.7.2
 
 Date: **17 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
@@ -6,7 +6,7 @@ Date: **17 October 2026**. Environment: Windows, Python 3.14. Device and vehicle
 
 The 1.6.2 update/window checkpoint passed **202 tests** and was pushed to the private repository before the English migration. Version 1.7.0 renames the Python package and command/document files, translates CLI/backend/documentation to English, retains an optional German/English browser view and adds explicit passwordless HTTPS setup. That release was pushed before the separate 1.7.1 light-theme contrast adjustment.
 
-The complete offline suite passed **208 tests**. Test coverage includes the following behavior; hardware limitations are separate.
+The complete 1.7.2 offline suite passed **218 tests**. The prior 1.7.1 suite passed 208 tests. Version 1.7.2 adds the post-update startup choice and distinguishes browser startup from backend-only startup. Test coverage includes the following behavior; hardware limitations are separate.
 
 ### Charging, profiles and lifecycle
 
@@ -37,6 +37,8 @@ Diagnostics tests check old-backend compatibility, GET-only collection, clearly 
 ### Git updater and command windows
 
 Real temporary local Git repositories test fast-forward, dirty/untracked files, diverged history, missing remote, unexpected origin, ZIP bootstrap/reuse and refusal to overwrite an unrelated directory. Fake backend control tests protect active monitoring and RAM-only credentials. Actual Windows batch processes verify that Update, Stop, Setup-Network and Setup-Firewall wait for a key after both success and failure and preserve return codes. Update.cmd remains safe when its own file changes during the Git pull. No production backend is stopped for these tests.
+
+Startup-choice tests cover explicit browser/backend-only selection, empty input/cancellation/EOF with no start, invalid choices, startup failures, and no menu after a failed update. Launch uses a fresh Python process from the returned Git folder, retaining a custom port and profile with spaces. Real Windows start scripts run harmless argument-recording stubs; backend-only startup is verified to suppress browser opening for both new and reused instances. The updater menu flag is checked in actual batch execution. No real browser, vehicle or energy manager is started by these tests.
 
 ## Hardware evidence and limits
 

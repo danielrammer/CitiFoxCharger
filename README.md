@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.7.1
+# CitiFoxCharger for Windows · 1.7.2
 
 A local dashboard for a Škoda Citigo e iV and a SMARTFOX Pro 2 energy manager with a Charger Pro at charging point 1. The installed SMARTFOX profile is **EM3 00.01.16.08**, address **192.168.0.81**.
 
@@ -21,10 +21,10 @@ The target layout is an **800 × 1280 portrait viewport** on a 1280 × 800 table
 | Script | Purpose |
 |---|---|
 | **Start.cmd** | Start the background backend and open Brave in full screen. Reuse an existing instance. |
-| **Start-Background.cmd** | Equivalent background-start entry point. |
+| **Start-Background.cmd** | Start or reuse the background backend without opening a browser. |
 | **Stop.cmd** | Stop the backend cleanly after charging has stopped; never kill unrelated Python processes. |
 | **Restart.cmd** | Restart the existing backend/profile and resume monitoring without sending another charging start. |
-| **Update.cmd** | Fetch and fast-forward the private Git repository after a safe backend shutdown. |
+| **Update.cmd** | Fetch and fast-forward after a safe backend shutdown, then offer a startup choice. |
 | **Setup-Network.cmd** | Configure optional HTTPS home network access, with or without a password. |
 | **Setup-Firewall.cmd** | As administrator, allow the configured HTTPS listener on the private local subnet. |
 | **Diagnostics.cmd** | Export a small support report without VIN, credentials or raw responses. |
@@ -55,7 +55,15 @@ git pull --ff-only --no-rebase origin main
 
 Local edits, untracked program files, diverged history or failed fetches abort the update. There is no reset, stash, forced merge or overwrite of local edits. An active charging session blocks shutdown; stop charging in the app and wait for confirmation first. A key held only in RAM must be saved with Windows encryption before an update can close the backend.
 
-An extracted ZIP has no Git history. On first use the updater clones into the separate neighbouring **CitiFoxCharger-Git** folder. It can reuse an existing matching checkout, but never overwrites an unrelated folder. The original ZIP folder remains. From then on use **Start.cmd** and **Update.cmd** in the displayed Git folder. Run Start.cmd yourself after a successful update; the updater never starts the backend or charging automatically. It stays open with the result. Use `Update.cmd --port 8774` for a non-default local backend port. Custom profiles/ports should be started using the matching `run.py` arguments.
+An extracted ZIP has no Git history. On first use the updater clones into the separate neighbouring **CitiFoxCharger-Git** folder. It can reuse an existing matching checkout, but never overwrites an unrelated folder. The original ZIP folder remains. From then on use the scripts in the displayed Git folder. After a successful update, **Update.cmd** offers:
+
+1. **Start** — start the background backend and open Brave in full screen.
+2. **Start-Background** — start the background backend without opening a browser.
+3. **Leave stopped** — the default when you press Enter or close the input.
+
+Starting requires an explicit choice. It uses the updated Git folder and preserves the updater's port and data profile. Starting the backend does not request a new vehicle charge. A failed update never offers a start, and the command window still waits for a key after completion or failure. Direct `python update.py` remains non-interactive unless `--choose-start` is supplied. When upgrading from an older updater, the new menu is available the next time the updated **Update.cmd** is run.
+
+Use `Update.cmd --port 8774` for a non-default local backend port. Both start scripts also accept custom settings, for example `Start-Background.cmd --port 8774 --data-dir "D:\CitiFox profile"`. Use the same port/profile for all startup, update and management actions.
 
 ## Existing settings and English filenames
 

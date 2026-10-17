@@ -45,7 +45,7 @@ def main():
         print("Startup failed. The port is in use or the data folder is unreadable.")
         return 1
     url = f"http://127.0.0.1:{server.server_port}"
-    print(f"CitiFoxCharger: {url}\nBeenden: Strg+C. Modbus nur lesend; lokale M+/A+-Websteuerung freigegeben.")
+    print(f"CitiFoxCharger: {url}\nStop: Ctrl+C. Modbus access is read-only.")
     if not args.no_browser:
         opener = threading.Timer(0.6, lambda: open_dashboard(url, args.browser, args.fullscreen))
         opener.daemon = True

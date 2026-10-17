@@ -5,9 +5,9 @@ rem The block is parsed before Git can update this batch file itself.
   cd /d "%~dp0"
   py -3 -c "import sys" >nul 2>nul
   if errorlevel 1 (
-    python update.py %*
+    python update.py --choose-start %*
   ) else (
-    py -3 update.py %*
+    py -3 update.py --choose-start %*
   )
   call set "citifox_result=%%errorlevel%%"
   echo.

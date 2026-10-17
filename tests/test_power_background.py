@@ -57,6 +57,16 @@ class PowerTests(unittest.TestCase):
 
 
 class BackgroundTests(unittest.TestCase):
+    def test_background_only_launch_never_opens_a_browser_for_a_new_or_reused_backend(self):
+        import run
+        for existing in (False,True):
+            with self.subTest(existing=existing),patch('sys.argv',['run.py','--background','--no-browser']),patch.object(run,'dashboard_running',return_value=existing),patch.object(run,'spawn_backend') as spawn,patch.object(run,'wait_until_ready',return_value=True),patch.object(run,'open_dashboard') as browser,patch.object(run,'make_server') as foreground:
+                self.assertEqual(run.main(),0)
+                browser.assert_not_called()
+                foreground.assert_not_called()
+                if existing:spawn.assert_not_called()
+                else:self.assertIn('--no-browser',spawn.call_args.args[0])
+
     @patch('citifoxcharger.background.subprocess.Popen')
     def test_detached_process_uses_files_not_console_and_preserves_paths(self, process):
         with tempfile.TemporaryDirectory(prefix='background test ') as directory:
