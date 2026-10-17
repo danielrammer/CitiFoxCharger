@@ -89,6 +89,64 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(result["skoda"]["code"], "quota_reserved")
         self.assertEqual(self.calls, ["GET"])
 
+    def near_target_fixture(self):
+        now=datetime.now(timezone.utc).isoformat()
+        self.service.cache['skoda']={'soc':50,'available':True,'stale':False,'code':'ok','captured_at':now}
+        self.service.cache['smartfox']={'charger':{'available':True,'telemetry_available':True,'power_kw':3.6,'read_at':now}}
+        self.service.charging.save(replace=True,status='monitoring',vin=VIN,target_percent=52)
+        self.adapter.quota_remaining='10'
+        self.adapter.quota_reset_at=self.adapter.clock()+1800
+        self.adapter.blocked_until=0
+        self.service.last_attempt['skoda']=time.monotonic()-10
+        self.service.next_due['skoda']=time.monotonic()+300
+
+    def test_near_target_advances_at_most_two_reads_on_distinct_reports_and_persists_budget(self):
+        from citifoxcharger.charging import ChargingSession
+        self.near_target_fixture()
+        self.service.prioritize_target_poll()
+        self.assertAlmostEqual(self.service.next_due['skoda'],self.service.last_attempt['skoda']+60)
+        self.assertEqual(self.service.charging.value['target_probe_count'],1)
+        self.service.next_due['skoda']=time.monotonic()+300
+        due=self.service.next_due['skoda']
+        self.service.cache['skoda']['captured_at']=self.service.cache['skoda']['captured_at'].replace('+00:00','Z')
+        self.service.prioritize_target_poll()
+        self.assertEqual(self.service.next_due['skoda'],due)
+        self.service.cache['skoda']['captured_at']=(datetime.now(timezone.utc)+timedelta(seconds=1)).isoformat()
+        self.service.prioritize_target_poll()
+        self.assertEqual(self.service.charging.value['target_probe_count'],2)
+        self.service.charging=ChargingSession(self.service,None)
+        self.service.next_due['skoda']=due
+        self.service.cache['skoda']['captured_at']=(datetime.now(timezone.utc)+timedelta(seconds=2)).isoformat()
+        self.service.prioritize_target_poll()
+        self.assertEqual(self.service.next_due['skoda'],due)
+        self.assertEqual(self.calls,[])
+
+    def test_near_target_never_shortens_cooldown_or_spends_reserve_on_old_or_unconfirmed_data(self):
+        changes=[lambda:self.service.cache['skoda'].update(captured_at=(datetime.now(timezone.utc)-timedelta(minutes=6)).isoformat()),
+                 lambda:self.service.cache['skoda'].update(available=False),
+                 lambda:self.service.cache['skoda'].update(code='quota_reserved'),
+                 lambda:self.service.cache['smartfox']['charger'].update(power_kw=0),
+                 lambda:self.service.cache['smartfox']['charger'].update(phase_switching=True),
+                 lambda:self.service.charging.save(phase_start_pending=True),
+                 lambda:self.service.charging.save(stop_requested=True),
+                 lambda:self.service.charging.save(vin='TMBJB9NY5RF999998'),
+                 lambda:setattr(self.adapter,'quota_remaining','5'),
+                 lambda:setattr(self.adapter,'blocked_until',self.adapter.clock()+60),
+                 lambda:setattr(self.adapter,'quota_reset_at',0)]
+        for change in changes:
+            with self.subTest(change=change):
+                self.near_target_fixture();change()
+                due=self.service.next_due['skoda']
+                self.service.prioritize_target_poll()
+                self.assertEqual(self.service.next_due['skoda'],due)
+                self.assertNotIn('target_probe_count',self.service.charging.value)
+
+    def test_near_target_does_not_reserve_acceleration_when_regular_poll_is_already_faster(self):
+        self.near_target_fixture()
+        self.service.next_due['skoda']=self.service.last_attempt['skoda']+60
+        self.service.prioritize_target_poll()
+        self.assertNotIn('target_probe_count',self.service.charging.value)
+
     def test_command_gated_by_capabilities_and_staleness(self):
         self.data["vehicle"]["operations"] = []
         self.service.status()

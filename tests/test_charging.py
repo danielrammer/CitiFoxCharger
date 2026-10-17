@@ -328,6 +328,38 @@ class ChargingTests(unittest.TestCase):
         self.assertEqual(self.effects,[])
         self.assertEqual(self.service.charging.value,before)
 
+    def test_new_target_report_stops_without_waiting_for_housekeeping_tick(self):
+        self.force(82)
+        self.update_soc(82)
+        self.service.charging.next_attempt=time.monotonic()+10
+        result=self.service.status()
+        self.assertEqual(self.effects,['M+','start','OFF','stop'])
+        self.assertEqual(result['charging']['stop_cause'],'target')
+        self.assertEqual(result['charging']['stop_trigger_soc'],82)
+        self.assertEqual(result['charging']['stop_trigger_captured_at'],result['skoda']['captured_at'])
+        self.assertEqual(result['charging']['stop_trigger_read_at'],result['skoda']['read_at'])
+
+    def test_known_target_secures_off_before_a_new_cloud_read(self):
+        self.force(82)
+        self.service.cache['skoda']['soc']=82
+        self.service.charging.next_attempt=time.monotonic()+10
+        self.service.next_due['skoda']=0
+        original=self.service.car.request
+        def read_after_off(method,path,key):
+            if method=='GET':
+                self.assertEqual(self.web.mode,'OFF')
+            return original(method,path,key)
+        self.service.car.request=read_after_off
+        self.service.status()
+        self.assertEqual(self.effects,['M+','start','OFF','stop'])
+
+    def test_target_fast_path_has_no_effect_after_restart_intent(self):
+        self.force(82)
+        self.service.cache['skoda']['soc']=82
+        self.service.stopping=True
+        self.assertFalse(self.service.charging.stop_if_target_reached())
+        self.assertEqual(self.effects,['M+','start'])
+
     def stopped_without_cloud_confirmation(self):
         self.force()
         self.service.command_after=0

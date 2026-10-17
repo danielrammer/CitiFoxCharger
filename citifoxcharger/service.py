@@ -127,6 +127,47 @@ class Service:
         self.worker = threading.Thread(target=run, daemon=True, name="charging-monitor")
         self.worker.start()
 
+    def prioritize_target_poll(self):
+        """At most two earlier reads per session, only on distinct recent reports.
+
+        Polling still reads the cloud cache; this does not wake the car. Keep the
+        regular budget scheduler and never shorten a server cooldown.
+        """
+        session = self.charging.value
+        car = self.cache.get("skoda", {})
+        charger = self.cache.get("smartfox", {}).get("charger", {})
+        captured, local_read = timestamp(car.get("captured_at")), timestamp(charger.get("read_at"))
+        previous_probe = timestamp(session.get("target_probe_capture"))
+        count = session.get("target_probe_count", 0)
+        soc, target, power = car.get("soc"), session.get("target_percent"), charger.get("power_kw")
+        now, clock = time.time(), time.monotonic()
+        try:
+            remaining = int(self.car.quota_remaining)
+        except (TypeError, ValueError):
+            return
+        if (session.get("vin") != self.config.value["skoda"]["vin"]
+                or session.get("status") != "monitoring" or session.get("stop_requested")
+                or session.get("awaiting_fresh_soc") or session.get("phase_start_pending")
+                or type(count) is not int or not 0 <= count < 2
+                or type(soc) is not int or type(target) is not int or not 0 < target-soc <= 2
+                or not car.get("available") or car.get("stale") or car.get("code") not in (None,"ok")
+                or captured is None or not -5 <= now-captured <= 300
+                or (previous_probe is not None and captured <= previous_probe)
+                or not charger.get("available") or charger.get("telemetry_available") is not True or charger.get("phase_switching")
+                or local_read is None or not -5 <= now-local_read <= 30
+                or type(power) not in (int,float) or not math.isfinite(power) or power <= .1
+                or remaining < 6 or self.car.quota_reset_at <= self.car.clock()
+                or self.car.blocked_until > self.car.clock()):
+            return
+        attempted = self.last_attempt.get("skoda")
+        due = self.next_due.get("skoda")
+        if attempted is None or due is None or due <= attempted+60:
+            return
+        # Persist the bounded allowance before advancing the shared backend schedule.
+        self.charging.save(target_probe_count=count+1, target_probe_capture=car["captured_at"],
+                           target_probe_scheduled_at=utcnow())
+        self.next_due["skoda"] = max(clock, attempted+60)
+
     def stop_worker(self):
         self.worker_stop.set()
         if self.worker is not None:
@@ -275,7 +316,9 @@ class Service:
     def status(self):
         with self.lock:
             if not self.stopping:
+                self.charging.stop_if_target_reached()
                 self.update("smartfox")
+                self.prioritize_target_poll()
                 self.update("skoda")
             car = self.cache.get("skoda", {"available":False,"stale":True})
             captured = timestamp(car.get("captured_at"))

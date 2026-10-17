@@ -316,6 +316,9 @@ class ChargingSession:
 
     def automatic_stop(self, reason, cause="target"):
         """A blocked cloud command must never bypass the independent local stop."""
+        car = self.service.cache.get("skoda", {})
+        self.save(stop_trigger_soc=car.get("soc"), stop_trigger_captured_at=car.get("captured_at"),
+                  stop_trigger_read_at=car.get("read_at"), stop_trigger_at=utcnow())
         request_id = "limit-stop-" + self.value.get("request_id", "recovered-session") + "-" + str(self.value.get("stop_failures", 0))
         try:
             self.stop(request_id, automatic=True)
@@ -330,7 +333,21 @@ class ChargingSession:
         self.restore_auto()
         self.save(status="complete", message=message + f" Smartfox is set to {self.normal_name}.", completed_at=utcnow())
 
+    def stop_if_target_reached(self):
+        car = self.service.cache.get("skoda", {})
+        captured = timestamp(car.get("captured_at"))
+        if (not self.service.stopping and self.active and not self.value.get("stop_requested")
+                and self.value.get("vin") == self.service.config.value["skoda"]["vin"]
+                and type(car.get("soc")) is int and captured is not None and captured <= time.time()+5
+                and car["soc"] >= self.value["target_percent"]):
+            self.automatic_stop(f"Ziel {self.value['target_percent']}% reached according to the last vehicle report.")
+            return True
+        return False
+
     def tick(self):
+        # A newly received target report must not wait for the ten-second housekeeping tick.
+        if self.stop_if_target_reached():
+            return
         # Local OFF retries remain independent of any one-minute cloud backoff.
         if (self.active and self.value.get("stop_guard") and
                 self.value.get("vin") == self.service.config.value["skoda"]["vin"] and

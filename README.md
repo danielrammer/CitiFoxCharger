@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.7.5
+# CitiFoxCharger for Windows · 1.7.6
 
 A local dashboard for a Škoda Citigo e iV and a SMARTFOX Pro 2 energy manager with a Charger Pro at charging point 1. The installed SMARTFOX profile is **EM3 00.01.16.08**, address **192.168.0.81**.
 
@@ -122,6 +122,10 @@ The compact energy panel shares the charging page. House use follows the install
 Controls are limited to the installed output assignments and exact firmware. The device-side names remain unchanged for matching the verified outputs. A firmware mismatch, missing assignment or failed readback blocks control. Modbus remains read-only. See [INTERFACES.md](INTERFACES.md) for evidence and limitations.
 
 ## Freshness and estimated duration
+
+Near an active manual target (one or two percentage points remaining), the backend can advance at most **two cloud reads per session** to **60 seconds after the previous attempt**. This requires actual fresh charging power, a vehicle report no older than five minutes and at least six requests remaining in a known quota window. Each distinct vehicle capture can schedule only one earlier read. Missing data, phase preparation and server cooldowns do not trigger faster reads. The allowance survives a backend restart. Other polling keeps the existing quota budget and command reserve. An earlier cloud read does not wake the vehicle or guarantee a newer capture.
+
+A reported charge level at or above the target bypasses the ten-second housekeeping interval. An already known target report secures local Off before starting another routine cloud query. The app still stops on reported SOC, not on a predicted charge level; it does not intentionally stop one percentage point early. Diagnostics record the triggering SOC, original capture time, retrieval time and decision time to separate data delay from stop latency.
 
 **Last vehicle report** is the original vehicle capture time. **Last successful query** is when the API response arrived. A cloud query does not guarantee a new measurement in the car. The documented public API has no verified wake-up/force-refresh operation; community integrations use different authentication and do not prove support for this Citigo.
 

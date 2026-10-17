@@ -35,7 +35,10 @@ class DiagnosticsTests(unittest.TestCase):
         result=report({'skoda':{'state':'CHARGING_INTERRUPTED'},'smartfox':{'charger':{'info_code':6,'phase_switching':True,
                          'phase_count':3,'phase_switch_seconds':120,'ready_for_start':False}},
                        'charging':{'status':'starting','phase_start_pending':True,
-                         'phase_start_deadline_epoch':1000,'stop_cause':'phase_wait'}})
+                         'phase_start_deadline_epoch':1000,'stop_cause':'phase_wait',
+                         'stop_trigger_soc':88,'stop_trigger_captured_at':'2026-10-17T11:41:00Z',
+                         'stop_trigger_read_at':'2026-10-17T11:41:20Z','stop_trigger_at':'2026-10-17T11:41:20Z',
+                         'target_probe_count':2}})
         self.assertEqual(result['charger']['info_code'],6)
         self.assertEqual(result['car']['state'],'CHARGING_INTERRUPTED')
         self.assertTrue(result['charger']['phase_switching'])
@@ -44,6 +47,10 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertTrue(result['session']['phase_start_pending'])
         self.assertEqual(result['session']['phase_start_deadline_epoch'],1000)
         self.assertEqual(result['session']['stop_cause'],'phase_wait')
+        self.assertEqual(result['session']['stop_trigger_soc'],88)
+        self.assertEqual(result['session']['stop_trigger_captured_at'],'2026-10-17T11:41:00Z')
+        self.assertEqual(result['session']['stop_trigger_read_at'],'2026-10-17T11:41:20Z')
+        self.assertEqual(result['session']['target_probe_count'],2)
 
     def test_offline_report_reads_only_session_and_cached_vehicle(self):
         with tempfile.TemporaryDirectory() as folder:
