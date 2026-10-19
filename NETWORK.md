@@ -62,3 +62,5 @@ Setup-Firewall.cmd --data-dir "C:\MyDataFolder"
 ```
 
 Use the same profile already used by the backend. Setup windows remain open after success and failure. Certificate creation, strict TLS, both authentication modes and permission boundaries are tested on loopback. A successful physical second-device connection to this wall tablet still requires confirmation.
+
+For the communication diagram and exact device/cloud interfaces, see [COMMUNICATION.md](COMMUNICATION.md). Use **HTTPS**, not plain HTTP, on the network listener port 8766; HTTP sent to that TLS port can be reset before any application response.

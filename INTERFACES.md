@@ -2,6 +2,8 @@
 
 Evidence reviewed on **16–19 October 2026**; application version **1.8.4**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
 
+For an implementation-level overview with diagrams and request/register tables, see [COMMUNICATION.md](COMMUNICATION.md).
+
 ## SMARTFOX Pro 2 and Charger Pro 1
 
 The user confirmed Pro 2, Charger Pro at point 1 and firmware **EM3 00.01.16.08**. The firmware was also read from the local device display at **192.168.0.81**.
