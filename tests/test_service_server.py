@@ -310,6 +310,15 @@ class ServerTests(unittest.TestCase):
         self.assertIn("HttpOnly", headers["Set-Cookie"])
         self.assertIn("SameSite=Strict", headers["Set-Cookie"])
 
+    def test_brand_images_are_served_as_png_without_exposing_arbitrary_paths(self):
+        for path in ('/icon.png','/logo.png'):
+            status,body,headers=self.call(path)
+            self.assertEqual(status,200)
+            self.assertEqual(headers['Content-Type'],'image/png')
+            self.assertTrue(body.startswith(b'\x89PNG\r\n\x1a\n'))
+        for path in ('/brand/icon.png','/brand/../config.json'):
+            self.assertEqual(self.call(path)[0],404)
+
     def test_release_metadata_in_health_has_no_private_paths(self):
         status,body,_=self.call('/health')
         self.assertEqual(status,200)
