@@ -1,8 +1,10 @@
-# Validation report · 1.8.7
+# Validation report · 1.8.8
 
 Date: **19 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
 ## Existing baseline and new work
+
+Version **1.8.8** adds a browser-local date and clock inside the existing brand area, with refresh on focus/visibility and language changes. Charging and device communication are unchanged. Browser checks of the overview in German/light and English/dark at 800×1280, 640×1024, 534×854 and 1280×800 found no page overflow. The clock advanced to the next minute, switched date format with the language and produced no browser errors. Header/brand height remains 36 px (30 px at narrow widths); no content is clipped to force a fit.
 
 Version **1.8.7** replaces the initial artwork with the user-selected smooth CI-color logo and a matching standalone icon, and versions the icon URL so browsers can refresh cached favicons. The smooth source composition was retained and recolored green/red with the built-in image tool. No charging, heating, network or monitoring logic was changed. All **38 service/server tests** pass with the new assets, including PNG content-type/signature and static-route allowlist checks. The preceding 1.8.5 full offline suite passed **282 tests**.
 

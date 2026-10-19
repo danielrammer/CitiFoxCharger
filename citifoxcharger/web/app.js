@@ -188,6 +188,16 @@ $("config-form").addEventListener("submit",event=>{event.preventDefault();mutati
 $("key-form").addEventListener("submit",event=>{event.preventDefault();mutation(async()=>{try{const result=await api("/api/key",{key:$("api-key").value,persist:$("persist").checked});await loadConfig();toast(result.message);}finally{$("api-key").value="";}});});
 $("clear-key").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/key/clear",{});await loadConfig();toast(result.message);}));
 async function init(){try{csrf=(await api("/api/session")).csrf;await loadRelease();await loadConfig();await refresh();refreshTimer=setInterval(refresh,10000);await resumeUpdate();}catch(e){error(e.message);}}
+function updateHeaderClock(){
+ const now=new Date(),locale=CitiFoxI18n.locale(),clock=$("header-clock");
+ clock.dateTime=now.toISOString();
+ clock.textContent=now.toLocaleDateString(locale,{day:"2-digit",month:"2-digit",year:"numeric"})+" · "+now.toLocaleTimeString(locale,{hour:"2-digit",minute:"2-digit",hour12:false});
+ clock.title=now.toLocaleString(locale,{dateStyle:"full",timeStyle:"long"});
+}
+updateHeaderClock();
+setInterval(updateHeaderClock,1000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)updateHeaderClock();});
+window.addEventListener("focus",updateHeaderClock);
 init();
 
-window.addEventListener("citifoxlanguagechange",()=>{if(latest)render(latest);});
+window.addEventListener("citifoxlanguagechange",()=>{updateHeaderClock();if(latest)render(latest);});

@@ -156,3 +156,7 @@ button,a,input,select,summary{-webkit-tap-highlight-color:transparent}button,sum
 /* Fixed logo dimensions preserve the tablet header and touch target layout. */
 .brand-icon{display:block;width:36px;height:36px;object-fit:contain;flex-shrink:0}
 @media(max-width:620px){.brand-icon{width:30px;height:30px}}
+
+/* Clock occupies the existing brand height; it never adds a header row. */
+.brand-info strong{line-height:22px}.header-clock{display:block;white-space:nowrap;font-size:11px;line-height:14px;font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums}
+@media(max-width:620px){.brand-info strong{line-height:18px}.header-clock{font-size:10px;line-height:12px}}
