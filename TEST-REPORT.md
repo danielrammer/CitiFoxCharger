@@ -1,8 +1,10 @@
-# Validation report · 1.8.0
+# Validation report · 1.8.1
 
 Date: **19 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
 ## Existing baseline and new work
+
+The complete 1.8.1 offline suite passed **280 tests**. New metadata tests cover an exact-root Git identity, ZIP build metadata, invalid/mismatched metadata, missing Git and a public health response without private paths. The version/hash/date header and page-only reload button were checked in a simulated browser preview; reload returned to the dashboard without a backend restart route. German labels, no JavaScript errors and no overview overflow were verified at 800 × 1280, 640 × 1024, 534 × 854 and 1280 × 800. Release archives include build-info.json for their exact packaged Git commit; source checkouts derive it from Git at startup. The small reload icon received a final CSS font-size correction after layout validation.
 
 The complete 1.8.0 offline suite passed **276 tests**. Version 1.8.0 corrects analogue actuation display and automatic-on relay modes and adds local in-app updating. Tests cover a detached single update job, argument-safe same-profile startup, RAM-key/active-charge/shutdown gates, confirmed-local-stop launch, Git timeout, dead helpers, redacted state, CSRF/empty-body restrictions, remote denial, emergency Stop during an update, successful new-instance confirmation and recovery after failures without claiming success or starting charging. Existing real temporary Git repositories still cover protected fetch/fast-forward behavior. Per-command worker timeout is 120 seconds. Production Git, device commands and backend restarts were not exercised by automated tests.
 

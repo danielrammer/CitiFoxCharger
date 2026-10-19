@@ -25,6 +25,7 @@ function toast(message){$("toast").textContent=message;$("toast").hidden=false;s
 async function api(path,data){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000);try{const response=await fetch(path,{method:data===undefined?"GET":"POST",credentials:"same-origin",cache:"no-store",signal:controller.signal,headers:data===undefined?{}:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:data===undefined?undefined:JSON.stringify(data)});const result=await response.json();if(!response.ok){const problem=new Error(result.error||"Request failed.");problem.status=response.status;throw problem;}return result;}catch(e){if(e.name==="AbortError")throw new Error("No response. Check charging status before trying again.");throw e;}finally{clearTimeout(timer);}}
 function updateControls(){
  if(!latest)return;
+ $("reload-app").disabled=mutating||appUpdating;
  if(appStopped){for(const id of ["force","stop","target","quit-app","allow-stale","heater-mode","heater2-mode","hot-water-mode","station-mode"])$(id).disabled=true;return;}
  const session=latest.charging,car=latest.skoda,active=activeStates.has(session?.status),target=Number($("target").value),soc=car.soc;
  const staleOption=session?.can_force_with_stale===true&&typeof soc==="number"&&target>soc;
@@ -170,6 +171,8 @@ $("update-app").addEventListener("click",async()=>{
   const state=await api("/api/app/update",{});updateJob=state.job_id;updateStarted=Date.now();pollUpdate();
  }catch(e){if(typeof e.status!=="number"){pollUpdate();return;}updateBusy(false);await loadConfig();await refresh();error(e.message);}
 });
+$("reload-app").addEventListener("click",()=>{if(!mutating&&!appUpdating)window.location.reload();});
+async function loadRelease(){const health=await api("/health"),release=health.release||{version:health.version},day=/^\d{4}-\d{2}-\d{2}$/.test(release.date||"")?release.date.split("-").reverse().join("."):"—",hash=/^[0-9a-f]{8}$/.test(release.git_hash||"")?release.git_hash:"—";$("release-info").textContent=`v${release.version||"—"} | ${hash} | ${day}`;}
 async function resumeUpdate(){if(!localAdmin)return;const state=await api("/api/app/update/status");updateJob=state.job_id;$("update-status").textContent=state.phase==="complete"?"Update complete.":state.message;if(!["idle","complete","failed"].includes(state.phase)){updateStarted=Date.now();updateBusy(true);pollUpdate();}}
 document.querySelectorAll("[data-tab]").forEach(button=>button.addEventListener("click",()=>{const tab=button.dataset.tab;for(const id of ["overview","settings"])$(id).hidden=tab!==id;document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b===button));}));
 for(const [device,id] of [["heater","heater"],["heater2","heater2"],["hot_water","hot-water"]])$(id+"-mode").addEventListener("change",event=>{const mode=event.target.value;mutation(async()=>{toast("Checking the Smartfox mode change.");const result=await api("/api/smartfox/heater",{device,mode,request_id:crypto.randomUUID()});if(result.status!=="confirmed")throw new Error(result.message);toast(result.message);});});
@@ -184,7 +187,7 @@ $("stop").addEventListener("click",()=>mutation(async()=>{const result=await api
 $("config-form").addEventListener("submit",event=>{event.preventDefault();mutation(async()=>{const value={smartfox:{host:$("host").value.trim(),port:Number($("port").value),unit_id:Number($("unit").value),firmware:$("firmware").value,poll_seconds:Number($("sf-poll").value),timeout_seconds:Number($("sf-timeout").value),profile:$("profile").value,word_order:$("word-order").value,interpretation_confirmed:$("interpretation").checked},skoda:{vin:$("vin").value.trim(),poll_seconds:Number($("car-poll").value),stale_seconds:Number($("car-stale").value)}};const result=await api("/api/config",value);await loadConfig();toast(result.message);});});
 $("key-form").addEventListener("submit",event=>{event.preventDefault();mutation(async()=>{try{const result=await api("/api/key",{key:$("api-key").value,persist:$("persist").checked});await loadConfig();toast(result.message);}finally{$("api-key").value="";}});});
 $("clear-key").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/key/clear",{});await loadConfig();toast(result.message);}));
-async function init(){try{csrf=(await api("/api/session")).csrf;await loadConfig();await refresh();refreshTimer=setInterval(refresh,10000);await resumeUpdate();}catch(e){error(e.message);}}
+async function init(){try{csrf=(await api("/api/session")).csrf;await loadRelease();await loadConfig();await refresh();refreshTimer=setInterval(refresh,10000);await resumeUpdate();}catch(e){error(e.message);}}
 init();
 
 window.addEventListener("citifoxlanguagechange",()=>{if(latest)render(latest);});

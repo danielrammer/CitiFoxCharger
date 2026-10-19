@@ -310,6 +310,13 @@ class ServerTests(unittest.TestCase):
         self.assertIn("HttpOnly", headers["Set-Cookie"])
         self.assertIn("SameSite=Strict", headers["Set-Cookie"])
 
+    def test_release_metadata_in_health_has_no_private_paths(self):
+        status,body,_=self.call('/health')
+        self.assertEqual(status,200)
+        release=json.loads(body)['release']
+        self.assertEqual(set(release),{'version','git_hash','date'})
+        self.assertNotIn(self.temp.name,body.decode())
+
     def test_rebinding_cross_origin_csrf_and_no_cookie_rejected(self):
         for path, data, headers, expected in [
             ("/api/config", None, {"Host":"evil.example"},403),

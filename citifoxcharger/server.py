@@ -16,7 +16,7 @@ from .skoda import IntegrationError
 from .instance import InstanceLock
 from .app_update import AppUpdater
 from .network import NetworkAuth,private_host,read_network,tls_context
-from . import __version__
+from . import __version__,release_info
 
 STATIC = Path(__file__).with_name("web")
 FILES = {"/": ("index.html", "text/html; charset=utf-8"),
@@ -40,6 +40,7 @@ class LocalServer(ThreadingHTTPServer):
         self.remote_server,self.remote_thread = None,None
         super().__init__((address, port), Handler)
         self.service = service
+        self.release = release_info()
         self.updater = AppUpdater(Path(__file__).resolve().parent.parent,service.config.directory,self.server_port)
         self.update_state()
         self.session = secrets.token_urlsafe(32)
@@ -181,7 +182,7 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, {"csrf": self.server.csrf}, cookie=True)
             return
         if path == "/health":
-            self.reply(200, {"app": "CitiFoxCharger", "status": "ok", "version": __version__, "instance_id": self.server.instance_id})
+            self.reply(200, {"app": "CitiFoxCharger", "status": "ok", "version": __version__, "instance_id": self.server.instance_id,"release":self.server.release})
             return
         if not self.authenticated():
             return
