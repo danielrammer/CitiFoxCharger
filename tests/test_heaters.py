@@ -55,6 +55,13 @@ class HeaterControlTests(unittest.TestCase):
         self.web.set_heater_mode(self.config,"heater","auto")
         self.assertEqual(self.writes(),[])
 
+    def test_already_automatic_warm_water_on_does_not_write_or_disable_controls(self):
+        self.relay2='1'
+        value=self.web.set_heater_mode(self.config,'hot_water','auto')['energy']['hot_water']
+        self.assertTrue(value['control_available'])
+        self.assertEqual(value['mode'],'A')
+        self.assertEqual(self.writes(),[])
+
     def test_analog_off_is_zero_and_preserves_manual_percent(self):
         result=self.web.set_heater_mode(self.config,"heater","off")
         self.assertEqual(self.writes(),["/setswaout.cgi?mode=0"])

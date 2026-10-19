@@ -14,6 +14,7 @@ from .secrets_store import SecretStore
 from .service import Service
 from .skoda import IntegrationError
 from .instance import InstanceLock
+from .app_update import AppUpdater
 from .network import NetworkAuth,private_host,read_network,tls_context
 from . import __version__
 
@@ -39,11 +40,19 @@ class LocalServer(ThreadingHTTPServer):
         self.remote_server,self.remote_thread = None,None
         super().__init__((address, port), Handler)
         self.service = service
+        self.updater = AppUpdater(Path(__file__).resolve().parent.parent,service.config.directory,self.server_port)
+        self.update_state()
         self.session = secrets.token_urlsafe(32)
         self.csrf = secrets.token_urlsafe(32)
         self.instance_id = secrets.token_urlsafe(12)
         self.restart_requested = False
         self.hosts = {f"{address}:{self.server_port}"} if network_auth else {f"127.0.0.1:{self.server_port}", f"localhost:{self.server_port}"}
+
+    def update_state(self):
+        with self.service.lock:
+            value=self.updater.state()
+            self.service.app_update_pending=value['phase'] not in ('idle','complete','failed')
+            return value
 
     def server_close(self):
         if self.remote_server is not None:
@@ -183,9 +192,14 @@ class Handler(BaseHTTPRequestHandler):
                                  "access":{"local_admin":self.server.network_auth is None},"network":service.network})
         elif path == "/api/status":
             try:
+                self.server.update_state()
                 self.reply(200, service.status())
             except Exception:
                 self.reply(500, {"error": "Internal read error. Check configuration and connections."})
+        elif path == "/api/app/update/status":
+            if self.server.network_auth:
+                self.reply(403,{"error":"Manage updates directly on the tablet."})
+            else:self.reply(200,self.server.update_state())
         else:
             self.reply(404, {"error": "Not found."})
 
@@ -212,6 +226,13 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("A JSON object is required.")
             path = urlsplit(self.path).path
             service = self.server.service
+            if (service.app_update_pending and path not in ("/api/app/update","/api/app/quit","/api/charging/stop")
+                    and not (path=="/api/smartfox/charger-mode" and data.get("mode")=="OFF")):
+                raise ValueError("An update is running. Charging starts and settings changes are temporarily blocked.")
+            if path == "/api/app/update":
+                if data:raise ValueError("No parameters are required.")
+                self.reply(202,self.server.updater.launch(service))
+                return
             if path == "/api/app/restart":
                 if data:
                     raise ValueError("No parameters are required.")

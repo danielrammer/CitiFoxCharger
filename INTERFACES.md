@@ -1,6 +1,6 @@
 # Verified interfaces
 
-Evidence reviewed on **16–17 October 2026**; application version **1.7.6**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
+Evidence reviewed on **16–19 October 2026**; application version **1.8.0**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
 
 ## SMARTFOX Pro 2 and Charger Pro 1
 
@@ -57,7 +57,9 @@ House power is `hidProduction` (kW) + `hidPower` (W / 1000) − `batteryPower` (
 
 Analog heater mode `hidAoutMode`: 0=Off, 1=Manual, 2=Automatic. Commands are `/setswaout.cgi?mode=0`, `?mode=2` and `?mode=1&power=<existing percentage>`. Missing manual percentage blocks Manual.
 
-Relay mode x=Off, m=Manual, 0=Automatic. Automatic uses `/setswrel.cgi?rel=N&state=0`. Manual/Off first cancels a timer with `?rel=N&state=3&duration=0`, then uses state 1/2. N is fixed to relay 1 for Heater 2 and relay 2 for Hot water. Assignment checks retain the installed vendor names and types: `Heizstab` on the analog output, `Heizstab 2` type 0 on relay 1 and `Warmwasser` type 2 on relay 2. These identifiers are protocol matching data; the dashboard labels can be English or German. Temperature limits and schedules are not edited.
+Relay mode x=Off, m=Manual, 0/1=Automatic. Automatic uses `/setswrel.cgi?rel=N&state=0`. Manual/Off first cancels a timer with `?rel=N&state=3&duration=0`, then uses state 1/2. N is fixed to relay 1 for Heater 2 and relay 2 for Hot water. Assignment checks retain the installed vendor names and types: `Heizstab` on the analog output, `Heizstab 2` type 0 on relay 1 and `Warmwasser` type 2 on relay 2. These identifiers are protocol matching data; the dashboard labels can be English or German. Temperature limits and schedules are not edited.
+
+The installed vendor JavaScript maps relay modes `m` and `x` explicitly and treats automatic switching values `0`/`1` as Automatic; the parser accepts both without treating arbitrary future values as valid. In `checkAoutState`, manual mode and forced/status cases prioritize the percentage and hide the unreliable power estimate (with the vendor's relay-type-4 exception). CitiFoxCharger follows this display rule and shows a positive reported percentage when a zero estimate would imply inactivity. It does not substitute the manual setpoint for actual actuation. [SMARTFOX's explanation of missing manual boiler curves](https://smartfox.atlassian.net/wiki/spaces/SMR/pages/228851771/Boilerkurve%2Bfehlt%2Bim%2Bmanuellen%2BModus%2Bin%2Bder%2BSchaltzeit) confirms that 100% actuation is not direct consumption measurement. No heater command was sent during the 19 October inspection; current idle XML and cached vendor code were read only.
 
 ## MyŠkoda Public API and Citigo compatibility
 

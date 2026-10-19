@@ -33,6 +33,7 @@ class Service:
         self.manual_refresh_after = 0
         self.power = power if power is not None else PowerGuard()
         self.stopping = False
+        self.app_update_pending = False
         self.restore_rate_state()
         self.restore_vehicle_cache()
 
@@ -269,6 +270,8 @@ class Service:
         current = self.cache.get("skoda", {})
         if self.stopping:
             return False
+        if action == "start" and self.app_update_pending:
+            return False
         if not self.secrets.key or not self.config.value["skoda"]["vin"]:
             return False
         expiry = timestamp(self.car.key_expires_at)
@@ -332,6 +335,7 @@ class Service:
                     "skoda": copy.deepcopy(car),
                     "controls": {a: self.can_command(a) for a in ("start", "stop")},
                     "last_command": copy.deepcopy(self.last_command), "events": copy.deepcopy(self.events),
+                    "app_update_pending": self.app_update_pending,
                     "charging": self.charging.state(),
                     "monitoring": {"running": self.worker is not None and self.worker.is_alive(),
                                    "power": self.power.state()},

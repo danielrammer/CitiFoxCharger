@@ -359,6 +359,22 @@ class ServerTests(unittest.TestCase):
         self.service.charging.save(status="complete")
         self.assertEqual(self.call("/api/app/quit", {})[0],200)
 
+    def test_app_update_requires_csrf_empty_body_and_returns_a_job(self):
+        self.assertEqual(self.call('/api/app/update',{},**{'X-CSRF-Token':'wrong'})[0],403)
+        self.assertEqual(self.call('/api/app/update',{'directory':'arbitrary'})[0],400)
+        with patch.object(self.server.updater,'launch',return_value={'job_id':'a'*32,'phase':'queued'}) as launch:
+            status,body,_=self.call('/api/app/update',{})
+            self.assertEqual(status,202)
+            self.assertEqual(json.loads(body)['phase'],'queued')
+            launch.assert_called_once_with(self.service)
+
+    def test_pending_update_blocks_settings_but_keeps_emergency_stop_available(self):
+        self.service.app_update_pending=True
+        self.assertEqual(self.call('/api/key',{'key':KEY,'persist':False})[0],400)
+        with patch.object(self.service,'stop_charge',return_value={'status':'stop_pending'}) as stop:
+            self.assertEqual(self.call('/api/charging/stop',{'request_id':'update-emergency-stop-001'})[0],200)
+            stop.assert_called_once()
+
     def test_phase_preparation_returns_to_http_and_can_be_stopped_without_start(self):
         from test_charging import ChargingTests
         fixture=ChargingTests()

@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from citifoxcharger.profile import default_data_dir
 from citifoxcharger.lifecycle import LocalControl, ControlError
@@ -16,7 +17,9 @@ class UpdateError(Exception):
     pass
 
 
-def update(directory, port=8765, data_dir=None, *, control=None, git_binary=None, remotes=REMOTES):
+def update(directory, port=8765, data_dir=None, *, control=None, git_binary=None, remotes=REMOTES, progress=None, timeout=None):
+    progress = progress or (lambda phase: None)
+    progress('checking')
     binary = git_binary or shutil.which('git')
     if not binary:
         raise UpdateError('Git was not found. Install Git for Windows, then open this command window again.')
@@ -28,7 +31,7 @@ def update(directory, port=8765, data_dir=None, *, control=None, git_binary=None
         if not target.exists():
             print('ZIP installation detected. Creating a separate Git program folder:', target, flush=True)
             print('GitHub may ask you to sign in to access the private repository.', flush=True)
-            result = subprocess.run([binary, 'clone', '--branch', 'main', '--single-branch', '--', REPOSITORY, str(target)])
+            result = subprocess.run([binary, 'clone', '--branch', 'main', '--single-branch', '--', REPOSITORY, str(target)],timeout=timeout)
             if result.returncode:
                 raise UpdateError('Clone failed. Check GitHub sign-in and the internet connection. The existing program folder is unchanged.')
         elif not (target / '.git').exists():
@@ -36,7 +39,7 @@ def update(directory, port=8765, data_dir=None, *, control=None, git_binary=None
 
     def git(*args, capture=False):
         result = subprocess.run([binary, '-C', str(target), *args], capture_output=capture,
-                                text=True, encoding='utf-8', errors='replace')
+                                text=True, encoding='utf-8', errors='replace',timeout=timeout)
         if result.returncode:
             raise UpdateError('Git step failed: ' + args[0] + '. Nothing will be reset.')
         return (result.stdout if '-z' in args else result.stdout.strip()) if capture else None
@@ -71,7 +74,7 @@ def update(directory, port=8765, data_dir=None, *, control=None, git_binary=None
     require_tracked_clean()
     print('Checking GitHub for updates ...', flush=True)
     git('fetch', 'origin', 'main')
-    ancestor = subprocess.run([binary, '-C', str(target), 'merge-base', '--is-ancestor', 'HEAD', 'FETCH_HEAD'], capture_output=True)
+    ancestor = subprocess.run([binary, '-C', str(target), 'merge-base', '--is-ancestor', 'HEAD', 'FETCH_HEAD'], capture_output=True,timeout=timeout)
     if ancestor.returncode:
         raise UpdateError('Local and GitHub history cannot be updated by fast-forward. Check Git history. No reset was performed.')
     protect_local_files()
@@ -83,15 +86,58 @@ def update(directory, port=8765, data_dir=None, *, control=None, git_binary=None
         if key.get('configured') and not key.get('persisted'):
             raise UpdateError('First save the API key with Windows encryption in Settings. The backend stays active.')
         print('Stopping the backend cleanly. This does not stop an active charge.', flush=True)
+        progress('stopping')
         print(client.action('stop', data_dir, port, no_browser=True), flush=True)
 
     require_tracked_clean()
     protect_local_files()
     # Apply exactly the preflighted fetch; a second fetch could introduce new collisions.
+    progress('applying')
     git('merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', 'FETCH_HEAD')
     print('\nUpdate complete. Program folder:', target, flush=True)
     print('No charging start was sent. You can use Start.cmd or Start-Background.cmd in THIS folder.', flush=True)
     return target
+
+
+def app_job(job, directory, port, data_dir, *, update_function=None, client=None, runner=None):
+    from citifoxcharger.app_update import AppUpdater
+    updater=AppUpdater(directory,data_dir,port)
+    state=updater.state()
+    if state['job_id']!=job or state['phase']!='queued':
+        return 1
+    client=client or LocalControl(port)
+    runner=runner or subprocess.run
+    target=Path(directory)
+    previous=None
+    def start_backend(folder):
+        updater.write(job,'starting')
+        result=runner([sys.executable,str(Path(folder)/'run.py'),'--background','--no-browser',
+                       '--port',str(port),'--data-dir',str(Path(data_dir).resolve())],cwd=folder,timeout=30)
+        if result.returncode:
+            raise UpdateError('Backend startup failed.')
+        health=client.health()
+        if health is None or (previous and health.get('instance_id')==previous.get('instance_id')):
+            raise UpdateError('A new backend instance is not confirmed.')
+    try:
+        time.sleep(1) # Let the initiating HTTP response reach the browser before shutdown.
+        previous=client.health()
+        if previous is None:
+            raise UpdateError('The original backend is not running.')
+        target=(update_function or update)(directory,port,data_dir,control=client,
+                          progress=lambda phase:updater.write(job,phase),timeout=120)
+        start_backend(target)
+        updater.write(job,'complete')
+        return 0
+    except (UpdateError,ControlError,OSError,subprocess.TimeoutExpired) as error:
+        print('App update failed:',error,flush=True)
+        # A failed merge/start must not silently leave the tablet backend stopped.
+        if previous is not None:
+            try:
+                if client.health() is None:start_backend(target)
+            except (UpdateError,ControlError,OSError,subprocess.TimeoutExpired):
+                print('Backend recovery is unconfirmed. Run Start.cmd on the tablet.',flush=True)
+        updater.write(job,'failed')
+        return 1
 
 
 def choose_start(directory, port, data_dir):
@@ -127,10 +173,13 @@ def main():
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--data-dir', type=Path, default=default_data_dir())
     parser.add_argument('--choose-start', action='store_true', help='Offer a startup choice after a successful update')
+    parser.add_argument('--app-job', help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error('Invalid backend port.')
     args.data_dir = args.data_dir.resolve()
+    if args.app_job:
+        return app_job(args.app_job,Path(__file__).parent,args.port,args.data_dir)
     try:
         target = update(Path(__file__).parent, args.port, args.data_dir)
     except (UpdateError, ControlError, OSError) as error:

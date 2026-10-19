@@ -54,9 +54,16 @@ def energy_display(fields, read_at):
     analog_enabled = fields.get("hidAoutActivated") == "1"
     manual_raw = fields.get("hidAoutPercentage", "")
     manual_percent = int(manual_raw) if re.fullmatch(r"\d{1,3}", manual_raw) and int(manual_raw) <= 100 else None
+    # The vendor UI prioritizes actuation percentage in manual/forced operation;
+    # its power estimate can be zero despite a fully opened analogue output.
+    status_code = fields.get("hidAoutStatus")
+    percent_primary = fields.get("hidAoutMode") == "1" or status_code in ("2","4","7","8","10","12","13","15","18")
+    if fields.get("hidR1Type") == "4" or fields.get("hidR3Type") == "4":
+        percent_primary = False
     heater = {"name": "Heater", "enabled":analog_enabled,
               "mode":{"0":"OFF","1":"M","2":"A"}.get(fields.get("hidAoutMode")),
               "manual_percent":manual_percent,
+              "percent_primary":percent_primary,
               "power_kw": quantity(fields.get("analogOutPower"), "kW", 0, 1000) if analog_enabled else None,
               "temperature_c": temperature("hidAoutTemperatureSensors") if analog_enabled else None,
               "percent": percent if analog_enabled else None,
@@ -67,7 +74,7 @@ def energy_display(fields, read_at):
         enabled = fields.get(f"hidRelay{number}Activated") == "1"
         switch = fields.get(f"hidR{number}Status")
         relays.append({"name": name, "enabled":enabled,
-                       "mode":{"0":"A","m":"M","x":"OFF"}.get(fields.get(f"hidR{number}Mode")),
+                       "mode":{"0":"A","1":"A","m":"M","x":"OFF"}.get(fields.get(f"hidR{number}Mode")),
                        "on": switch == "1" if enabled and switch in ("0", "1") else None,
                        "temperature_c": temperature(f"hidR{number}TempSensor") if enabled else None,
                        "status": status(f"hidR{number}Info", relay_states) if enabled else

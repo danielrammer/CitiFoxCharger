@@ -71,6 +71,23 @@ class EnergyTests(unittest.TestCase):
         self.fields["analogOutPercent"]="101%"
         self.assertIsNone(self.display()["heater"]["percent"])
 
+    def test_manual_analogue_uses_actual_percent_even_when_power_estimate_is_zero(self):
+        self.fields.update(hidAoutMode='1',hidAoutStatus='8',hidAoutPercentage='100',analogOutPercent='100%')
+        value=self.display()['heater']
+        self.assertTrue(value['percent_primary'])
+        self.assertEqual(value['percent'],100)
+        self.assertEqual(value['power_kw'],0)
+        self.fields['analogOutPercent']='0%'
+        self.assertEqual(self.display()['heater']['percent'],0) # A setpoint is not actual actuation.
+
+    def test_automatic_relay_on_is_not_an_unknown_or_manual_mode(self):
+        self.fields.update(hidR2Mode='1',hidR2Status='1')
+        value=self.display()['hot_water']
+        self.assertEqual(value['mode'],'A')
+        self.assertTrue(value['on'])
+        self.fields['hidR2Mode']='future-code'
+        self.assertIsNone(self.display()['hot_water']['mode'])
+
 
 class LifecycleTests(unittest.TestCase):
     def recovery_status(self,**changes):

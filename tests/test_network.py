@@ -139,8 +139,9 @@ class NetworkHttpsTests(unittest.TestCase):
         self.assertNotIn('WWW-Authenticate',headers)
         self.assertEqual(self.call('/api/refresh',{},Authorization='',Origin='https://other.example')[0],403)
         self.assertEqual(self.call('/api/refresh',{},Authorization='',**{'X-CSRF-Token':'wrong'})[0],403)
-        for path in ('/api/key','/api/config','/api/app/quit','/api/app/restart'):
+        for path in ('/api/key','/api/config','/api/app/quit','/api/app/restart','/api/app/update'):
             self.assertEqual(self.call(path,{},Authorization='')[0],403)
+        self.assertEqual(self.call('/api/app/update/status',Authorization='')[0],403)
         config=json.loads(self.call('/api/config',Authorization='')[1])
         self.assertFalse(config['access']['local_admin'])
         with patch.object(self.service,'refresh_now',return_value={'message':'queried'}):

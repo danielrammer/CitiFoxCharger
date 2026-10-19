@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.7.6
+# CitiFoxCharger for Windows · 1.8.0
 
 A local dashboard for a Škoda Citigo e iV and a SMARTFOX Pro 2 energy manager with a Charger Pro at charging point 1. The installed SMARTFOX profile is **EM3 00.01.16.08**, address **192.168.0.81**.
 
@@ -45,6 +45,10 @@ python manage.py restart --no-browser
 For a custom profile, pass `--data-dir "C:\MyDataFolder"` to the Python entry point or applicable management script. Use the same profile consistently. A per-profile lock prevents duplicate monitors even on different ports.
 
 ## Updating from GitHub
+
+On the tablet, open **Settings → Application update → Update & restart**. It performs the same protected fast-forward Git update, restarts the backend with the same profile/port and reloads the current browser page. It does not start charging or open another browser window. Install 1.8.0 once using **Update.cmd** to obtain this new button. The button is local administration, so it is hidden on the HTTPS home-network view. Existing charging/shutdown guards and the Windows-encrypted key requirement remain in force.
+
+A detached helper survives the backend shutdown. Progress appears in the page; reconnecting refreshes the local browser session protection before polling the job. Duplicate requests reuse a running job. Each Git operation has a two-minute timeout. Changes to tracked source, incoming file collisions, unexpected remotes or divergent history remain blocked. If an update fails after shutdown, the helper attempts to restart the program without starting a charge and keeps the result marked failed. Details are written to **update.log** in the data profile; **Update.cmd** and **Start.cmd** remain recovery options. Git for Windows and access to the private repository must already be available. A GitHub sign-in may be required.
 
 **Update.cmd** requires Git for Windows and a GitHub sign-in authorized for the private `danielrammer/CitiFoxCharger` repository. The MyŠkoda key is unrelated to GitHub authentication.
 
@@ -113,6 +117,8 @@ If the dashboard says the vehicle is unreachable while **Stop.cmd** says chargin
 After its Off confirmation, wait at least five seconds and run **Stop.cmd**. The backend independently checks current power and status before allowing exit. You can then run **Start.cmd** from the new folder or update the existing Git installation. The recovery command leaves the charger explicitly Off until A+ is deliberately selected or a new manual session is started. If any confirmation fails, check Smartfox and leave monitoring running.
 
 ## Home energy and outputs
+
+The analogue heater uses **actuation percentage** as its main reading in manual/forced modes, matching the installed Smartfox display. A 100% output can coexist with an unavailable/zero Smartfox power estimate; it is not shown as zero consumption or an inactive output. The percentage is the actual reported output, not the configured manual setpoint, and it does not prove the heater's electrical consumption (a thermostat can interrupt it). The green indicator follows reported actuation when present. Relay mode values **0 and 1 both mean Automatic**; `m` is Manual and `x` is Off. Other unknown values remain unknown. The station alone uses Off/A+/M+; heating outputs use Off/Automatic/Manual.
 
 The compact energy panel shares the charging page. House use follows the installed vendor calculation **production + grid − battery** and includes controlled consumers. Positive grid power is import; negative is export. The moving dot covers the full line. Heater shows measured kW, percentage and temperature. Heater 2 and Hot water show relay state and assigned temperature; relay power is never invented. Missing values appear as **—**.
 

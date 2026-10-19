@@ -1,8 +1,12 @@
-# Validation report · 1.7.6
+# Validation report · 1.8.0
 
-Date: **17 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
+Date: **19 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
 ## Existing baseline and new work
+
+The complete 1.8.0 offline suite passed **276 tests**. Version 1.8.0 corrects analogue actuation display and automatic-on relay modes and adds local in-app updating. Tests cover a detached single update job, argument-safe same-profile startup, RAM-key/active-charge/shutdown gates, confirmed-local-stop launch, Git timeout, dead helpers, redacted state, CSRF/empty-body restrictions, remote denial, emergency Stop during an update, successful new-instance confirmation and recovery after failures without claiming success or starting charging. Existing real temporary Git repositories still cover protected fetch/fast-forward behavior. Per-command worker timeout is 120 seconds. Production Git, device commands and backend restarts were not exercised by automated tests.
+
+Browser QA used simulated hardware and an explicitly labelled TEST preview. Manual analogue actuation of 100% was shown with an active indicator despite a zero kW estimate; an automatic-on Warmwasser relay showed Automatic with enabled mode choices. Off/A+/M+ remained the station choices. German/English display and local update progress were checked, including automatic page reload after simulated completion and no browser JavaScript errors. The overview fit 800 × 1280, 640 × 1024, 534 × 854 and 1280 × 800 without page overflow. No actual Git update or backend shutdown was initiated through the browser preview.
 
 The complete 1.7.6 offline suite passed **260 tests**. Version 1.7.6 adds an immediate target-stop check before housekeeping throttling, and before unnecessary routine reads for an already known target report. New regressions verify a newly received target report during the ten-second interval, local Off before a further cloud read, and no effects after restart intent. Near-target scheduling tests cover two persisted advances on distinct recent reports, no GET from the scheduling helper, a minimum 60-second interval, equivalent timestamp formats, no allowance spent on an already fast schedule, and refusal for stale/unavailable data, insufficient quota, missing reset, cooldown, phase preparation, zero power, stop intent or a different VIN. Each allowance is persisted before the shared schedule is advanced. Diagnostics add allowlisted stop-trigger SOC/capture/read/decision times.
 
