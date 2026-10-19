@@ -138,6 +138,7 @@ class SmartfoxWeb:
     def wait_ready(self, config, timeout=15, settle_seconds=3):
         """Wait for the vendor's live readiness after M+, never send another mode or car command."""
         began = self.clock()
+        ready_since = None
         while True:
             value = self.read(config)
             if value.get("mode") != "M+":
@@ -148,9 +149,17 @@ class SmartfoxWeb:
                 raise SmartfoxControlError("The wallbox reports an error. Vehicle start was not sent.")
             if value.get("phase_switching"):
                 return value  # Continue through the cancellable backend preparation state.
-            elapsed = self.clock() - began
-            if value.get("ready_for_start") and elapsed >= settle_seconds:
-                return value
+            now = self.clock()
+            elapsed = now - began
+            # Count consecutive observed readiness, not time spent waiting for it.
+            # A transient low-current/not-ready sample cancels the settling window.
+            if value.get("ready_for_start"):
+                if ready_since is None:
+                    ready_since = now
+                if now - ready_since >= settle_seconds and elapsed <= timeout:
+                    return value
+            else:
+                ready_since = None
             if elapsed >= timeout:
                 raise SmartfoxControlError("Smartfox charging permission is unconfirmed. Vehicle start was not sent.")
             self.sleep(min(1, timeout - elapsed))

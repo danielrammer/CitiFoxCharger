@@ -1,8 +1,10 @@
-# Validation report · 1.8.8
+# Validation report · 1.8.9
 
 Date: **19 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
 ## Existing baseline and new work
+
+Version **1.8.9** corrects the synchronous readiness gate: the three-second settling window begins at observed readiness and resets if readiness is lost, within the existing fifteen-second deadline. Three regression tests reproduced the prior defect (late readiness, interrupted readiness and a brief signal at the deadline). This is a verified timing defect, not a confirmed explanation of the reported live multi-attempt start; a current device diagnostic is still needed. All **285 offline tests** pass, including those three new regressions. Deferred phase-switch handling, stop guards and command replay protection are unchanged.
 
 Version **1.8.8** adds a browser-local date and clock inside the existing brand area, with refresh on focus/visibility and language changes. Charging and device communication are unchanged. Browser checks of the overview in German/light and English/dark at 800×1280, 640×1024, 534×854 and 1280×800 found no page overflow. The clock advanced to the next minute, switched date format with the language and produced no browser errors. Header/brand height remains 36 px (30 px at narrow widths); no content is clipped to force a fit.
 

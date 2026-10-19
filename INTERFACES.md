@@ -1,6 +1,6 @@
 # Verified interfaces
 
-Evidence reviewed on **16–19 October 2026**; application version **1.8.8**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
+Evidence reviewed on **16–19 October 2026**; application version **1.8.9**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
 
 For an implementation-level overview with diagrams and request/register tables, see [COMMUNICATION.md](COMMUNICATION.md).
 
@@ -45,7 +45,7 @@ For Charger 1 the vendor UI uses `/setswcc.cgi?num=0&mode=<code>&value=100`. Thi
 
 The user explicitly authorized local web control on 16 October 2026. The adapter is limited to the specific private address/profile, Charger 1, Off/A+/M+ and the requested heating outputs. Without opt-in the class blocks writes. It uses no redirects/proxy and validates firmware/XML size/schema. Every mode change requires a matching readback. A real A+ → M+ → A+ cycle was read back successfully; vehicle start/stop and new heating/Off operations used in automated tests are simulated unless separately reported by the user.
 
-Status **2** is ready, **3** is charging. Info **2/8/10** represents active charging permission; **14** requests authorization. Connection counters ≤3 are treated as disconnected. After M+ the adapter waits at least three seconds and up to fifteen seconds for readiness with at least 6 A offered current. Readiness is permission, not proof of vehicle power draw, and is not an interpretation of register 42111.
+Status **2** is ready, **3** is charging. Info **2/8/10** represents active charging permission; **14** requests authorization. Connection counters ≤3 are treated as disconnected. After M+ the adapter requires three consecutive seconds of observed readiness with at least 6 A offered current, within fifteen seconds total. A not-ready sample resets this settling window; a brief ready sample at the deadline cannot trigger start. Readiness is permission, not proof of vehicle power draw, and is not an interpretation of register 42111.
 
 The installed vendor JavaScript defines `CC_SWITCH = 6` and maps `hidCc1Info` to that phase-switch state. Its display uses the optional `hidCc1TempTime` as remaining seconds. CitiFoxCharger shows it only with a fresh connection and info 6; absent or invalid seconds produce a waiting message without an invented countdown. `hidCc1Phase` accepts only the vendor's 1/3-phase indication. It is not a measurement of how many phases the Citigo actually draws. `hidCc1WaitTime` is not used as a phase timer.
 

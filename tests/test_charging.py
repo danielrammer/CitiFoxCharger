@@ -115,6 +115,31 @@ class SmartfoxWebTests(unittest.TestCase):
         self.assertTrue(result["ready_for_start"])
         self.assertEqual(set(paths),{"/values.xml"})
 
+    def test_late_readiness_requires_a_full_continuous_settling_window(self):
+        clock = [0]
+        def request(*args):
+            return xml(4, current=0 if clock[0] < 12 else 16)
+        def sleep(seconds): clock[0] += seconds
+        SmartfoxWeb(request, True, lambda:clock[0], sleep).wait_ready(self.config)
+        self.assertEqual(clock[0], 15)
+
+    def test_readiness_loss_restarts_settling_window(self):
+        clock = [0]
+        def request(*args):
+            return xml(4, current=0 if clock[0] == 2 else 16)
+        def sleep(seconds): clock[0] += seconds
+        SmartfoxWeb(request, True, lambda:clock[0], sleep).wait_ready(self.config)
+        self.assertEqual(clock[0], 6)
+
+    def test_brief_readiness_at_deadline_never_allows_start(self):
+        clock = [0]
+        def request(*args):
+            return xml(4, current=16 if clock[0] >= 14 else 0)
+        def sleep(seconds): clock[0] += seconds
+        with self.assertRaises(SmartfoxControlError):
+            SmartfoxWeb(request, True, lambda:clock[0], sleep).wait_ready(self.config)
+        self.assertEqual(clock[0], 15)
+
     def test_missing_current_or_stale_device_never_becomes_ready(self):
         for body in (xml(4,current=0), xml(4,ttl=2), xml(4,state=5), xml(4,info=22)):
             clock=[0]

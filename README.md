@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.8.8
+# CitiFoxCharger for Windows · 1.8.9
 
 <img src="citifoxcharger/web/brand/logo.png" alt="CitiFoxCharger logo: smooth electric city car, red fox tail and charging plug" width="620">
 
@@ -10,7 +10,7 @@ Both light and dark appearance are available. The light palette uses darker labe
 
 The header displays the current date and time from the browser device, independently of vehicle telemetry. It refreshes on returning to the page and uses the selected interface language. The clock fits inside the existing header height.
 
-The Settings page identifies the running backend as **v1.8.8 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
+The Settings page identifies the running backend as **v1.8.9 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
 
 ## Architecture and communication
 
@@ -96,7 +96,7 @@ The main page shows the reported battery percentage, current local charging powe
 ### Force charge
 
 1. Select a target between **1 and 100%**, above the reported SOC.
-2. The app changes Charger 1 to **M+**, verifies the returned mode and normally waits at least three seconds, up to fifteen seconds, for fresh readiness with an offered current of at least 6 A. If Smartfox explicitly reports a **phase switch**, preparation continues in the background instead of failing after fifteen seconds. The page shows **Phase switching**, an amber indicator and Smartfox's remaining seconds when available. Stop remains usable. After switching, a new local report must confirm at least three seconds of readiness before the app sends one vehicle start. The preparation deadline is six minutes; timeout or lost permission secures Off. Restart never replays a pending start. These are app safety bounds, not a promised hardware duration.
+2. The app changes Charger 1 to **M+**, verifies the returned mode and requires three consecutive seconds of observed fresh readiness with an offered current of at least 6 A, within a fifteen-second window. Losing readiness resets the settling window. If Smartfox explicitly reports a **phase switch**, preparation continues in the background instead of failing after fifteen seconds. The page shows **Phase switching**, an amber indicator and Smartfox's remaining seconds when available. Stop remains usable. After switching, a new local report must confirm at least three seconds of readiness before the app sends one vehicle start. The preparation deadline is six minutes; timeout or lost permission secures Off. Restart never replays a pending start. These are app safety bounds, not a promised hardware duration.
 3. Only then is one vehicle start sent. Failed readiness sends no vehicle start and attempts a return to A+.
 4. The backend monitors the target independently of browser timers. A valid report at or above the target, even if now old, requests a conservative stop.
 
