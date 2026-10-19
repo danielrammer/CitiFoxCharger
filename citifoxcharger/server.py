@@ -24,7 +24,8 @@ FILES = {"/": ("index.html", "text/html; charset=utf-8"),
          "/app.js": ("app.js", "text/javascript; charset=utf-8"),
          "/style.css": ("style.css", "text/css; charset=utf-8"),
          "/icon.png": ("brand/icon.png", "image/png"),
-         "/logo.png": ("brand/logo.png", "image/png")}
+         "/logo.png": ("brand/logo.png", "image/png"),
+         "/charging-car.png": ("brand/charging-car.png", "image/png")}
 
 
 class LocalServer(ThreadingHTTPServer):

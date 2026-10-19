@@ -1,8 +1,10 @@
-# Validation report · 1.8.9
+# Validation report · 1.8.10
 
 Date: **19 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
 ## Existing baseline and new work
+
+Version **1.8.10** replaces the charging animation car with a transparent logo-derived raster sprite. The fixed animation container, power-driven visibility and reduced-motion support remain in place. The server allowlists only its named PNG route; charging logic is unchanged. All 38 service/server tests pass, including the new PNG route. German/light and English/dark browser views fit 800×1280, 640×1024, 534×854 and 1280×800 without scrolling. Portfolio screenshots use simulated data and are both 800×1280 portrait JPEGs. Browser console shows no errors.
 
 Version **1.8.9** corrects the synchronous readiness gate: the three-second settling window begins at observed readiness and resets if readiness is lost, within the existing fifteen-second deadline. Three regression tests reproduced the prior defect (late readiness, interrupted readiness and a brief signal at the deadline). This is a verified timing defect, not a confirmed explanation of the reported live multi-attempt start; a current device diagnostic is still needed. All **285 offline tests** pass, including those three new regressions. Deferred phase-switch handling, stop guards and command replay protection are unchanged.
 

@@ -311,7 +311,7 @@ class ServerTests(unittest.TestCase):
         self.assertIn("SameSite=Strict", headers["Set-Cookie"])
 
     def test_brand_images_are_served_as_png_without_exposing_arbitrary_paths(self):
-        for path in ('/icon.png','/logo.png'):
+        for path in ('/icon.png','/logo.png','/charging-car.png'):
             status,body,headers=self.call(path)
             self.assertEqual(status,200)
             self.assertEqual(headers['Content-Type'],'image/png')
