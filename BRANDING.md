@@ -6,7 +6,7 @@ The original CitiFoxCharger mark combines three visual ideas in one symbol:
 - A red fox tail that wraps behind the car and continues into a charging cable.
 - An EV plug with a lime lightning bolt for charging and electricity.
 
-The user-selected design uses faceted polygon surfaces and a recognizable compact car silhouette. The separate animated dashboard car illustration is unchanged. This is a personal application identity, not an official Škoda or SMARTFOX logo or a claim of manufacturer endorsement. Existing manufacturer marks were not copied into the assets.
+The user-selected design uses smooth surfaces and curved contours and a recognizable compact car silhouette. The separate animated dashboard car illustration is unchanged. This is a personal application identity, not an official Škoda or SMARTFOX logo or a claim of manufacturer endorsement. Existing manufacturer marks were not copied into the assets.
 
 ## Files
 
@@ -21,4 +21,4 @@ The palette uses Škoda-inspired emerald and electric greens, SMARTFOX-inspired 
 
 Assets are served only through the backend's explicit `/icon.png` and `/logo.png` static routes with the `image/png` content type. The HTML declares the icon with `rel="icon"` and `rel="apple-touch-icon"`; no external image host or font service is used. These links provide artwork for browsers and saved shortcuts; they do not install a PWA, Windows executable or shortcut automatically.
 
-The selected horizontal logo is preserved exactly. Its matching standalone icon was derived with the built-in image generation tool; both assets are stored in the project. Originals remain separate from runtime configuration and credentials. No vehicle identifier or API key is present in the artwork.
+The user-selected smooth horizontal logo was recolored from copper to SMARTFOX-inspired red, retaining the car, tail and plug composition. Its matching standalone icon was derived with the built-in image generation tool; both assets are stored in the project. Originals remain separate from runtime configuration and credentials. No vehicle identifier or API key is present in the artwork.
