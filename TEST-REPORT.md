@@ -1,12 +1,12 @@
-# Validation report · 1.8.5
+# Validation report · 1.8.6
 
 Date: **19 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
 ## Existing baseline and new work
 
-The complete **1.8.5** offline suite passed **282 tests** in 62.164 seconds. The new static-image test verifies PNG responses for the explicit icon/logo routes and rejects arbitrary asset paths. Both RGBA PNG assets are included in the release package.
+Version **1.8.6** replaces the initial artwork with the user-selected polygon logo and a matching standalone icon, and versions the icon URL so browsers can refresh cached favicons. The selected horizontal PNG is byte-identical to the approved proposal. No charging, heating, network or monitoring logic was changed. All **38 service/server tests** pass with the new assets, including PNG content-type/signature and static-route allowlist checks. The preceding 1.8.5 full offline suite passed **282 tests**.
 
-Browser QA used simulated hardware. The icon loaded at its native resolution and displayed within the fixed header dimensions in light and dark mode; favicon and touch-icon declarations point to the same local asset. At 800 × 1280, 640 × 1024, 534 × 854 and 1280 × 800, document width and height matched the viewport without overflow. No charging or heating commands were sent to real devices.
+Browser QA used simulated hardware. Both light and dark themes were visually checked. At 800 × 1280, 640 × 1024, 534 × 854 and 1280 × 800, the overview's document width and height matched the viewport without scrolling, including stale vehicle telemetry and a phase-switch countdown with additional status text. In portrait, the overview bottom stayed below 1188 / 1005 / 827 pixels respectively; the header's fixed icon dimensions were retained. No real charging/heating commands were sent. The larger Settings page is allowed to scroll.
 
 Earlier 1.8.x work added release metadata and page-only reload (1.8.1), compact tablet spacing (1.8.2), version identity in Settings (1.8.3) and the analogue-heater **Automatic · surplus** status (1.8.4). The 21 energy/lifecycle tests cover positive/zero/missing output and manual/schedule states. Metadata tests cover exact-root Git identity, ZIP metadata, invalid/mismatched metadata, missing Git and a public health response without private paths. Release ZIPs include metadata for their exact packaged Git commit. The previous page-only reload preview completed without invoking a backend restart route.
 

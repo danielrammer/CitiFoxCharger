@@ -1,6 +1,6 @@
 # Verified interfaces
 
-Evidence reviewed on **16–19 October 2026**; application version **1.8.5**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
+Evidence reviewed on **16–19 October 2026**; application version **1.8.6**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
 
 For an implementation-level overview with diagrams and request/register tables, see [COMMUNICATION.md](COMMUNICATION.md).
 
