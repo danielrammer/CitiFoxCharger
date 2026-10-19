@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.8.3
+# CitiFoxCharger for Windows · 1.8.4
 
 A local dashboard for a Škoda Citigo e iV and a SMARTFOX Pro 2 energy manager with a Charger Pro at charging point 1. The installed SMARTFOX profile is **EM3 00.01.16.08**, address **192.168.0.81**.
 
@@ -6,7 +6,7 @@ Documentation, program filenames, command scripts and command-window messages ar
 
 Both light and dark appearance are available. The light palette uses darker labels and more distinct borders for better readability on the wall tablet.
 
-The Settings page identifies the running backend as **v1.8.3 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
+The Settings page identifies the running backend as **v1.8.4 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
 
 ## Installation and first start
 
@@ -156,3 +156,5 @@ Run **Setup-Network.cmd** on the tablet to choose password-protected or password
 Run **Diagnostics.cmd before restarting** when investigating a problem. It writes **CitiFoxCharger-Diagnostics.json** beside the script, querying an existing local backend, including older versions. If unavailable it clearly labels saved data as potentially older. The report includes selected SOC/target/timestamps/quota/wallbox/monitor state, but no VIN, passwords, keys, raw responses, IP address or free-form errors. Use `Diagnostics.cmd --port 8774`, `--data-dir "C:\MyDataFolder"`, `--offline` or `--output "C:\Reports\report.json"` as needed. Normal backend monitoring remains active during the read; the script sends no start/stop request itself.
 
 See [TEST-REPORT.md](TEST-REPORT.md) for validation and outstanding hardware checks.
+
+Heater 1 shows **Automatic · surplus** in its existing status area when Smartfox reports automatic operation (status 0) and positive actual output. Zero output remains **No surplus**; manual and schedule states retain their own labels.

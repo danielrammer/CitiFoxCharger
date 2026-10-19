@@ -71,6 +71,12 @@ class EnergyTests(unittest.TestCase):
         self.fields["analogOutPercent"]="101%"
         self.assertIsNone(self.display()["heater"]["percent"])
 
+    def test_analogue_surplus_label_requires_automatic_status_and_positive_output(self):
+        for percent,code,expected in [('65%','0','Automatic · surplus'),('0%','0','No surplus'),('invalid','0','Automatic'),('65%','8','Manual on'),('65%','1','Schedule active')]:
+            self.fields.update(analogOutPercent=percent,hidAoutStatus=code)
+            with self.subTest(percent=percent,code=code):
+                self.assertEqual(self.display()['heater']['status'],expected)
+
     def test_manual_analogue_uses_actual_percent_even_when_power_estimate_is_zero(self):
         self.fields.update(hidAoutMode='1',hidAoutStatus='8',hidAoutPercentage='100',analogOutPercent='100%')
         value=self.display()['heater']

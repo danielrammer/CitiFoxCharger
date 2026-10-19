@@ -1,6 +1,6 @@
 # Verified interfaces
 
-Evidence reviewed on **16–19 October 2026**; application version **1.8.3**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
+Evidence reviewed on **16–19 October 2026**; application version **1.8.4**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
 
 ## SMARTFOX Pro 2 and Charger Pro 1
 

@@ -36,7 +36,7 @@ def energy_display(fields, read_at):
         return quantity(raw+" °C", "°C", -50, 150)  # 850 is the vendor's missing-sensor sentinel.
 
     percent = quantity(fields.get("analogOutPercent"), "%", 0, 100)
-    aout_states = {0: "Automatic" if percent is None or percent > 0 else "No surplus", 1: "Schedule active",
+    aout_states = {0: "Automatic" if percent is None else "Automatic · surplus" if percent > 0 else "No surplus", 1: "Schedule active",
                    2: "Minimum temperature", 3: "Temperature reached", 4: "Hygiene cycle", 5: "Blocked",
                    6: "Monitoring active", 7: "Tariff control", 8: "Manual on", 9: "Off", 10: "Timer active",
                    11: "Disabled", 12: "Externally blocked", 13: "Externally enabled", 14: "Switch-on delay",
