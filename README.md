@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.8.14
+# CitiFoxCharger for Windows · 1.8.15
 
 <img src="citifoxcharger/web/brand/logo.png" alt="CitiFoxCharger logo: smooth electric city car, red fox tail and charging plug" width="620">
 
@@ -10,11 +10,19 @@ Both light and dark appearance are available. The light palette uses darker labe
 
 The header displays the current date and time from the browser device, independently of vehicle telemetry. It refreshes on returning to the page and uses the selected interface language. The clock fits inside the existing header height.
 
-The Settings page identifies the running backend as **v1.8.14 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
+The Settings page identifies the running backend as **v1.8.15 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
 
 ## Architecture and communication
 
 See [COMMUNICATION.md](COMMUNICATION.md) for the system and start/stop diagrams, exact Modbus addresses and word counts, XML data fields, SMARTFOX CGI commands, Škoda API calls and browser-to-backend routes. Mermaid diagrams render directly on GitHub. Protocol evidence and compatibility limits are in [INTERFACES.md](INTERFACES.md).
+
+## Recovering a stopped session
+
+Version 1.8.15 separates stop confirmation from SOC freshness. A delayed vehicle capture after the latest stop/start boundary may confirm a stopped vehicle even if its SOC is now stale, provided a fresh, settled local SMARTFOX read confirms Off and no charging power. The old session then ends and the normal A+ mode is restored. An explicit user-selected Off remains Off. The app never starts charging as part of recovery, and a precautionary stop below the target remains an unsuccessful session.
+
+Reports captured before the stop, future timestamps, another vehicle, unavailable telemetry or missing local stop proof cannot release the aged-report guard. The wallbox selector is disabled while the stop guard is active so it cannot appear to accept an overridden mode. After updating, a session explicitly closed with Stop.cmd stays closed; choose A+ explicitly if needed.
+
+This fixes a stuck Off hold. It does not verify a native 87% vehicle limit or guarantee an exact cloud-monitored SOC target.
 
 ## Request quota and target reliability
 

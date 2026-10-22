@@ -355,6 +355,40 @@ class ChargingSession:
                   message=self.safety_stop_message() if self.safety_stopped else message + f" Smartfox is set to {self.normal_name}.",
                   completed_at=utcnow(),vehicle_stop_confirmed=True)
 
+    def recover_guarded_stop(self):
+        """A delayed post-stop report can prove the stop without providing live SOC.
+
+        Old pre-stop reports never release the guard. An aged post-stop capture
+        additionally requires the existing fresh, settled local Off/zero-power
+        check. This completes the old session; it never starts another charge.
+        """
+        if (self.service.stopping or not self.active or not self.value.get("stop_requested")
+                or not self.value.get("stop_guard")
+                or self.value.get("vin") != self.service.config.value["skoda"]["vin"]):
+            return False
+        car = self.service.cache.get("skoda", {})
+        captured = timestamp(car.get("captured_at"))
+        intent = self.value.get("stop_intent_epoch")
+        if type(intent) not in (int, float) or not math.isfinite(intent):
+            return False
+        boundary = intent
+        for name in ("stop_requested_epoch", "last_start_epoch"):
+            value = self.value.get(name)
+            if type(value) in (int, float) and math.isfinite(value):
+                boundary = max(boundary, value)
+        if (not car.get("available") or captured is None or not boundary <= captured <= time.time()+5
+                or car.get("state") not in ("CONNECT_CABLE", "CONSERVING", "READY_FOR_CHARGING", "CHARGING_INTERRUPTED")):
+            return False
+        if car.get("stale", True) and not self.local_stop_allows_shutdown():
+            return False
+        try:
+            self.finish_stop("Vehicle stop confirmed.")
+        except SmartfoxControlError:
+            # A failed A+ readback must not discard the independent Off guard.
+            self.save(stop_guard=True, auto_restored=False,
+                      message="The vehicle stopped. Return to the selected normal mode is pending.")
+        return True
+
     def stop_if_target_reached(self):
         car = self.service.cache.get("skoda", {})
         captured = timestamp(car.get("captured_at"))
@@ -367,6 +401,9 @@ class ChargingSession:
         return False
 
     def tick(self):
+        # Stop evidence is independent of SOC freshness and cloud retry timers.
+        if self.recover_guarded_stop():
+            return
         # A newly received target report must not wait for the ten-second housekeeping tick.
         if self.stop_if_target_reached():
             return

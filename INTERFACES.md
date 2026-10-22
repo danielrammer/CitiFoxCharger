@@ -130,3 +130,7 @@ The [official OpenAPI schema](https://public.api.connect.skoda-auto.cz/docs/mysk
 ### 1.8.14 quota stop
 
 The backend requests local Off as soon as a known quota/cooldown prevents further vehicle reads during monitoring, even if the cached SOC is still within the freshness threshold. Stops retain `request_quota` in sanitized diagnostics and remain unsuccessful after confirmation/restart. A known budget of three or fewer remaining requests prevents a new start until reset. No native charging-mode, limit or schedule write is introduced. Delayed cloud reports still prevent a guarantee of an exact percentage target.
+
+## Delayed stop confirmation (1.8.15)
+
+SOC freshness is not itself a stop-confirmation requirement. A non-charging vehicle capture must follow the latest stop intent, accepted stop and session start, must match the configured VIN, be available and not lie in the future. When that report is aged, recovery additionally requires the existing settled local stop proof: fresh available wallbox telemetry, Off, a non-charging status and finite power at or below 0.1 kW. Only then is the guard released and the normal mode restored. Explicit Off stays Off. The session retains its unsuccessful safety-stop cause; no new Start or native-limit write is sent.

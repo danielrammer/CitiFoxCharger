@@ -1327,3 +1327,100 @@ class ChargingTests(unittest.TestCase):
         self.update_soc(41, "CHARGING")
         self.service.status()
         self.assertEqual(self.effects.count("stop"), 2)
+
+    def late_stopped_report(self):
+        """Synthetic equivalent of a delayed report after a below-target stop."""
+        self.force(87)
+        self.service.stop_charge("late-report-stop-0001")
+        now = time.time()
+        self.service.charging.save(status="paused", stop_cause="missing_soc",
+            stop_intent_epoch=now-6000, stop_requested_epoch=now-6000,
+            last_start_epoch=now-6300, last_stop_failure_epoch=now-6000, stop_failures=1)
+        self.service.cache["skoda"].update(soc=85, stale=True, available=True,
+            state="CHARGING_INTERRUPTED",
+            captured_at=datetime.fromtimestamp(now-5983, timezone.utc).isoformat())
+        self.service.cache["smartfox"]["charger"] = self.web.read(self.config.value["smartfox"])
+        self.service.charging.next_attempt = time.monotonic()+600
+        self.service.charging.next_guard_attempt = time.monotonic()+600
+
+    def test_late_post_stop_report_releases_off_without_claiming_target_reached(self):
+        self.late_stopped_report()
+        self.service.charging.tick()
+        value = self.service.charging.value
+        self.assertEqual(self.web.mode, "A+")
+        self.assertEqual(value["status"], "error")
+        self.assertFalse(value["stop_guard"])
+        self.assertTrue(value["vehicle_stop_confirmed"])
+        self.assertEqual(value["target_percent"], 87)
+        self.assertTrue(self.service.cache["skoda"]["stale"])
+        self.assertIn("not confirmed reached", value["message"])
+        self.assertEqual(self.effects, ["M+", "start", "OFF", "stop", "A+"])
+        self.service.charging.next_attempt = 0
+        self.service.charging.tick()
+        self.assertEqual(self.web.mode, "A+")
+        self.assertEqual(self.effects.count("start"), 1)
+
+    def test_late_stop_evidence_survives_restart_without_replaying_vehicle_commands(self):
+        self.late_stopped_report()
+        self.service.charging = ChargingSession(self.service, self.web)
+        self.service.charging.tick()
+        self.assertFalse(self.service.charging.active)
+        self.assertEqual(self.web.mode, "A+")
+        self.assertEqual(self.effects.count("start"), 1)
+        self.assertEqual(self.effects.count("stop"), 1)
+
+    def test_late_stop_evidence_preserves_explicit_user_off(self):
+        self.late_stopped_report()
+        self.service.charging.save(user_charger_mode="OFF")
+        self.service.charging.tick()
+        self.assertTrue(self.service.charging.value["vehicle_stop_confirmed"])
+        self.assertFalse(self.service.charging.value["stop_guard"])
+        self.assertEqual(self.web.mode, "OFF")
+        self.assertNotIn("A+", self.effects)
+
+    def test_aged_stop_evidence_requires_a_matching_vehicle_and_live_local_off(self):
+        self.late_stopped_report()
+        saved_car = copy.deepcopy(self.service.cache["skoda"])
+        saved_charger = copy.deepcopy(self.service.cache["smartfox"]["charger"])
+        for car_changes, charger_changes in (
+            ({"captured_at": datetime.fromtimestamp(time.time()-6100, timezone.utc).isoformat()}, {}),
+            ({"captured_at": datetime.fromtimestamp(time.time()+60, timezone.utc).isoformat()}, {}),
+            ({"state": "CHARGING"}, {}), ({"available": False}, {}),
+            ({}, {"power_kw": 7.3}), ({}, {"mode": "A+"}),
+            ({}, {"available": False}), ({}, {"telemetry_available": False}),
+            ({}, {"read_at": datetime.fromtimestamp(time.time()-60, timezone.utc).isoformat()}),
+            ({}, {"power_kw": float("nan")}),
+        ):
+            with self.subTest(car=car_changes, charger=charger_changes):
+                self.service.cache["skoda"] = {**saved_car, **car_changes}
+                self.service.cache["smartfox"]["charger"] = {**saved_charger, **charger_changes}
+                self.assertFalse(self.service.charging.recover_guarded_stop())
+                self.assertTrue(self.service.charging.value["stop_guard"])
+        self.service.cache["skoda"] = saved_car
+        self.service.cache["smartfox"]["charger"] = saved_charger
+        self.service.config.value["skoda"]["vin"] = "TMBJB9NY5RF999998"
+        self.assertFalse(self.service.charging.recover_guarded_stop())
+        self.assertEqual(self.web.mode, "OFF")
+
+    def test_late_stop_recovery_keeps_guard_when_normal_mode_write_fails(self):
+        self.late_stopped_report()
+        self.web.allow_control = False
+        self.service.charging.tick()
+        self.assertTrue(self.service.charging.value["stop_guard"])
+        self.assertFalse(self.service.charging.value["auto_restored"])
+        self.assertEqual(self.web.mode, "OFF")
+        self.web.allow_control = True
+        self.service.charging.next_guard_attempt = 0
+        self.service.charging.tick()
+        self.service.charging.tick()
+        self.assertFalse(self.service.charging.value["stop_guard"])
+        self.assertEqual(self.web.mode, "A+")
+        self.assertEqual(self.effects.count("stop"), 1)
+
+    def test_closed_guarded_session_is_not_automatically_reopened_or_switched(self):
+        self.late_stopped_report()
+        self.service.charging.save(status="closed", ended_by_user=True)
+        self.service.charging.next_attempt = 0
+        self.service.charging.tick()
+        self.assertEqual(self.web.mode, "OFF")
+        self.assertEqual(self.service.charging.value["status"], "closed")

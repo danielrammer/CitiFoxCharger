@@ -70,7 +70,9 @@ function updateHeaterControls(){
  const charger=latest?.smartfox?.charger||{},energy=charger.energy||{},ageSeconds=(Date.now()-Date.parse(energy.read_at))/1000;
  const live=charger.available&&Number.isFinite(ageSeconds)&&ageSeconds>=-5&&ageSeconds<=30;
  for(const [device,id] of [["heater","heater"],["heater2","heater2"],["hot_water","hot-water"]]){const value=energy[device]||{};$(id+"-mode").disabled=mutating||!live||!value.control_available;}
- $("station-mode").disabled=mutating||!live||!charger.control_available;
+ const guarded=activeStates.has(latest?.charging?.status)&&latest.charging.stop_guard===true;
+ $("station-mode").disabled=mutating||!live||!charger.control_available||guarded;
+ $("station-mode").title=guarded?"Charger kept Off until the vehicle confirms the stop.":"Change mode";
  const active=activeStates.has(latest?.charging?.status),manual=active?!latest.charging.stop_requested&&latest.controls.start&&latest.controls.stop:Number($("target").value)>latest.skoda.soc&&(latest?.charging?.can_force||(latest?.charging?.can_force_with_stale&&$("allow-stale").checked));
  $("station-mode").querySelector('option[value="M+"]').disabled=!manual;
  $("station-mode").querySelector('option[value="A+"]').disabled=active&&latest.charging.stop_guard===true;

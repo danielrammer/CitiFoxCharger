@@ -1,8 +1,12 @@
-# Validation report · 1.8.14
+# Validation report · 1.8.15
 
 Date: **22 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
 ## Existing baseline and new work
+
+Version **1.8.15** fixes a persistent Off hold caused by a delayed post-stop vehicle report whose SOC had become stale before it was read. The synthetic regression reproduces an 85% report with an 87% target, a precautionary `missing_soc` stop and a later non-charging capture, with housekeeping/cloud retry timers still pending. Recovery checks the vehicle identity and latest stop/start boundary, plus the existing fresh, settled local Off/zero-power proof for aged vehicle reports. It returns to A+ once, retains the unsuccessful stop cause and never repeats Start or Stop. Explicit user Off and explicitly closed sessions remain respected. Failed normal-mode restoration retains the guard for retry. The wallbox selector is disabled during the guard without adding layout height.
+
+Six new test methods cover late confirmation, restart, explicit Off, negative evidence (pre-stop/future/charging/unavailable captures, bad local mode/power/read age, another VIN), failed A+ restoration and a closed session. All **120 charging tests** and the complete **312-test offline suite** pass. No real device command, tablet restart, native-limit write or browser interaction was performed for this release. The supplied real diagnostic identifies backend 1.8.14, `missing_soc` and an active stop guard; it is not included in the repository or package.
 
 Version **1.8.14** stops an active session locally when known request quota/cooldown prohibits further SOC reads, before housekeeping throttling. It blocks new starts with a known budget below four remaining calls, while retaining local Stop and command reserve behavior. Four new regressions reproduce the frozen 81% / 83% target case with a ten-minute-old report and two calls left, cloud rate limiting, start-budget boundaries and target-report priority. Restart recovery now verifies precautionary Off without replaying Start; confirmation and restart retain the unsuccessful `request_quota` cause. The full offline suite passes **306 tests**. No exact SOC target or native limit enforcement is claimed.
 
