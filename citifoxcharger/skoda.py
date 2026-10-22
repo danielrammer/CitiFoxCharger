@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
 BASE = "https://public.api.connect.skoda-auto.cz"
+CHARGE_MODES = ("MANUAL","TIMER","TIMER_CHARGING_WITH_CLIMATISATION","PREFERRED_CHARGING_TIMES",
+                "ONLY_OWN_CURRENT","IMMEDIATE_DISCHARGING","HOME_STORAGE_CHARGING")
 
 
 class IntegrationError(Exception):
@@ -164,9 +166,32 @@ class SkodaAdapter:
             message = "Charging data exist, but start/stop capability is not confirmed."
         if affected:
             message = "Charging data or the command list are unavailable, unsupported or disabled."
+        # Read-only diagnostics from the existing GET. Never infer support or send a mode/limit write.
+        settings = charging.get("settings", {})
+        settings = settings if isinstance(settings, dict) else {}
+        def percent(name):
+            value = settings.get(name)
+            return value if type(value) is int and 1 <= value <= 100 else None
+        names = {o.get("name") for o in operations if isinstance(o,dict) and isinstance(o.get("name"),str)} if not affected and charging else set()
+        available_modes = settings.get("availableChargeModes")
+        available_modes = [mode for mode in CHARGE_MODES if mode in available_modes] if isinstance(available_modes,list) else []
+        current_limit = settings.get("maxChargeCurrentAcAmpere")
+        native_settings = {
+            "target_percent":percent("targetStateOfChargeInPercent"),
+            "battery_care_target_percent":percent("batteryCareModeTargetValueInPercent"),
+            "preferred_mode":settings.get("preferredChargeMode") if settings.get("preferredChargeMode") in CHARGE_MODES else None,
+            "available_modes":available_modes,
+            "battery_care_mode":settings.get("chargingCareMode") if settings.get("chargingCareMode") in ("ACTIVATED","DEACTIVATED") else None,
+            "max_current_a":current_limit if type(current_limit) is int and 5 <= current_limit <= 32 else None,
+            "advertises_start_charging":"startCharging" in names,
+            "advertises_stop_charging":"stopCharging" in names,
+            "advertises_set_charge_mode":"setChargeMode" in names,
+            "advertises_set_charging_limit":"setChargingLimit" in names}
         state = status.get("state")
         return {"available": bool(charging) and not affected, "code": "partial" if codes else "ok",
                 "message": message, "soc": soc, "state": state if isinstance(state, str) else None,
+                "charging_settings":native_settings,
+                "plug_lock":status.get("plugLockState") if status.get("plugLockState") in ("LOCKED","UNLOCKED") else None,
                 "plug": status.get("plugConnectionState") if isinstance(status.get("plugConnectionState"), str) else None,
                 "captured_at": captured if captured_epoch is not None else None,
                 "read_at": datetime.now(timezone.utc).isoformat(), "stale": stale,

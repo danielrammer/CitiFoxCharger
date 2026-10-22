@@ -1,8 +1,10 @@
-# Validation report · 1.8.11
+# Validation report · 1.8.12
 
 Date: **22 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
 ## Existing baseline and new work
+
+Version **1.8.12** adds read-only native charging settings/capability flags and plug-lock state to the shared sanitized diagnostics. Five new tests cover per-vehicle advertised operations without enabling writes, known/unknown/malformed settings, partial operations, omission handling and privacy. The targeted adapter, diagnostics and service/server suites pass (65 tests). All requests in the new adapter tests are GETs; no real vehicle commands were sent. No start retry, charging-mode/limit/profile write or stop-timing change is introduced.
 
 Version **1.8.11** adds authenticated local/HTTPS diagnostics with cached-only allowlisting, remote updates in both network modes with a confirmation step, and bounded pre-expiry freshness reads. Confirmed SOC-data/phase preparation safety stops retain their cause and are no longer labelled successful completion, including legacy completed safety-stop records restored after upgrade. Tests cover recovery from a fresh cloud response before expiry, bounded probes across restarts, quota/cooldown/stop gates, minimum spacing, unchanged safety shutdown, preserved stop cause, sanitized GET-only diagnostics, and remote authentication/origin/session/CSRF/update guards. The full offline suite passed **294 tests**, followed by passing final charging/service checks and the additional shared-updater network regression (**295 tests in total**). Remote and local listeners share one updater and the loopback control port. The simulated German dark and light safety-stop overview fits 800×1280, 640×1024, 534×854 and 1280×800; the optional older-data consent expands on request. The diagnostics view, download link, disabled remote device configuration, update confirmation and simulated reconnect were checked in the browser. No real vehicle or charger commands were sent during validation.
 

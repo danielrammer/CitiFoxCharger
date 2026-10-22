@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.8.11
+# CitiFoxCharger for Windows · 1.8.12
 
 <img src="citifoxcharger/web/brand/logo.png" alt="CitiFoxCharger logo: smooth electric city car, red fox tail and charging plug" width="620">
 
@@ -10,7 +10,7 @@ Both light and dark appearance are available. The light palette uses darker labe
 
 The header displays the current date and time from the browser device, independently of vehicle telemetry. It refreshes on returning to the page and uses the selected interface language. The clock fits inside the existing header height.
 
-The Settings page identifies the running backend as **v1.8.11 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
+The Settings page identifies the running backend as **v1.8.12 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
 
 ## Architecture and communication
 
@@ -183,3 +183,6 @@ The optional start-with-older-data consent is expandable to preserve the compact
 Within the last five minutes before the SOC age limit, the scheduler can advance up to three cloud reads per unchanged vehicle report, at least 90 seconds apart, when quota and server cooldown permit. The two-command reserve is retained. Regular earlier reads are reused; restarting does not reset the probe bound. This reads the cloud cache and cannot force the car to measure again.
 
 If the cloud still supplies no current SOC, the existing maximum 15-minute monitoring age limit remains. A confirmed safety stop is shown as **target not confirmed reached**, with the cause retained across restarts, rather than successful completion. After vehicle stop confirmation the existing A+ restoration remains; schedules can charge later. No automatic start retry is introduced.
+
+
+Version 1.8.12 adds a read-only `vehicle_charging` section to diagnostics from the existing charging/operations GET: reported vehicle target, preferred/available modes, battery-care target/mode, current limit and whether the response advertises mode/limit operations. Cable plug/lock states are included when known. Missing fields remain unknown. No mode, limit or profile writes are implemented; support advertised by a vehicle is evidence for diagnosis, not permission or proof of a successful command. The API may accept a start while later vehicle telemetry still reports `CHARGING_INTERRUPTED`; physical charging is verified separately through wallbox power.

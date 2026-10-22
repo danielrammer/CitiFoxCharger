@@ -1,6 +1,6 @@
 # Verified interfaces
 
-Evidence reviewed on **16–19 October 2026**; application version **1.8.11**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
+Evidence reviewed on **16–19 October 2026**; application version **1.8.12**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
 
 For an implementation-level overview with diagrams and request/register tables, see [COMMUNICATION.md](COMMUNICATION.md).
 
@@ -121,3 +121,8 @@ The optional listener shares the same service and monitor. It binds a concrete R
 Password mode uses HTTP Basic only inside TLS, PBKDF2-HMAC-SHA256 with 600000 iterations and a 128-bit salt, per-client throttling and a bounded cache containing only hashed authentication headers. Both modes enforce Host, HTTPS Origin, same-site fetch restrictions, HttpOnly/SameSiteStrict/Secure session cookies and CSRF. Allowed network mutations are combined charging, target, refresh and the requested outputs. Key/device configuration, generic vehicle commands and backend administration remain local-only.
 
 Certificates use Windows/.NET [CertificateRequest](https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.x509certificates.certificaterequest?view=netframework-4.8.1): SHA256/RSA2048, IP SAN, server EKU, key usage, basic constraints and subject/authority identifiers. The leaf private key is DPAPI encrypted; a short-lived ACL-protected file is removed after TLS loading. The CA signing key is not saved. No trust store is modified automatically. The separate administrator-run firewall step allows only the Python path, tablet IP, HTTPS port, LocalSubnet and Private profile. See [NETWORK.md](NETWORK.md).
+
+
+### Read-only native charging settings (1.8.12)
+
+The [official OpenAPI schema](https://public.api.connect.skoda-auto.cz/docs/myskoda-public-api.yaml), inspected on 22 October 2026, documents `charging.settings.targetStateOfChargeInPercent`, `preferredChargeMode`, `availableChargeModes`, battery-care fields and AC current limit. The existing GET now retains only validated percentages/current values, known mode enums and presence flags for `setChargeMode`/`setChargingLimit` in `vehicle.operations`. No additional request is needed. The schema documents `PUT /api/v1/vehicles/{vin}/charging/mode`, but this application does not call it; per-vehicle support, actual behavior and restoration requirements must be established first. Existing vehicle plans and limits remain unchanged. Diagnostics do not include charging-profile contents, names, locations, VIN or arbitrary upstream fields.

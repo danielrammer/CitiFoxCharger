@@ -4,7 +4,7 @@ import re
 from . import __version__
 from .charging import ACTIVE
 from .modbus import utcnow
-from .skoda import timestamp
+from .skoda import timestamp,CHARGE_MODES
 
 def selected(data, numbers=(), flags=(), dates=(), enums=None):
     data = data if isinstance(data, dict) else {}
@@ -31,6 +31,10 @@ def report(status, live=False):
     command = status.get('last_command') or {}
     remaining = car.get('quota_remaining') if isinstance(car, dict) else None
     quota = int(remaining) if isinstance(remaining, str) and remaining.isascii() and remaining.isdecimal() and len(remaining) <= 6 else None
+    settings = car.get('charging_settings',{}) if isinstance(car,dict) else {}
+    settings = settings if isinstance(settings,dict) else {}
+    modes = settings.get('available_modes')
+    modes = [mode for mode in CHARGE_MODES if mode in modes] if isinstance(modes,list) else []
     version = status.get('backend_version')
     return {'report_version': 1, 'program_version': __version__,
             'backend_version': version if isinstance(version, str) and re.fullmatch(r'\d+\.\d+\.\d+', version) else None,
@@ -38,8 +42,14 @@ def report(status, live=False):
             'source': 'running_backend' if live else 'saved_files_only',
             'car': {**selected(car, numbers=('soc',), flags=('available','stale'), dates=('captured_at','read_at'),
                               enums={'code':('ok','partial','network','quota_reserved','rate_limit','auth','forbidden','not_found','unsupported','protocol','upstream','not_configured'),
-                                     'state':('CHARGING','CONNECT_CABLE','CONSERVING','READY_FOR_CHARGING','DISCHARGING','CHARGING_INTERRUPTED')}),
+                                     'state':('CHARGING','CONNECT_CABLE','CONSERVING','READY_FOR_CHARGING','DISCHARGING','CHARGING_INTERRUPTED'),
+                                     'plug':('CONNECTED','DISCONNECTED'),'plug_lock':('LOCKED','UNLOCKED')}),
                     'quota_remaining': quota},
+            'vehicle_charging': {**selected(settings,
+                 numbers=('target_percent','battery_care_target_percent','max_current_a'),
+                 flags=('advertises_start_charging','advertises_stop_charging','advertises_set_charge_mode','advertises_set_charging_limit'),
+                 enums={'preferred_mode':CHARGE_MODES,'battery_care_mode':('ACTIVATED','DEACTIVATED')}),
+                 'available_modes':modes},
             'charger': selected(charger, numbers=('power_kw','status_code','info_code','offered_current_a','phase_count','phase_switch_seconds'), flags=('available','telemetry_available','ready_for_start','phase_switching'),
                                 dates=('read_at',), enums={'mode': ('OFF','A+','M+','A','M')}),
             'session': selected(session, numbers=('target_percent','last_start_epoch','fresh_soc_deadline',

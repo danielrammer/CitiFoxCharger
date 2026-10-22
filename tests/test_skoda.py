@@ -41,6 +41,40 @@ class SkodaTests(unittest.TestCase):
         self.assertEqual(self.calls[0][1], f"/api/v1/vehicles/{VIN}?include=charging,operations")
         self.assertEqual(result["operations"], ["startCharging", "stopCharging"])
 
+    def test_native_charging_settings_are_read_only_and_capabilities_are_advertised_per_vehicle(self):
+        self.data['vehicle']['charging']['settings']={
+            'targetStateOfChargeInPercent':80,'preferredChargeMode':'TIMER',
+            'availableChargeModes':['TIMER','MANUAL'],'chargingCareMode':'ACTIVATED',
+            'batteryCareModeTargetValueInPercent':80,'maxChargeCurrentAcAmpere':16}
+        self.data['vehicle']['charging']['status']['plugLockState']='LOCKED'
+        self.data['vehicle']['operations'] += [{'name':'setChargeMode'},{'name':'setChargingLimit'}]
+        result=self.read();settings=result['charging_settings']
+        self.assertEqual(settings['target_percent'],80)
+        self.assertEqual(settings['preferred_mode'],'TIMER')
+        self.assertEqual(settings['available_modes'],['MANUAL','TIMER'])
+        self.assertTrue(settings['advertises_set_charge_mode'])
+        self.assertTrue(settings['advertises_set_charging_limit'])
+        self.assertEqual(result['plug_lock'],'LOCKED')
+        self.assertEqual(result['operations'],['startCharging','stopCharging'])
+        self.assertEqual([c[0] for c in self.calls],['GET'])
+
+    def test_missing_or_invalid_optional_settings_never_invent_a_limit_or_mode(self):
+        for value in (None,[],{}, {'targetStateOfChargeInPercent':True,'preferredChargeMode':['PRIVATE'],
+                                  'availableChargeModes':['PRIVATE',{}],'maxChargeCurrentAcAmpere':999}):
+            self.data['vehicle']['charging']['settings']=value
+            settings=self.read()['charging_settings']
+            self.assertIsNone(settings['target_percent'])
+            self.assertIsNone(settings['preferred_mode'])
+            self.assertEqual(settings['available_modes'],[])
+            self.assertFalse(settings['advertises_set_charge_mode'])
+
+    def test_partial_operations_do_not_advertise_mode_writes(self):
+        self.data['vehicle']['operations'].append({'name':'setChargeMode'})
+        self.data['errors']=[{'type':'OPERATIONS_UNAVAILABLE'}]
+        result=self.read()
+        self.assertFalse(result['charging_settings']['advertises_set_charge_mode'])
+        self.assertEqual([c[0] for c in self.calls],['GET'])
+
     def test_no_credentials_means_no_network(self):
         result = self.adapter.read(self.config, "")
         self.assertEqual(result["code"], "not_configured")

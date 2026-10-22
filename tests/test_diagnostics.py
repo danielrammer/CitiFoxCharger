@@ -52,6 +52,27 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertEqual(result['session']['stop_trigger_read_at'],'2026-10-17T11:41:20Z')
         self.assertEqual(result['session']['target_probe_count'],2)
 
+    def test_native_charging_diagnostics_keep_only_known_fields(self):
+        data={'skoda':{'soc':80,'vin':'PRIVATE-VIN','plug':'CONNECTED','plug_lock':'LOCKED',
+                      'charging_settings':{'target_percent':80,'preferred_mode':'TIMER',
+                        'available_modes':['TIMER','MANUAL','PRIVATE-KEY',{}],
+                        'battery_care_mode':'ACTIVATED','battery_care_target_percent':80,
+                        'advertises_set_charge_mode':True,'raw':{'vin':'PRIVATE-VIN'}}}}
+        result=report(data)
+        self.assertEqual(result['vehicle_charging']['target_percent'],80)
+        self.assertEqual(result['vehicle_charging']['preferred_mode'],'TIMER')
+        self.assertEqual(result['vehicle_charging']['available_modes'],['MANUAL','TIMER'])
+        self.assertTrue(result['vehicle_charging']['advertises_set_charge_mode'])
+        self.assertEqual(result['car']['plug_lock'],'LOCKED')
+        self.assertNotIn('PRIVATE',json.dumps(result))
+
+    def test_missing_native_settings_are_unknown_in_older_backend_reports(self):
+        result=report({'skoda':{'soc':80}})
+        self.assertIsNone(result['vehicle_charging']['target_percent'])
+        self.assertIsNone(result['vehicle_charging']['preferred_mode'])
+        self.assertIsNone(result['vehicle_charging']['advertises_set_charge_mode'])
+        self.assertEqual(result['vehicle_charging']['available_modes'],[])
+
     def test_offline_report_reads_only_session_and_cached_vehicle(self):
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)
