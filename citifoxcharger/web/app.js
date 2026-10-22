@@ -1,7 +1,7 @@
 "use strict";
 const $ = id => document.getElementById(id);
 let csrf="", refreshing=false, mutating=false, latest=null, targetInitialized=false, appStopped=false, refreshTimer=null, consentFor="", targetEditing=false, localAdmin=true;
-let appUpdating=false,updateKeyReady=false,updateJob=null,updatePreviousJob=null,updateStarted=0;
+let appUpdating=false,updateAllowed=false,updateKeyReady=false,updateJob=null,updatePreviousJob=null,updateStarted=0;
 const activeStates=new Set(["starting","monitoring","stop_pending","restore_pending","paused","interrupted"]);
 const themeMedia=window.matchMedia("(prefers-color-scheme: dark)");
 let themeChoice="system";
@@ -43,11 +43,11 @@ function updateControls(){
  else if(target<=soc)hint="The selected target is already reached.";
  else if(session?.force_reason&&!session.can_force&&!staleOption)hint=session.force_reason;
  else if(car.stale&&!staleOption&&!session?.awaiting_fresh_soc)hint="Waiting for current vehicle data.";
- if(active&&session?.message)hint="";
+ if((active||session?.status==="error")&&session?.message)hint="";
  $("operation-hint").textContent=hint;$("operation-hint").hidden=!hint;
  updateHeaterControls();updateEta();
  const updating=appUpdating||latest.app_update_pending===true;
- $("update-app").disabled=mutating||updating||!localAdmin||!session?.can_shutdown||!updateKeyReady;
+ $("update-app").disabled=mutating||updating||!updateAllowed||!session?.can_shutdown||!updateKeyReady;
  $("update-hint").textContent=!updateKeyReady?"Save the API key with Windows encryption before updating.":!session?.can_shutdown?"Stop charging and wait for confirmation before updating.":"Update from GitHub, restart the backend and reload this page.";
  if(updating)for(const id of ["force","target","allow-stale","quit-app","heater-mode","heater2-mode","hot-water-mode","station-mode"])$(id).disabled=true;
 }
@@ -129,7 +129,7 @@ function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=
  $("quit-app").disabled=!localAdmin||!session?.can_shutdown||mutating;
  $("session-status").classList.toggle("session-quiet",session?.status==="monitoring"&&isCharging&&!session?.awaiting_fresh_soc&&!session?.stop_requested);
  $("normal-mode-note").textContent=session?.user_charger_mode==="OFF"?(charger.available&&charger.mode==="OFF"?"Charger explicitly switched Off.":"Off selected · change is unconfirmed."):session?.stop_guard?"Charger kept Off until the vehicle confirms the stop.":"Normal mode A+ · schedules are preserved.";
- const showPhase=switching&&!session?.stop_requested;$("session-status").hidden=!showPhase&&!session?.message;$("session-status").textContent=showPhase?phaseMessage(charger):session?.message||"";$("session-status").classList.toggle("phase-wait",showPhase);
+ const showPhase=switching&&!session?.stop_requested;$("session-status").hidden=!showPhase&&!session?.message;$("session-status").textContent=showPhase?phaseMessage(charger):session?.message||"";$("session-status").classList.toggle("phase-wait",showPhase);$("session-status").classList.toggle("safety-stopped",session?.status==="error"&&["missing_soc","missing_initial_soc","phase_wait"].includes(session?.stop_cause));
  $("car-message").textContent=car.message||"";$("sf-notice").textContent=sf.notice||"";$("sf-control-reason").textContent=charger.control_reason||charger.message||"";
  $("sf-web-meta").textContent=`Charge mode: ${charger.mode||"unknown"} · Power: ${charger.power_kw??"—"} kW · Wallbox: ${charger.status_text||"unknown"} · Setpoint: ${charger.offered_current_a??"—"} A · Last read: ${date(charger.read_at||sf.read_at)}`;
  $("api-meta").textContent=`Next query in ${data.next_skoda_seconds} s · Key valid until ${date(car.key_expires_at)} · Quota left: ${car.quota_remaining??"unknown"}${car.errors?.length?" · "+car.errors.join(", "):""}`;
@@ -138,7 +138,7 @@ function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=
 async function refresh(){if(refreshing||appStopped||appUpdating)return;refreshing=true;$("refresh").setAttribute("aria-busy","true");try{render(await api("/api/status"));$("global-error").hidden=true;}catch(e){$("force").disabled=true;$("stop").disabled=true;error(e.message||"The local app is unreachable.");}finally{refreshing=false;$("refresh").removeAttribute("aria-busy");}}
 function renderAccess(result){
  localAdmin=result.access?.local_admin!==false;
- $("app-update-panel").hidden=!localAdmin;
+ updateAllowed=result.access?.can_update===true||localAdmin;$("app-update-panel").hidden=!updateAllowed;
  updateKeyReady=!result.key?.configured||result.key?.persisted===true;
  const network=result.network||{},link=$("network-url");
  $("network-status").textContent=network.message||"Home network access is disabled.";
@@ -147,7 +147,7 @@ function renderAccess(result){
 }
 async function loadConfig(){const result=await api("/api/config");renderAccess(result);const sf=result.config.smartfox,car=result.config.skoda;for(const [id,value]of Object.entries({host:sf.host,port:sf.port,unit:sf.unit_id,firmware:sf.firmware,"sf-poll":sf.poll_seconds,"sf-timeout":sf.timeout_seconds,profile:sf.profile,"word-order":sf.word_order,vin:car.vin,"car-poll":car.poll_seconds,"car-stale":car.stale_seconds}))$(id).value=value;$("interpretation").checked=sf.interpretation_confirmed;$("persist").disabled=!result.key.persistence_available;$("persist").checked=result.key.persisted;$("clear-key").hidden=!result.key.configured;$("key-status").textContent=result.key.warning||(result.key.configured?(result.key.persisted?"Access saved with Windows encryption.":"Access saved until the app exits."):"No key configured.");$("sf-meta").textContent=`Pro 2 · ${sf.host} · ${sf.firmware}`;$("device-link").href=`http://${sf.host}/`;}
 async function mutation(fn,allowDuringUpdate=false){if(mutating||(appUpdating&&!allowDuringUpdate))return;mutating=true;updateControls();let failure=null;try{await fn();}catch(e){failure=e.message;}finally{mutating=false;await refresh();if(failure)error(failure);}}
-function updateBusy(busy){appUpdating=busy;for(const form of [$("config-form"),$("key-form")])form.querySelectorAll("input,select,button").forEach(node=>node.disabled=busy);updateControls();}
+function updateBusy(busy){appUpdating=busy;for(const form of [$("config-form"),$("key-form")])form.querySelectorAll("input,select,button").forEach(node=>node.disabled=busy||!localAdmin);updateControls();}
 async function pollUpdate(){
  if(!appUpdating)return;
  if(Date.now()-updateStarted>900000){$("update-status").textContent="Update status is still unconfirmed. Check update.log or Update.cmd on the tablet.";return;}
@@ -164,8 +164,11 @@ async function pollUpdate(){
  }catch{ $("update-status").textContent="Waiting for the backend to restart. This page will reload automatically."; }
  setTimeout(pollUpdate,1500);
 }
-$("update-app").addEventListener("click",async()=>{
+$("update-app").addEventListener("click",()=>{if(!$("update-app").disabled)$("update-confirmation").hidden=false;});
+$("cancel-update").addEventListener("click",()=>{$("update-confirmation").hidden=true;});
+$("confirm-update").addEventListener("click",async()=>{
  if(appUpdating||mutating||$("update-app").disabled)return;
+ $("update-confirmation").hidden=true;
  updatePreviousJob=updateJob;updateJob=null;updateStarted=Date.now();updateBusy(true);$("global-error").hidden=true;$("update-status").textContent="Update queued.";
  try{
   const state=await api("/api/app/update",{});updateJob=state.job_id;updateStarted=Date.now();pollUpdate();
@@ -173,7 +176,7 @@ $("update-app").addEventListener("click",async()=>{
 });
 $("reload-app").addEventListener("click",()=>{if(!mutating&&!appUpdating)window.location.reload();});
 async function loadRelease(){const health=await api("/health"),release=health.release||{version:health.version},day=/^\d{4}-\d{2}-\d{2}$/.test(release.date||"")?release.date.split("-").reverse().join("."):"—",hash=/^[0-9a-f]{8}$/.test(release.git_hash||"")?release.git_hash:"—";$("release-info").textContent=`v${release.version||"—"} | ${hash} | ${day}`;}
-async function resumeUpdate(){if(!localAdmin)return;const state=await api("/api/app/update/status");updateJob=state.job_id;$("update-status").textContent=state.phase==="complete"?"Update complete.":state.message;if(!["idle","complete","failed"].includes(state.phase)){updateStarted=Date.now();updateBusy(true);pollUpdate();}}
+async function resumeUpdate(){if(!updateAllowed)return;const state=await api("/api/app/update/status");updateJob=state.job_id;$("update-status").textContent=state.phase==="complete"?"Update complete.":state.message;if(!["idle","complete","failed"].includes(state.phase)){updateStarted=Date.now();updateBusy(true);pollUpdate();}}
 document.querySelectorAll("[data-tab]").forEach(button=>button.addEventListener("click",()=>{const tab=button.dataset.tab;for(const id of ["overview","settings"])$(id).hidden=tab!==id;document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b===button));}));
 for(const [device,id] of [["heater","heater"],["heater2","heater2"],["hot_water","hot-water"]])$(id+"-mode").addEventListener("change",event=>{const mode=event.target.value;mutation(async()=>{toast("Checking the Smartfox mode change.");const result=await api("/api/smartfox/heater",{device,mode,request_id:crypto.randomUUID()});if(result.status!=="confirmed")throw new Error(result.message);toast(result.message);});});
 $("station-mode").addEventListener("change",event=>{const mode=event.target.value,active=activeStates.has(latest?.charging?.status),allowStale=!$("stale-consent").hidden&&$("allow-stale").checked;mutation(async()=>{if(mode==="M+"&&!active){const body={target_percent:Number($("target").value),request_id:crypto.randomUUID()};if(allowStale)body.allow_stale=true;$("allow-stale").checked=false;targetEditing=false;const result=await api("/api/charging/start",body);toast(result.message);}else{const result=await api("/api/smartfox/charger-mode",{mode,request_id:crypto.randomUUID()});if(result.status!=="confirmed")throw new Error(result.message);toast(result.message);}});});
@@ -187,6 +190,14 @@ $("stop").addEventListener("click",()=>mutation(async()=>{const result=await api
 $("config-form").addEventListener("submit",event=>{event.preventDefault();mutation(async()=>{const value={smartfox:{host:$("host").value.trim(),port:Number($("port").value),unit_id:Number($("unit").value),firmware:$("firmware").value,poll_seconds:Number($("sf-poll").value),timeout_seconds:Number($("sf-timeout").value),profile:$("profile").value,word_order:$("word-order").value,interpretation_confirmed:$("interpretation").checked},skoda:{vin:$("vin").value.trim(),poll_seconds:Number($("car-poll").value),stale_seconds:Number($("car-stale").value)}};const result=await api("/api/config",value);await loadConfig();toast(result.message);});});
 $("key-form").addEventListener("submit",event=>{event.preventDefault();mutation(async()=>{try{const result=await api("/api/key",{key:$("api-key").value,persist:$("persist").checked});await loadConfig();toast(result.message);}finally{$("api-key").value="";}});});
 $("clear-key").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/key/clear",{});await loadConfig();toast(result.message);}));
+$("show-diagnostics").addEventListener("click",async()=>{
+ const button=$("show-diagnostics");button.disabled=true;
+ try{const report=await api("/api/diagnostics");
+  $("diagnostic-json").textContent=JSON.stringify(report,null,2);$("diagnostic-json").hidden=false;
+  const causes={missing_soc:"Stopped because vehicle data became too old.",missing_initial_soc:"Stopped because no new vehicle data arrived after start.",phase_wait:"Stopped during charging preparation.",target:"Stopped at the monitored target."};
+  $("diagnostic-summary").textContent=causes[report.session?.stop_cause]||"Current cached status. Diagnostics do not query the vehicle.";
+ }catch(e){$("diagnostic-summary").textContent=e.message;}finally{button.disabled=false;}
+});
 async function init(){try{csrf=(await api("/api/session")).csrf;await loadRelease();await loadConfig();await refresh();refreshTimer=setInterval(refresh,10000);await resumeUpdate();}catch(e){error(e.message);}}
 function updateHeaderClock(){
  const now=new Date(),locale=CitiFoxI18n.locale(),clock=$("header-clock");

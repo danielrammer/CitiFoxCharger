@@ -1,6 +1,6 @@
 # Communication and data flow
 
-This describes the implementation shipped with **CitiFoxCharger 1.8.10**, checked against the source on **19 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
+This describes the implementation shipped with **CitiFoxCharger 1.8.11**, checked against the source on **19 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
 
 ## System overview
 
@@ -118,10 +118,11 @@ The browser never sends the Škoda API key to SMARTFOX or contacts the cloud dir
 | `POST /api/key`, `POST /api/key/clear` | Local-only API-key setup / removal. |
 | `POST /api/skoda/command` | Local-only guarded direct vehicle command route. |
 | `POST /api/smartfox/command` | Legacy local route; Modbus writes remain blocked. |
-| `POST /api/app/update`, `GET /api/app/update/status` | Local-only update job and status. |
+| `GET /api/diagnostics` | Authenticated local/home-network cached diagnostics; allowlisted fields, no device calls. |
+| `POST /api/app/update`, `GET /api/app/update/status` | Local/home-network update job and status, with the existing update guards. |
 | `POST /api/app/restart`, `POST /api/app/quit` | Local-only backend process control. |
 
-Mutations require the session/CSRF and origin checks. Remote access permits only refresh, combined charging start/stop/target and the requested SMARTFOX output controls. The page-reload button reloads the browser document; it does not invoke restart or send a charging command.
+Mutations require the session/CSRF and origin checks. Remote access permits refresh, combined charging start/stop/target, the requested SMARTFOX output controls, sanitized diagnostics and confirmed Git updates. The page-reload button reloads the browser document; it does not invoke restart or send a charging command.
 
 ## Manual start and target stop
 

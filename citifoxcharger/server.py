@@ -12,6 +12,7 @@ from .config import ConfigStore
 from .modbus import WRITE_BLOCK
 from .secrets_store import SecretStore
 from .service import Service
+from .diagnostics import report as diagnostic_report
 from .skoda import IntegrationError
 from .instance import InstanceLock
 from .app_update import AppUpdater
@@ -32,7 +33,7 @@ class LocalServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False
 
-    def __init__(self, port, service, *, address="127.0.0.1", network_auth=None, tls=None):
+    def __init__(self, port, service, *, address="127.0.0.1", network_auth=None, tls=None, updater=None):
         if bool(network_auth) != bool(tls):
             raise ValueError("Network access requires HTTPS and a configured access policy.")
         if address != "127.0.0.1":
@@ -44,7 +45,7 @@ class LocalServer(ThreadingHTTPServer):
         super().__init__((address, port), Handler)
         self.service = service
         self.release = release_info()
-        self.updater = AppUpdater(Path(__file__).resolve().parent.parent,service.config.directory,self.server_port)
+        self.updater = updater if updater is not None else AppUpdater(Path(__file__).resolve().parent.parent,service.config.directory,self.server_port)
         self.update_state()
         self.session = secrets.token_urlsafe(32)
         self.csrf = secrets.token_urlsafe(32)
@@ -193,7 +194,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/config":
             with service.lock:
                 self.reply(200, {"config": service.config.value, "key": service.secrets.status(),
-                                 "access":{"local_admin":self.server.network_auth is None},"network":service.network})
+                                 "access":{"local_admin":self.server.network_auth is None,"can_update":True},"network":service.network})
+        elif path == "/api/diagnostics":
+            snapshot = service.diagnostic_snapshot()
+            snapshot["backend_version"] = __version__
+            self.reply(200, diagnostic_report(snapshot, live=True))
         elif path == "/api/status":
             try:
                 self.server.update_state()
@@ -201,16 +206,14 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 self.reply(500, {"error": "Internal read error. Check configuration and connections."})
         elif path == "/api/app/update/status":
-            if self.server.network_auth:
-                self.reply(403,{"error":"Manage updates directly on the tablet."})
-            else:self.reply(200,self.server.update_state())
+            self.reply(200,self.server.update_state())
         else:
             self.reply(404, {"error": "Not found."})
 
     def do_POST(self):
         if not self.valid_request(mutation=True) or not self.authenticated(mutation=True):
             return
-        remote_actions = {"/api/refresh","/api/charging/start","/api/charging/stop","/api/charging/target",
+        remote_actions = {"/api/app/update","/api/refresh","/api/charging/start","/api/charging/stop","/api/charging/target",
                           "/api/smartfox/heater","/api/smartfox/charger-mode"}
         if self.server.network_auth and urlsplit(self.path).path not in remote_actions:
             self.reply(403,{"error":"Configure device access and the backend directly on the tablet."})
@@ -327,7 +330,7 @@ def make_server(port, data_dir):
             network = read_network(data_dir)
             if network:
                 remote = LocalServer(network["port"],server.service,address=network["host"],
-                                     network_auth=NetworkAuth(network),tls=tls_context(data_dir))
+                                     network_auth=NetworkAuth(network),tls=tls_context(data_dir),updater=server.updater)
                 server.remote_server = remote
                 server.remote_thread = threading.Thread(target=remote.serve_forever,kwargs={"poll_interval":.25},daemon=True)
                 server.remote_thread.start()

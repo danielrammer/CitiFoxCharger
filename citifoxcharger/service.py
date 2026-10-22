@@ -51,7 +51,8 @@ class Service:
                     or not isinstance(car.get("operations"), list)
                     or any(action not in ("startCharging", "stopCharging") for action in car["operations"])):
                 return
-            car["stale"] = not -300 <= time.time()-captured <= self.config.value["skoda"]["stale_seconds"]            car['message'] = 'Restored previous vehicle data with their original timestamps.'
+            car["stale"] = not -300 <= time.time()-captured <= self.config.value["skoda"]["stale_seconds"]
+            car['message'] = 'Restored previous vehicle data with their original timestamps.'
             self.cache["skoda"] = car
             self.last_success["skoda"] = time.monotonic()-age
             self.car.key_expires_at = car.get("key_expires_at")
@@ -168,6 +169,58 @@ class Service:
         self.charging.save(target_probe_count=count+1, target_probe_capture=car["captured_at"],
                            target_probe_scheduled_at=utcnow())
         self.next_due["skoda"] = max(clock, attempted+60)
+
+    def prioritize_freshness_poll(self):
+        """Up to three earlier reads per unchanged report before the SOC age limit.
+
+        These reads only query the cloud cache; they cannot wake the vehicle.
+        Persist the bound across restarts, respect server cooldowns and leave
+        at least two calls available for commands.
+        """
+        session, car = self.charging.value, self.cache.get("skoda", {})
+        now, clock = time.time(), time.monotonic()
+        captured = timestamp(car.get("captured_at"))
+        max_age = min(900, self.config.value["skoda"]["stale_seconds"])
+        try:
+            remaining = int(self.car.quota_remaining)
+        except (TypeError, ValueError):
+            return
+        if (not self.charging.active or session.get("stop_requested")
+                or session.get("phase_start_pending") or session.get("awaiting_fresh_soc")
+                or session.get("vin") != self.config.value["skoda"]["vin"]
+                or not car.get("available") or car.get("code") not in (None,"ok","partial")
+                or captured is None or not max(60,max_age-300) <= now-captured < max_age
+                or remaining <= 3 or self.car.quota_reset_at <= self.car.clock()
+                or self.car.blocked_until > self.car.clock()):
+            return
+        count = session.get("freshness_probe_count",0) if session.get("freshness_probe_capture") == car["captured_at"] else 0
+        if type(count) is not int or not 0 <= count < 3:
+            return
+        attempted, due = self.last_attempt.get("skoda"), self.next_due.get("skoda")
+        if attempted is None or due is None:
+            return
+        earlier = max(clock, attempted+90)
+        if earlier >= due or now+max(0,earlier-clock) >= captured+max_age:
+            return
+        self.charging.save(freshness_probe_count=count+1,freshness_probe_capture=car["captured_at"],
+                           freshness_probe_scheduled_at=utcnow())
+        self.next_due["skoda"] = earlier
+
+    def diagnostic_snapshot(self):
+        """Read cached state only: diagnostics never query devices or send commands."""
+        with self.lock:
+            car = copy.deepcopy(self.cache.get("skoda",{}))
+            captured = timestamp(car.get("captured_at"))
+            if captured is None or not -300 <= time.time()-captured <= self.config.value["skoda"]["stale_seconds"]:
+                car["stale"] = True
+            return {"skoda":car,
+                    "smartfox":copy.deepcopy(self.cache.get("smartfox",{})),
+                    "charging":copy.deepcopy(self.charging.value),
+                    "last_command":copy.deepcopy(self.last_command),
+                    "monitoring":{"running":self.worker is not None and self.worker.is_alive()},
+                    "server_at":utcnow(),
+                    "freshness_limit_seconds":min(900,self.config.value["skoda"]["stale_seconds"]),
+                    "next_skoda_seconds":max(0,int(self.next_due.get("skoda",0)-time.monotonic()))}
 
     def stop_worker(self):
         self.worker_stop.set()
@@ -322,6 +375,7 @@ class Service:
                 self.charging.stop_if_target_reached()
                 self.update("smartfox")
                 self.prioritize_target_poll()
+                self.prioritize_freshness_poll()
                 self.update("skoda")
             car = self.cache.get("skoda", {"available":False,"stale":True})
             captured = timestamp(car.get("captured_at"))

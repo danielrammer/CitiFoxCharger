@@ -23,7 +23,14 @@ class ChargingSession:
                 data = json.loads(self.path.read_text(encoding="utf-8"))
                 if not isinstance(data, dict) or type(data.get("target_percent")) is not int or not 1 <= data["target_percent"] <= 100:
                     raise ValueError()
-                self.value = data                restored = {'complete':'The previous charging session completed.',                            'closed':'The previous monitoring session was explicitly closed.',                            'error':'The previous session needs attention. Please check the vehicle and Smartfox.'}                if data.get('status') in restored:                    self.value['message'] = restored[data['status']]
+                self.value = data
+                restored = {'complete':'The previous charging session completed.',
+                            'closed':'The previous monitoring session was explicitly closed.',
+                            'error':'The previous session needs attention. Please check the vehicle and Smartfox.'}
+                if data.get('status') in restored:
+                    self.value['message'] = self.safety_stop_message() if self.safety_stopped else restored[data['status']]
+                    if self.safety_stopped and data.get('status') == 'complete':
+                        self.value['status'] = 'error'
                 # Restart never repeats a start. Recover through current telemetry and stop/restore only.
                 if data.get("status") == "starting":
                     self.value.update(status="interrupted", phase_start_pending=False,
@@ -327,11 +334,23 @@ class ChargingSession:
         secured = "Smartfox is Off. Vehicle stop confirmation is pending." if self.value.get("auto_restored") else "Wallbox Off is unconfirmed. Please check charging."
         self.save(stop_reason=reason, stop_cause=cause, message=reason + " " + secured)
 
+    @property
+    def safety_stopped(self):
+        return self.value.get("stop_cause") in ("missing_soc","missing_initial_soc","phase_wait")
+
+    def safety_stop_message(self):
+        reason = {"missing_soc":"The target cannot be monitored without current vehicle data.",
+                  "missing_initial_soc":"No new vehicle data within five minutes.",
+                  "phase_wait":"Charging preparation failed before the target."}.get(self.value.get("stop_cause"),"")
+        return f"Target {self.value['target_percent']} % was not confirmed reached. " + reason
+
     def finish_stop(self, message):
         # Release the temporary OFF only after newer vehicle telemetry confirms stopped.
         self.save(stop_guard=False)
         self.restore_auto()
-        self.save(status="complete", message=message + f" Smartfox is set to {self.normal_name}.", completed_at=utcnow())
+        self.save(status="error" if self.safety_stopped else "complete",
+                  message=self.safety_stop_message() if self.safety_stopped else message + f" Smartfox is set to {self.normal_name}.",
+                  completed_at=utcnow(),vehicle_stop_confirmed=True)
 
     def stop_if_target_reached(self):
         car = self.service.cache.get("skoda", {})

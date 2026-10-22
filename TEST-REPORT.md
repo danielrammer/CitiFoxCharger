@@ -1,8 +1,10 @@
-# Validation report · 1.8.10
+# Validation report · 1.8.11
 
-Date: **19 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
+Date: **22 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
 ## Existing baseline and new work
+
+Version **1.8.11** adds authenticated local/HTTPS diagnostics with cached-only allowlisting, remote updates in both network modes with a confirmation step, and bounded pre-expiry freshness reads. Confirmed SOC-data/phase preparation safety stops retain their cause and are no longer labelled successful completion, including legacy completed safety-stop records restored after upgrade. Tests cover recovery from a fresh cloud response before expiry, bounded probes across restarts, quota/cooldown/stop gates, minimum spacing, unchanged safety shutdown, preserved stop cause, sanitized GET-only diagnostics, and remote authentication/origin/session/CSRF/update guards. The full offline suite passed **294 tests**, followed by passing final charging/service checks and the additional shared-updater network regression (**295 tests in total**). Remote and local listeners share one updater and the loopback control port. The simulated German dark and light safety-stop overview fits 800×1280, 640×1024, 534×854 and 1280×800; the optional older-data consent expands on request. The diagnostics view, download link, disabled remote device configuration, update confirmation and simulated reconnect were checked in the browser. No real vehicle or charger commands were sent during validation.
 
 Version **1.8.10** replaces the charging animation car with a transparent logo-derived raster sprite. The fixed animation container, power-driven visibility and reduced-motion support remain in place. The server allowlists only its named PNG route; charging logic is unchanged. All 38 service/server tests pass, including the new PNG route. German/light and English/dark browser views fit 800×1280, 640×1024, 534×854 and 1280×800 without scrolling. Portfolio screenshots use simulated data and are both 800×1280 portrait JPEGs. Browser console shows no errors.
 

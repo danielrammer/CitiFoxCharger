@@ -554,6 +554,86 @@ class ChargingTests(unittest.TestCase):
         self.assertTrue(result['charging']['stop_guard'])
         self.assertEqual(self.effects.count('start'),1)
 
+    def freshness_fixture(self):
+        self.force(83)
+        captured=(datetime.now(timezone.utc)-timedelta(minutes=14)).isoformat()
+        self.service.cache['skoda'].update(soc=40,available=True,stale=False,captured_at=captured,code='ok')
+        self.service.car.quota_remaining='16'
+        self.service.car.quota_reset_at=self.service.car.clock()+1800
+        self.service.last_attempt['skoda']=time.monotonic()-100
+        self.service.next_due['skoda']=time.monotonic()+600
+        return captured
+
+    def test_freshness_query_can_recover_before_age_limit_instead_of_stopping(self):
+        self.freshness_fixture()
+        self.update_soc(50)
+        # Keep the cached older report, but have the next cloud GET return fresh data.
+        old=(datetime.now(timezone.utc)-timedelta(minutes=14)).isoformat()
+        self.service.cache['skoda']['captured_at']=old
+        self.service.next_due['skoda']=time.monotonic()+600
+        self.service.status()
+        self.assertEqual(self.service.cache['skoda']['soc'],50)
+        self.assertNotIn('stop',self.effects)
+        self.assertEqual(self.service.charging.value['freshness_probe_count'],1)
+
+    def test_freshness_probes_are_bounded_per_report_and_survive_restart(self):
+        captured=self.freshness_fixture()
+        for expected in (1,2,3):
+            self.service.next_due['skoda']=time.monotonic()+600
+            self.service.prioritize_freshness_poll()
+            self.assertEqual(self.service.charging.value['freshness_probe_count'],expected)
+        self.service.charging=ChargingSession(self.service,self.web)
+        due=time.monotonic()+600;self.service.next_due['skoda']=due
+        self.service.prioritize_freshness_poll()
+        self.assertEqual(self.service.next_due['skoda'],due)
+        self.assertEqual(self.service.charging.value['freshness_probe_capture'],captured)
+
+    def test_freshness_probes_respect_quota_cooldown_and_stop(self):
+        for change in (lambda:setattr(self.service.car,'quota_remaining','3'),
+                       lambda:setattr(self.service.car,'blocked_until',self.service.car.clock()+300),
+                       lambda:self.service.charging.save(stop_requested=True),
+                       lambda:self.service.cache['skoda'].update(available=False)):
+            with self.subTest(change=change):
+                self.freshness_fixture();change()
+                due=self.service.next_due['skoda'];self.service.prioritize_freshness_poll()
+                self.assertEqual(self.service.next_due['skoda'],due)
+                self.assertNotIn('freshness_probe_count',self.service.charging.value)
+                self.service.charging.save(status='complete',stop_requested=False)
+                self.service.car.blocked_until=0
+
+    def test_freshness_poll_does_not_shorten_minimum_spacing_or_duplicate_due_read(self):
+        self.freshness_fixture()
+        self.service.cache['skoda']['captured_at']=(datetime.now(timezone.utc)-timedelta(minutes=12)).isoformat()
+        self.service.last_attempt['skoda']=time.monotonic()-10
+        self.service.prioritize_freshness_poll()
+        self.assertGreater(self.service.next_due['skoda'],time.monotonic()+79)
+        count=self.service.charging.value['freshness_probe_count']
+        self.service.prioritize_freshness_poll()
+        self.assertEqual(self.service.charging.value['freshness_probe_count'],count)
+
+    def test_missing_soc_stop_is_an_error_after_confirmation_and_after_restart(self):
+        self.force(83)
+        self.service.cache['skoda'].update(soc=40,stale=True,
+            captured_at=(datetime.now(timezone.utc)-timedelta(minutes=16)).isoformat())
+        self.service.charging.next_attempt=0;self.service.charging.tick()
+        self.update_soc(40,'CHARGING_INTERRUPTED')
+        self.service.charging.next_attempt=0;self.service.status()
+        session=self.service.charging.value
+        self.assertEqual(session['status'],'error')
+        self.assertEqual(session['stop_cause'],'missing_soc')
+        self.assertIn('83 % was not confirmed reached',session['message'])
+        self.assertTrue(session['vehicle_stop_confirmed'])
+        self.assertEqual(self.web.mode,'A+')
+        self.service.charging=ChargingSession(self.service,self.web)
+        self.assertIn('without current vehicle data',self.service.charging.value['message'])
+        self.assertEqual(self.effects.count('start'),1)
+
+    def test_old_complete_safety_stop_is_recovered_as_unsuccessful(self):
+        self.service.charging.save(status='complete',target_percent=83,stop_cause='missing_soc',stop_requested=True)
+        self.service.charging=ChargingSession(self.service,self.web)
+        self.assertEqual(self.service.charging.value['status'],'error')
+        self.assertIn('83 % was not confirmed reached',self.service.charging.value['message'])
+
     def test_later_soc_age_expiry_does_not_leave_manual_charging_running(self):
         self.force(82)
         self.service.cache['skoda'].update(soc=75,stale=True,

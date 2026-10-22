@@ -160,3 +160,11 @@ button,a,input,select,summary{-webkit-tap-highlight-color:transparent}button,sum
 /* Clock occupies the existing brand height; it never adds a header row. */
 .brand-info strong{line-height:22px}.header-clock{display:block;white-space:nowrap;font-size:11px;line-height:14px;font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums}
 @media(max-width:620px){.brand-info strong{line-height:18px}.header-clock{font-size:10px;line-height:12px}}
+
+.diagnostic-actions{display:flex;flex-wrap:wrap;gap:8px}.diagnostic-actions .button{font-size:14px;text-decoration:none;min-height:44px}.diagnostic-json{max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;padding:12px;border:1px solid var(--line);border-radius:8px}.session-status.safety-stopped{border-left:3px solid #cf6a4c;background:#b84d321a}
+
+@media(orientation:portrait) and (min-width:480px) and (max-height:1100px){#overview .stale-consent{margin-top:8px;padding:8px 10px;gap:8px}#overview .stale-consent strong{font-size:12px;line-height:1.35}#overview .stale-consent small{font-size:11px;line-height:1.35;margin-top:3px}#overview .session-status.safety-stopped{font-size:12px;line-height:1.4}}
+
+.stale-consent>summary{min-height:44px;display:flex;align-items:center;font-size:12px;cursor:pointer}.stale-consent>.check{margin:0;min-height:44px}.stale-consent>summary:before{content:"›";margin-right:8px;font-size:20px}.stale-consent[open]>summary:before{transform:rotate(90deg)}
+
+@media(orientation:portrait) and (min-width:480px) and (max-height:1100px){#overview .charging-card{padding-block:12px}#overview .stale-consent:not([open]){padding-block:0;margin-top:4px}#overview .target-control{margin-top:8px}#overview .card-bottom{margin-top:2px}}

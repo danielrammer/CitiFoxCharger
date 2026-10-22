@@ -13,7 +13,7 @@ Confirm the suggested tablet IPv4 address. The suggestion uses the route to Smar
 Choose one access mode at the password prompt:
 
 - **Password protected:** enter a separate password of 12–128 characters and repeat it. Other devices sign in as **citifox**. The password is stored only as a salted PBKDF2-HMAC-SHA256 hash.
-- **Without a password:** leave the prompt empty and press Enter. This explicitly allows **all devices on the reachable home network to view the dashboard and operate charging and heaters**. No login is required. HTTPS, session/CSRF checks, local-only administration and network restrictions stay in place.
+- **Without a password:** leave the prompt empty and press Enter. This explicitly allows **all devices on the reachable home network to view the dashboard and operate charging and heaters, view/download sanitized diagnostics and trigger confirmed application updates**. No login is required. HTTPS, session/CSRF checks, local-only credential/device administration and network restrictions stay in place.
 
 Existing configurations without an explicit mode remain password protected. An invalid configuration does not silently become passwordless. To change the mode, run Setup-Network.cmd again; certificate regeneration requires importing the new public certificate on client devices.
 
@@ -64,3 +64,8 @@ Setup-Firewall.cmd --data-dir "C:\MyDataFolder"
 Use the same profile already used by the backend. Setup windows remain open after success and failure. Certificate creation, strict TLS, both authentication modes and permission boundaries are tested on loopback. A successful physical second-device connection to this wall tablet still requires confirmation.
 
 For the communication diagram and exact device/cloud interfaces, see [COMMUNICATION.md](COMMUNICATION.md). Use **HTTPS**, not plain HTTP, on the network listener port 8766; HTTP sent to that TLS port can be reset before any application response.
+
+
+## Remote diagnostics and updates
+
+From Settings, authenticated home-network sessions can view/download `GET /api/diagnostics`, start `POST /api/app/update` and follow `GET /api/app/update/status`. This is also enabled in explicitly configured passwordless mode: every reachable home-network device can trigger an update. Update confirmation appears before submitting; existing charging guards, encrypted-key requirement, expected-repository/fast-forward checks, private-host/origin/session/CSRF checks and backend restart verification remain. Standalone backend restart/exit and key/device configuration stay local-only. Diagnostics use cached allowlisted data and never trigger a vehicle request or charging command. The first upgrade to 1.8.11 must still be launched on the tablet because earlier backends reject remote updates.

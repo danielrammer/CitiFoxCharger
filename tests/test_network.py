@@ -132,23 +132,23 @@ class NetworkHttpsTests(unittest.TestCase):
     def test_passwordless_https_retains_remote_permissions_session_origin_and_csrf(self):
         config={**configuration(),'authentication':'none','salt':None,'password_hash':None,'iterations':0}
         self.server.network_auth=NetworkAuth(validate_network(config))
-        for path in ('/','/api/session','/health','/api/status'):
+        for path in ('/','/api/session','/health','/api/status','/api/diagnostics','/api/app/update/status'):
             self.assertEqual(self.call(path,Authorization='')[0],200)
         status,_,headers=self.call('/api/status',Authorization='',Cookie='')
         self.assertEqual(status,401)
         self.assertNotIn('WWW-Authenticate',headers)
         self.assertEqual(self.call('/api/refresh',{},Authorization='',Origin='https://other.example')[0],403)
         self.assertEqual(self.call('/api/refresh',{},Authorization='',**{'X-CSRF-Token':'wrong'})[0],403)
-        for path in ('/api/key','/api/config','/api/app/quit','/api/app/restart','/api/app/update'):
+        for path in ('/api/key','/api/config','/api/app/quit','/api/app/restart'):
             self.assertEqual(self.call(path,{},Authorization='')[0],403)
-        self.assertEqual(self.call('/api/app/update/status',Authorization='')[0],403)
+        self.assertEqual(self.call('/api/app/update/status',Authorization='')[0],200)
         config=json.loads(self.call('/api/config',Authorization='')[1])
         self.assertFalse(config['access']['local_admin'])
         with patch.object(self.service,'refresh_now',return_value={'message':'queried'}):
             self.assertEqual(self.call('/api/refresh',{},Authorization='')[0],200)
 
     def test_entire_site_requires_auth_even_static_session_and_health(self):
-        for path in ('/','/app.js','/i18n.js','/api/session','/health','/api/status'):
+        for path in ('/','/app.js','/i18n.js','/api/session','/health','/api/status','/api/diagnostics','/api/app/update/status'):
             status,body,headers=self.call(path,Authorization='')
             self.assertEqual(status,401)
             self.assertIn('WWW-Authenticate',headers)
@@ -160,6 +160,38 @@ class NetworkHttpsTests(unittest.TestCase):
         self.assertIn('Secure',headers['Set-Cookie'])
         for change in ({'Origin':'http://'+self.host},{'X-CSRF-Token':'wrong'},{'Host':'other.example'}):
             self.assertEqual(self.call('/api/refresh',{},**change)[0],403)
+
+    def test_passwordless_remote_updates_require_session_origin_csrf_and_use_existing_guard(self):
+        self.server.network_auth=NetworkAuth(validate_network({**configuration(),'authentication':'none','salt':None,'password_hash':None,'iterations':0}))
+        with patch.object(self.server.updater,'launch',return_value={'phase':'queued','job_id':'a'*32}) as launch:
+            self.assertEqual(self.call('/api/app/update',{},Authorization='',Cookie='')[0],401)
+            self.assertEqual(self.call('/api/app/update',{},Authorization='',Origin='https://other.example')[0],403)
+            self.assertEqual(self.call('/api/app/update',{},Authorization='',**{'X-CSRF-Token':'wrong'})[0],403)
+            launch.assert_not_called()
+            self.assertEqual(self.call('/api/app/update',{},Authorization='')[0],202)
+            launch.assert_called_once_with(self.service)
+        self.service.charging.save(status='monitoring')
+        self.assertEqual(self.call('/api/app/update',{},Authorization='')[0],400)
+
+    def test_remote_listener_uses_parent_updater_and_local_control_port(self):
+        parent=LocalServer(0,self.service)
+        remote=None
+        try:
+            remote=LocalServer(0,self.service,network_auth=NetworkAuth(configuration()),tls=self.tls,updater=parent.updater)
+            self.assertIs(remote.updater,parent.updater)
+            self.assertEqual(remote.updater.port,parent.server_port)
+            self.assertNotEqual(remote.updater.port,remote.server_port)
+        finally:
+            if remote:remote.server_close()
+            parent.server_close()
+
+    def test_remote_diagnostics_use_cached_allowlist_only(self):
+        self.service.cache['skoda']={'soc':40,'vin':'PRIVATE-VIN','message':'PRIVATE-KEY'}
+        with patch.object(self.service,'status',side_effect=AssertionError('must not poll')):
+            code,body,_=self.call('/api/diagnostics')
+        self.assertEqual(code,200)
+        self.assertNotIn('PRIVATE',body.decode())
+        self.assertEqual(json.loads(body)['car']['soc'],40)
 
     def test_remote_vehicle_and_heat_controls_use_the_existing_single_service(self):
         with patch.object(self.service,'change_target',return_value={'target_percent':82}) as target:

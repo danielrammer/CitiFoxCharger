@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.8.10
+# CitiFoxCharger for Windows · 1.8.11
 
 <img src="citifoxcharger/web/brand/logo.png" alt="CitiFoxCharger logo: smooth electric city car, red fox tail and charging plug" width="620">
 
@@ -10,7 +10,7 @@ Both light and dark appearance are available. The light palette uses darker labe
 
 The header displays the current date and time from the browser device, independently of vehicle telemetry. It refreshes on returning to the page and uses the selected interface language. The clock fits inside the existing header height.
 
-The Settings page identifies the running backend as **v1.8.10 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
+The Settings page identifies the running backend as **v1.8.11 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
 
 ## Architecture and communication
 
@@ -56,7 +56,7 @@ For a custom profile, pass `--data-dir "C:\MyDataFolder"` to the Python entry po
 
 ## Updating from GitHub
 
-On the tablet, open **Settings → Application update → Update & restart**. It performs the same protected fast-forward Git update, restarts the backend with the same profile/port and reloads the current browser page. It does not start charging or open another browser window. Install 1.8.0 once using **Update.cmd** to obtain this new button. The button is local administration, so it is hidden on the HTTPS home-network view. Existing charging/shutdown guards and the Windows-encrypted key requirement remain in force.
+Open **Settings → Application update → Update & restart**, locally or from another device on the configured HTTPS home-network connection, then confirm the update. It performs the same protected fast-forward Git update, restarts the backend with the same profile/port and reloads the current browser page. It does not start charging or open another browser window. Install 1.8.11 once from the tablet to enable remote updates and diagnostics. Remote updates are explicitly permitted in both password-protected and passwordless network modes. Existing charging/shutdown guards and the Windows-encrypted key requirement remain in force.
 
 A detached helper survives the backend shutdown. Progress appears in the page; reconnecting refreshes the local browser session protection before polling the job. Duplicate requests reuse a running job. Each Git operation has a two-minute timeout. Changes to tracked source, incoming file collisions, unexpected remotes or divergent history remain blocked. If an update fails after shutdown, the helper attempts to restart the program without starting a charge and keeps the result marked failed. Details are written to **update.log** in the data profile; **Update.cmd** and **Start.cmd** remain recovery options. Git for Windows and network access to the repository must already be available. Reading the public repository does not require a GitHub sign-in.
 
@@ -170,3 +170,16 @@ Heater 1 shows **Automatic · surplus** in its existing status area when Smartfo
 The selected smooth CitiFoxCharger logo combines a green city car, red fox tail and charging plug. Its symbol appears in the header, browser favicon and touch icon. Transparent PNG assets and usage notes are in [BRANDING.md](BRANDING.md).
 
 The repository was reviewed before public publication, including reachable Git history and excluded runtime files. See [PUBLICATION-REVIEW.md](PUBLICATION-REVIEW.md) for scope, findings and limitations. API keys and personal configuration belong only in the local Windows profile.
+
+
+### Diagnostics in Settings
+
+Open **Settings → Diagnostics and connection details → Show diagnostics**, or **Download JSON**, locally or over the configured HTTPS home-network listener. `GET /api/diagnostics` uses the current authenticated session and returns a shared allowlisted report: versions, cached SOC and vehicle timestamps, charger status, charging target, stop cause and trigger timestamps, freshness-probe count and monitoring state. It excludes VIN, API keys, passwords, paths, arbitrary upstream text and raw device responses. Opening or downloading diagnostics does not contact devices or send commands. `Diagnostics.cmd` remains available on the tablet.
+
+### Missing vehicle data during charging
+
+The optional start-with-older-data consent is expandable to preserve the compact tablet overview.
+
+Within the last five minutes before the SOC age limit, the scheduler can advance up to three cloud reads per unchanged vehicle report, at least 90 seconds apart, when quota and server cooldown permit. The two-command reserve is retained. Regular earlier reads are reused; restarting does not reset the probe bound. This reads the cloud cache and cannot force the car to measure again.
+
+If the cloud still supplies no current SOC, the existing maximum 15-minute monitoring age limit remains. A confirmed safety stop is shown as **target not confirmed reached**, with the cause retained across restarts, rather than successful completion. After vehicle stop confirmation the existing A+ restoration remains; schedules can charge later. No automatic start retry is introduced.
