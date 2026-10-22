@@ -1,8 +1,12 @@
-# Validation report · 1.8.13
+# Validation report · 1.8.14
 
 Date: **22 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
 ## Existing baseline and new work
+
+Version **1.8.14** stops an active session locally when known request quota/cooldown prohibits further SOC reads, before housekeeping throttling. It blocks new starts with a known budget below four remaining calls, while retaining local Stop and command reserve behavior. Four new regressions reproduce the frozen 81% / 83% target case with a ten-minute-old report and two calls left, cloud rate limiting, start-budget boundaries and target-report priority. Restart recovery now verifies precautionary Off without replaying Start; confirmation and restart retain the unsuccessful `request_quota` cause. The full offline suite passes **306 tests**. No exact SOC target or native limit enforcement is claimed.
+
+Browser QA uses simulated data only. The notebook Settings page at **1920×1080** uses aligned network/appearance cards and consistent full-width diagnostics/update sections; remote device fields share a full-width card instead of leaving an empty second column. At widths up to 900 px, Settings use one column. The operating view retains no page overflow at **800×1280, 640×1024, 534×854 and 1280×800**. Dark and light Settings were checked. No live charging, heating or API commands were sent during these tests.
 
 Version **1.8.13** fixes the diagnostic download using a fixed-name JSON attachment route plus a session-authenticated GUI Blob download. All **40 service/server** and **23 network/HTTPS tests** pass, including unauthenticated rejection, passwordless remote download, no device calls, UTF-8 JSON and no-store headers. A real browser click produced `CitiFoxCharger-Diagnostics.json`; the downloaded simulated report was parsed and checked for omitted VIN/API key. Only that synthetic test download was removed afterward. Charging logic, settings and target monitoring are unchanged.
 

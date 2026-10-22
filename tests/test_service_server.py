@@ -86,6 +86,7 @@ class ServiceTests(unittest.TestCase):
         self.service.next_due["skoda"] = 0
         result = self.service.status()
         self.assertTrue(result["controls"]["stop"])
+        self.assertFalse(result["controls"]["start"])
         self.assertEqual(result["skoda"]["code"], "quota_reserved")
         self.assertEqual(self.calls, ["GET"])
 
@@ -303,12 +304,12 @@ class ServerTests(unittest.TestCase):
 
     def test_diagnostics_are_authenticated_sanitized_and_do_not_poll_or_command(self):
         self.service.cache['skoda']={'soc':40,'vin':VIN,'message':KEY,'quota_remaining':'16'}
-        self.service.charging.save(status='complete',target_percent=83,stop_cause='missing_soc')
+        self.service.charging.save(status='error',target_percent=83,stop_cause='request_quota')
         with patch.object(self.service,'status',side_effect=AssertionError('must not poll')):
             code,body,headers=self.call('/api/diagnostics')
         self.assertEqual(code,200)
         data=json.loads(body)
-        self.assertEqual(data['session']['stop_cause'],'missing_soc')
+        self.assertEqual(data['session']['stop_cause'],'request_quota')
         self.assertEqual(data['session']['target_percent'],83)
         self.assertEqual(data['backend_version'],data['program_version'])
         self.assertNotIn(VIN,body.decode());self.assertNotIn(KEY,body.decode())

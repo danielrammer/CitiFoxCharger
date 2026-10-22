@@ -319,11 +319,28 @@ class Service:
                 self.next_due[source] = time.monotonic() + error.retry_seconds
         self.next_due[source] = max(self.next_due.get(source, 0), time.monotonic() + self.poll_interval(source))
 
+    def vehicle_read_budget_available(self, after_start=False):
+        """Known cloud limits must not leave a monitored session blind.
+
+        Unknown quota metadata is not proof of exhaustion. With known metadata,
+        leave two commands reserved and, before a start, one call for that start.
+        """
+        now = self.car.clock()
+        if now < self.car.blocked_until:
+            return False
+        try:
+            remaining = int(self.car.quota_remaining)
+        except (ValueError, TypeError):
+            return True
+        return self.car.quota_reset_at <= now or remaining > (3 if after_start else 2)
+
     def can_command(self, action, allow_stale=False):
         current = self.cache.get("skoda", {})
         if self.stopping:
             return False
         if action == "start" and self.app_update_pending:
+            return False
+        if action == "start" and not self.vehicle_read_budget_available(after_start=True):
             return False
         if not self.secrets.key or not self.config.value["skoda"]["vin"]:
             return False
@@ -346,7 +363,7 @@ class Service:
                 max_read_age = max(1200, 2 * self.config.value["skoda"]["poll_seconds"])
             if time.monotonic() - self.last_success.get("skoda", 0) > max_read_age:
                 return False
-        if time.monotonic() < self.car.blocked_until:
+        if self.car.clock() < self.car.blocked_until:
             return False
         if time.monotonic() < self.command_after and (action == "start" or (self.last_command and self.last_command["action"] == "stop")):
             return False

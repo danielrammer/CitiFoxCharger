@@ -634,6 +634,66 @@ class ChargingTests(unittest.TestCase):
         self.assertEqual(self.service.charging.value['status'],'error')
         self.assertIn('83 % was not confirmed reached',self.service.charging.value['message'])
 
+    def test_reserved_quota_stops_below_target_before_housekeeping_and_keeps_off(self):
+        self.force(83)
+        self.service.cache['skoda'].update(soc=81,stale=False,code='quota_reserved',
+            captured_at=(datetime.now(timezone.utc)-timedelta(minutes=10)).isoformat())
+        self.service.car.quota_remaining='2'
+        self.service.car.quota_reset_at=self.service.car.clock()+511
+        self.service.charging.next_attempt=time.monotonic()+60
+        self.service.charging.tick()
+        self.assertEqual(self.effects,['M+','start','OFF','stop'])
+        self.assertEqual(self.web.mode,'OFF')
+        self.assertEqual(self.service.charging.value['stop_cause'],'request_quota')
+        self.assertTrue(self.service.charging.value['stop_guard'])
+        self.assertEqual(self.service.charging.value['stop_trigger_soc'],81)
+        self.service.charging.tick()
+        self.assertEqual(self.effects.count('stop'),1)
+        # Only a newer non-charging report releases OFF; this is not target success.
+        self.service.car.quota_remaining='10'
+        self.update_soc(81,'CHARGING_INTERRUPTED')
+        self.service.charging.next_attempt=0
+        self.service.status()
+        self.assertEqual(self.web.mode,'A+')
+        self.assertEqual(self.service.charging.value['status'],'error')
+        self.service.charging=ChargingSession(self.service,self.web)
+        self.assertIn('request limits',self.service.charging.value['message'])
+
+    def test_rate_limited_cloud_still_secures_local_off(self):
+        self.force(83)
+        self.service.car.blocked_until=self.service.car.clock()+300
+        self.service.charging.next_attempt=time.monotonic()+60
+        self.service.charging.tick()
+        self.assertEqual(self.effects,['M+','start','OFF'])
+        self.assertTrue(self.service.charging.value['stop_guard'])
+        self.assertEqual(self.service.charging.value['stop_cause'],'request_quota')
+
+    def test_insufficient_start_budget_has_no_charger_or_car_effects(self):
+        for remaining in ('0','1','2','3'):
+            with self.subTest(remaining=remaining):
+                self.service.car.quota_remaining=remaining
+                self.service.car.quota_reset_at=self.service.car.clock()+300
+                self.assertFalse(self.service.can_command('start'))
+                self.assertFalse(self.service.can_command('start',allow_stale=True))
+                with self.assertRaises(IntegrationError):
+                    self.force(83)
+                self.assertEqual(self.effects,[])
+        self.service.car.quota_remaining='4'
+        self.assertTrue(self.service.can_command('start'))
+        self.service.car.quota_remaining='2'
+        self.assertTrue(self.service.can_command('stop'))
+        self.service.car.quota_reset_at=self.service.car.clock()-1
+        self.assertTrue(self.service.can_command('start'))
+
+    def test_target_report_takes_priority_over_quota_safety_cause(self):
+        self.force(83)
+        self.service.cache['skoda']['soc']=83
+        self.service.car.quota_remaining='2'
+        self.service.car.quota_reset_at=self.service.car.clock()+300
+        self.service.charging.tick()
+        self.assertEqual(self.service.charging.value['stop_cause'],'target')
+        self.assertEqual(self.web.mode,'OFF')
+
     def test_later_soc_age_expiry_does_not_leave_manual_charging_running(self):
         self.force(82)
         self.service.cache['skoda'].update(soc=75,stale=True,
@@ -1152,7 +1212,7 @@ class ChargingTests(unittest.TestCase):
         def unexpected_read(*args): raise AssertionError("No reads while shutting down")
         self.service.car.read=unexpected_read
         self.service.status()
-        recovered=Service(self.config,self.secrets,self.service.sf,SkodaAdapter(),self.web,PowerGuard(FakePower()))
+        recovered=Service(self.config,self.secrets,self.service.sf,SkodaAdapter(self.service.car.request),self.web,PowerGuard(FakePower()))
         self.addCleanup(recovered.stop_worker)
         self.assertEqual(recovered.charging.value["target_percent"],90)
         self.assertEqual(recovered.charging.value["fresh_soc_deadline"],deadline)
@@ -1164,8 +1224,9 @@ class ChargingTests(unittest.TestCase):
         recovered.car.blocked_until=0
         result=recovered.status()
         self.assertEqual(result["skoda"]["soc"],40)
-        self.assertTrue(result["controls"]["stop"])
-        self.assertEqual(self.effects,["M+","start"])
+        self.assertTrue(result["charging"]["can_stop"])
+        self.assertEqual(result["charging"]["stop_cause"],"request_quota")
+        self.assertEqual(self.effects,["M+","start","OFF","stop"])
 
     def test_config_and_key_removal_blocked_during_monitoring(self):
         self.force()

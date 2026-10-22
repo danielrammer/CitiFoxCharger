@@ -118,7 +118,8 @@ function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=
  const switching=livePhaseSwitch(charger),isCharging=!switching&&(livePower?charger.power_kw>0.1:car.state==="CHARGING"&&!car.stale&&car.available);
  $("car-state").textContent=switching?"Phase switching":isCharging?"Charging":livePower&&charger.mode==="OFF"?"Charger Off":livePower&&charger.status_code===2?"Plugged in · ready":livePower&&(car.state==="CHARGING"||charger.status_code===3)?"No charging power":states[car.state]||"Status unknown";$("charging-dot").classList.toggle("charging",isCharging);$("charging-dot").classList.toggle("switching",switching);document.querySelector(".charging-card").classList.toggle("is-charging",isCharging);
  $("power-reading").textContent=livePower?charger.power_kw.toLocaleString(CitiFoxI18n.locale(),{minimumFractionDigits:2,maximumFractionDigits:2})+" kW":"— kW";
- const carLabel=car.available?(car.stale?"Stale · "+ageBrief(car.captured_at):"Connected"):car.code==="not_configured"?"Not configured":"Unreachable";$("car-badge").textContent=carLabel;$("car-badge").className=`badge ${car.available&&!car.stale?"good":"warn"}`;
+ const quotaBlocked=["quota_reserved","rate_limit"].includes(car.code);
+ const carLabel=quotaBlocked?"Škoda request limit":car.available?(car.stale?"Stale · "+ageBrief(car.captured_at):"Connected"):car.code==="not_configured"?"Not configured":"Unreachable";$("car-badge").textContent=carLabel;$("car-badge").className=`badge ${car.available&&!car.stale&&!quotaBlocked?"good":"warn"}`;
  $("car-time").textContent=`Last vehicle report: ${date(car.captured_at)}`;$("car-read").textContent=`Last successful query: ${date(car.read_at)}`;
  $("charger-mode").textContent=charger.available?`Smartfox · ${charger.mode||"Mode unknown"}`:"Smartfox · unreachable";
  $("connection-summary").textContent=`Škoda ${car.available?"connected":"unreachable"} · Smartfox ${sf.available?"connected":"unreachable"}`;
@@ -129,7 +130,7 @@ function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=
  $("quit-app").disabled=!localAdmin||!session?.can_shutdown||mutating;
  $("session-status").classList.toggle("session-quiet",session?.status==="monitoring"&&isCharging&&!session?.awaiting_fresh_soc&&!session?.stop_requested);
  $("normal-mode-note").textContent=session?.user_charger_mode==="OFF"?(charger.available&&charger.mode==="OFF"?"Charger explicitly switched Off.":"Off selected · change is unconfirmed."):session?.stop_guard?"Charger kept Off until the vehicle confirms the stop.":"Normal mode A+ · schedules are preserved.";
- const showPhase=switching&&!session?.stop_requested;$("session-status").hidden=!showPhase&&!session?.message;$("session-status").textContent=showPhase?phaseMessage(charger):session?.message||"";$("session-status").classList.toggle("phase-wait",showPhase);$("session-status").classList.toggle("safety-stopped",session?.status==="error"&&["missing_soc","missing_initial_soc","phase_wait"].includes(session?.stop_cause));
+ const showPhase=switching&&!session?.stop_requested;$("session-status").hidden=!showPhase&&!session?.message;$("session-status").textContent=showPhase?phaseMessage(charger):session?.message||"";$("session-status").classList.toggle("phase-wait",showPhase);$("session-status").classList.toggle("safety-stopped",session?.status==="error"&&["missing_soc","missing_initial_soc","phase_wait","request_quota"].includes(session?.stop_cause));
  $("car-message").textContent=car.message||"";$("sf-notice").textContent=sf.notice||"";$("sf-control-reason").textContent=charger.control_reason||charger.message||"";
  $("sf-web-meta").textContent=`Charge mode: ${charger.mode||"unknown"} · Power: ${charger.power_kw??"—"} kW · Wallbox: ${charger.status_text||"unknown"} · Setpoint: ${charger.offered_current_a??"—"} A · Last read: ${date(charger.read_at||sf.read_at)}`;
  $("api-meta").textContent=`Next query in ${data.next_skoda_seconds} s · Key valid until ${date(car.key_expires_at)} · Quota left: ${car.quota_remaining??"unknown"}${car.errors?.length?" · "+car.errors.join(", "):""}`;
@@ -207,7 +208,7 @@ $("show-diagnostics").addEventListener("click",async()=>{
  const button=$("show-diagnostics");button.disabled=true;
  try{const report=await api("/api/diagnostics");
   $("diagnostic-json").textContent=JSON.stringify(report,null,2);$("diagnostic-json").hidden=false;
-  const causes={missing_soc:"Stopped because vehicle data became too old.",missing_initial_soc:"Stopped because no new vehicle data arrived after start.",phase_wait:"Stopped during charging preparation.",target:"Stopped at the monitored target."};
+  const causes={request_quota:"Stopped because Škoda request limits prevent charge-level monitoring.",missing_soc:"Stopped because vehicle data became too old.",missing_initial_soc:"Stopped because no new vehicle data arrived after start.",phase_wait:"Stopped during charging preparation.",target:"Stopped at the monitored target."};
   $("diagnostic-summary").textContent=causes[report.session?.stop_cause]||"Current cached status. Diagnostics do not query the vehicle.";
  }catch(e){$("diagnostic-summary").textContent=e.message;}finally{button.disabled=false;}
 });

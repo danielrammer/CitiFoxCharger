@@ -77,6 +77,8 @@ class ChargingSession:
         if not value["can_force"] and not value["force_reason"]:
             if self.active and self.value.get("stop_requested"):
                 value["force_reason"] = "A stop is awaiting confirmation."
+            elif not self.service.vehicle_read_budget_available(after_start=True):
+                value["force_reason"] = "Not enough Škoda requests remain to start and monitor charging. Wait for the quota reset."
             elif self.active and type(web.get("power_kw")) in (int, float) and web["power_kw"] > 0.1:
                 pass
             elif time.monotonic() < self.service.command_after:
@@ -336,12 +338,13 @@ class ChargingSession:
 
     @property
     def safety_stopped(self):
-        return self.value.get("stop_cause") in ("missing_soc","missing_initial_soc","phase_wait")
+        return self.value.get("stop_cause") in ("missing_soc","missing_initial_soc","phase_wait","request_quota")
 
     def safety_stop_message(self):
         reason = {"missing_soc":"The target cannot be monitored without current vehicle data.",
                   "missing_initial_soc":"No new vehicle data within five minutes.",
-                  "phase_wait":"Charging preparation failed before the target."}.get(self.value.get("stop_cause"),"")
+                  "phase_wait":"Charging preparation failed before the target.",
+                  "request_quota":"Škoda request limits prevent further charge-level monitoring."}.get(self.value.get("stop_cause"),"")
         return f"Target {self.value['target_percent']} % was not confirmed reached. " + reason
 
     def finish_stop(self, message):
@@ -366,6 +369,13 @@ class ChargingSession:
     def tick(self):
         # A newly received target report must not wait for the ten-second housekeeping tick.
         if self.stop_if_target_reached():
+            return
+        # Do not wait for SOC expiry or housekeeping when the cloud has already
+        # prohibited further reads. OFF is independent of cloud stop permission.
+        if (not self.service.stopping and self.active and not self.value.get("stop_requested")
+                and self.value.get("vin") == self.service.config.value["skoda"]["vin"]
+                and not self.service.vehicle_read_budget_available()):
+            self.automatic_stop("Škoda request limits prevent further charge-level monitoring.", cause="request_quota")
             return
         # Local OFF retries remain independent of any one-minute cloud backoff.
         if (self.active and self.value.get("stop_guard") and

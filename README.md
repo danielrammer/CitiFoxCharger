@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.8.13
+# CitiFoxCharger for Windows · 1.8.14
 
 <img src="citifoxcharger/web/brand/logo.png" alt="CitiFoxCharger logo: smooth electric city car, red fox tail and charging plug" width="620">
 
@@ -10,11 +10,17 @@ Both light and dark appearance are available. The light palette uses darker labe
 
 The header displays the current date and time from the browser device, independently of vehicle telemetry. It refreshes on returning to the page and uses the selected interface language. The clock fits inside the existing header height.
 
-The Settings page identifies the running backend as **v1.8.13 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
+The Settings page identifies the running backend as **v1.8.14 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
 
 ## Architecture and communication
 
 See [COMMUNICATION.md](COMMUNICATION.md) for the system and start/stop diagrams, exact Modbus addresses and word counts, XML data fields, SMARTFOX CGI commands, Škoda API calls and browser-to-backend routes. Mermaid diagrams render directly on GitHub. Protocol evidence and compatibility limits are in [INTERFACES.md](INTERFACES.md).
+
+## Request quota and target reliability
+
+If the known Škoda quota has only the two command-reserve calls left, or the cloud imposes a request cooldown, an active monitored session now requests local SMARTFOX **Off immediately**, before the ordinary housekeeping interval. The vehicle stop follows where permitted. Off remains guarded until a newer vehicle report confirms the stop. This is a precautionary stop with cause `request_quota`, not successful target completion; no automatic restart is attempted. New starts require at least four remaining calls when a future quota reset is known (one start, one read and two reserved commands). Unknown quota metadata does not establish exhaustion.
+
+**A precise percentage limit is still not guaranteed.** The cloud may return an older vehicle report even on a successful query; the 15-minute freshness ceiling can allow overshoot at high charging power before a quota stop. This change closes the confirmed blind-charging case at quota exhaustion; it does not turn delayed cloud SOC into live telemetry. Native per-vehicle charging-limit enforcement has not been verified, and existing 80% vehicle schedules are preserved.
 
 ## Installation and first start
 

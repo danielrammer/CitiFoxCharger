@@ -1,6 +1,6 @@
 # Verified interfaces
 
-Evidence reviewed on **16–19 October 2026**; application version **1.8.13**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
+Evidence reviewed on **16–22 October 2026**; application version **1.8.14**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
 
 For an implementation-level overview with diagrams and request/register tables, see [COMMUNICATION.md](COMMUNICATION.md).
 
@@ -126,3 +126,7 @@ Certificates use Windows/.NET [CertificateRequest](https://learn.microsoft.com/e
 ### Read-only native charging settings (1.8.12)
 
 The [official OpenAPI schema](https://public.api.connect.skoda-auto.cz/docs/myskoda-public-api.yaml), inspected on 22 October 2026, documents `charging.settings.targetStateOfChargeInPercent`, `preferredChargeMode`, `availableChargeModes`, battery-care fields and AC current limit. The existing GET now retains only validated percentages/current values, known mode enums and presence flags for `setChargeMode`/`setChargingLimit` in `vehicle.operations`. No additional request is needed. The schema documents `PUT /api/v1/vehicles/{vin}/charging/mode`, but this application does not call it; per-vehicle support, actual behavior and restoration requirements must be established first. Existing vehicle plans and limits remain unchanged. Diagnostics do not include charging-profile contents, names, locations, VIN or arbitrary upstream fields.
+
+### 1.8.14 quota stop
+
+The backend requests local Off as soon as a known quota/cooldown prevents further vehicle reads during monitoring, even if the cached SOC is still within the freshness threshold. Stops retain `request_quota` in sanitized diagnostics and remain unsuccessful after confirmation/restart. A known budget of three or fewer remaining requests prevents a new start until reset. No native charging-mode, limit or schedule write is introduced. Delayed cloud reports still prevent a guarantee of an exact percentage target.

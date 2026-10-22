@@ -57,7 +57,7 @@ def report(status, live=False):
                         flags=('awaiting_fresh_soc','stop_requested','stop_guard','auto_restored','vehicle_stop_confirmed','phase_start_pending'),
                         dates=('started_at','completed_at','stop_requested_at','stop_trigger_at','stop_trigger_captured_at','stop_trigger_read_at','target_probe_capture','target_probe_scheduled_at','freshness_probe_capture','freshness_probe_scheduled_at'),
                         enums={'status': ACTIVE | {'idle','complete','closed','error'},
-                               'stop_cause':('target','missing_initial_soc','missing_soc','phase_wait')}),
+                               'stop_cause':('target','missing_initial_soc','missing_soc','phase_wait','request_quota')}),
             'last_command': selected(command, dates=('requested_at',), enums={'action':('start','stop'),
                                     'status':('accepted','unknown','rejected','observed','unconfirmed')}),
             'monitoring': {**selected(status.get('monitoring', {}), flags=('running',)),

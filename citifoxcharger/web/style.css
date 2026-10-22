@@ -168,3 +168,26 @@ button,a,input,select,summary{-webkit-tap-highlight-color:transparent}button,sum
 .stale-consent>summary{min-height:44px;display:flex;align-items:center;font-size:12px;cursor:pointer}.stale-consent>.check{margin:0;min-height:44px}.stale-consent>summary:before{content:"›";margin-right:8px;font-size:20px}.stale-consent[open]>summary:before{transform:rotate(90deg)}
 
 @media(orientation:portrait) and (min-width:480px) and (max-height:1100px){#overview .charging-card{padding-block:12px}#overview .stale-consent:not([open]){padding-block:0;margin-top:4px}#overview .target-control{margin-top:8px}#overview .card-bottom{margin-top:2px}}
+
+/* Settings use one aligned grid on notebooks; the tablet keeps one readable column. */
+#settings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start}
+#settings>.app-version{grid-column:1/-1;margin:0}
+#settings>.card{max-width:none;min-width:0;margin:0}
+#settings>.settings-grid{grid-column:1/-1;gap:20px}
+#settings>.diagnosis{grid-column:1/-1}
+#settings .settings-grid>.card{min-width:0;margin:0}
+@media(max-width:900px){#settings,#settings>.settings-grid{grid-template-columns:minmax(0,1fr);gap:16px}}
+
+#settings>.settings-grid:has(>#key-form[hidden]){grid-template-columns:minmax(0,1fr)}
+@media(min-width:901px){
+ #settings>.settings-grid:has(>#key-form[hidden]) #config-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 20px}
+ #settings>.settings-grid:has(>#key-form[hidden]) #config-form>h2,#settings>.settings-grid:has(>#key-form[hidden]) #config-form>.advanced,#settings>.settings-grid:has(>#key-form[hidden]) #config-form>button{grid-column:1/-1}
+ #settings>.settings-grid:has(>#key-form[hidden]) #config-form>label{margin:0}
+ #settings>.settings-grid:has(>#key-form[hidden]) #config-form>button{justify-self:start}
+ #settings>.settings-grid:has(>#key-form[hidden]) #config-form>h2{margin-bottom:0}
+}
+
+#settings .card{padding:20px}
+#settings h2{margin-bottom:12px}
+#settings .advanced{margin-top:12px;padding-top:10px}
+#settings>.diagnosis>summary{min-height:44px;padding:10px 0}

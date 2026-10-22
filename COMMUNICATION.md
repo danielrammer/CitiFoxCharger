@@ -1,6 +1,6 @@
 # Communication and data flow
 
-This describes the implementation shipped with **CitiFoxCharger 1.8.13**, checked against the source on **19 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
+This describes the implementation shipped with **CitiFoxCharger 1.8.14**, checked against the source on **22 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
 
 ## System overview
 
@@ -172,3 +172,7 @@ This is the successful combined-control flow, not a promise that every operation
 - Monitoring runs in the Python backend, not the browser. Closing the browser or switching the screen off does not itself stop monitoring; actual Windows sleep or backend termination can prevent execution.
 
 Source map: [server.py](citifoxcharger/server.py), [service.py](citifoxcharger/service.py), [charging.py](citifoxcharger/charging.py), [config.py](citifoxcharger/config.py), [app.js](citifoxcharger/web/app.js). For authentication, rate-limit evidence and detailed failure handling, see [INTERFACES.md](INTERFACES.md).
+
+### Request-budget stop (1.8.14)
+
+Before routine session housekeeping, known inability to read vehicle SOC (two reserved calls left before reset, or a rate-limit cooldown) initiates the same local Off → vehicle stop sequence. The persisted cause is `request_quota`; a new non-charging vehicle report is needed to release guarded Off. A monitored start is blocked with a known budget below four calls. This does not measure SOC through Modbus or bypass Škoda limits.
