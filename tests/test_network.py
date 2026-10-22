@@ -185,6 +185,16 @@ class NetworkHttpsTests(unittest.TestCase):
             if remote:remote.server_close()
             parent.server_close()
 
+    def test_passwordless_remote_download_is_sanitized_and_needs_a_session(self):
+        self.server.network_auth=NetworkAuth(validate_network({**configuration(),'authentication':'none','salt':None,'password_hash':None,'iterations':0}))
+        self.service.cache['skoda']={'soc':81,'vin':'PRIVATE-VIN','message':'PRIVATE-KEY'}
+        code,body,headers=self.call('/api/diagnostics/download',Authorization='')
+        self.assertEqual(code,200)
+        self.assertIn('attachment;',headers['Content-Disposition'])
+        self.assertEqual(json.loads(body)['car']['soc'],81)
+        self.assertNotIn('PRIVATE',body.decode())
+        self.assertEqual(self.call('/api/diagnostics/download',Authorization='',Cookie='')[0],401)
+
     def test_remote_diagnostics_use_cached_allowlist_only(self):
         self.service.cache['skoda']={'soc':40,'vin':'PRIVATE-VIN','message':'PRIVATE-KEY'}
         with patch.object(self.service,'status',side_effect=AssertionError('must not poll')):

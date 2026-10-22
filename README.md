@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.8.12
+# CitiFoxCharger for Windows · 1.8.13
 
 <img src="citifoxcharger/web/brand/logo.png" alt="CitiFoxCharger logo: smooth electric city car, red fox tail and charging plug" width="620">
 
@@ -10,7 +10,7 @@ Both light and dark appearance are available. The light palette uses darker labe
 
 The header displays the current date and time from the browser device, independently of vehicle telemetry. It refreshes on returning to the page and uses the selected interface language. The clock fits inside the existing header height.
 
-The Settings page identifies the running backend as **v1.8.12 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
+The Settings page identifies the running backend as **v1.8.13 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
 
 ## Architecture and communication
 
@@ -186,3 +186,6 @@ If the cloud still supplies no current SOC, the existing maximum 15-minute monit
 
 
 Version 1.8.12 adds a read-only `vehicle_charging` section to diagnostics from the existing charging/operations GET: reported vehicle target, preferred/available modes, battery-care target/mode, current limit and whether the response advertises mode/limit operations. Cable plug/lock states are included when known. Missing fields remain unknown. No mode, limit or profile writes are implemented; support advertised by a vehicle is evidence for diagnosis, not permission or proof of a successful command. The API may accept a start while later vehicle telemetry still reports `CHARGING_INTERRUPTED`; physical charging is verified separately through wallbox power.
+
+
+Version 1.8.13 gives **Download JSON** a dedicated authenticated `/api/diagnostics/download` attachment route with a fixed filename. The GUI fetches the sanitized report in the current session and downloads a UTF-8 JSON Blob, avoiding dependence on a navigation link's `download` attribute. Without JavaScript, the link still points to the attachment route. Device polling and charging control are unchanged.

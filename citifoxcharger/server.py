@@ -99,7 +99,7 @@ class Handler(BaseHTTPRequestHandler):
         # No access logs containing FINs, credentials, request bodies or query strings.
         pass
 
-    def reply(self, code, value, content_type="application/json; charset=utf-8", cookie=False):
+    def reply(self, code, value, content_type="application/json; charset=utf-8", cookie=False, attachment=False):
         # Drain small rejected POSTs so Windows can deliver the error before socket close.
         # No request content is acted on before Host/Origin/session/CSRF validation.
         if code >= 400 and self.command == "POST" and not self.body_consumed:
@@ -114,6 +114,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        if attachment:
+            self.send_header("Content-Disposition", 'attachment; filename="CitiFoxCharger-Diagnostics.json"')
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
@@ -195,10 +197,10 @@ class Handler(BaseHTTPRequestHandler):
             with service.lock:
                 self.reply(200, {"config": service.config.value, "key": service.secrets.status(),
                                  "access":{"local_admin":self.server.network_auth is None,"can_update":True},"network":service.network})
-        elif path == "/api/diagnostics":
+        elif path in ("/api/diagnostics", "/api/diagnostics/download"):
             snapshot = service.diagnostic_snapshot()
             snapshot["backend_version"] = __version__
-            self.reply(200, diagnostic_report(snapshot, live=True))
+            self.reply(200, diagnostic_report(snapshot, live=True), attachment=path.endswith("/download"))
         elif path == "/api/status":
             try:
                 self.server.update_state()

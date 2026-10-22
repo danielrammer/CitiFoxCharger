@@ -1,8 +1,10 @@
-# Validation report · 1.8.12
+# Validation report · 1.8.13
 
 Date: **22 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
 ## Existing baseline and new work
+
+Version **1.8.13** fixes the diagnostic download using a fixed-name JSON attachment route plus a session-authenticated GUI Blob download. All **40 service/server** and **23 network/HTTPS tests** pass, including unauthenticated rejection, passwordless remote download, no device calls, UTF-8 JSON and no-store headers. A real browser click produced `CitiFoxCharger-Diagnostics.json`; the downloaded simulated report was parsed and checked for omitted VIN/API key. Only that synthetic test download was removed afterward. Charging logic, settings and target monitoring are unchanged.
 
 Version **1.8.12** adds read-only native charging settings/capability flags and plug-lock state to the shared sanitized diagnostics. Five new tests cover per-vehicle advertised operations without enabling writes, known/unknown/malformed settings, partial operations, omission handling and privacy. The targeted adapter, diagnostics and service/server suites pass (65 tests). All requests in the new adapter tests are GETs; no real vehicle commands were sent. No start retry, charging-mode/limit/profile write or stop-timing change is introduced.
 

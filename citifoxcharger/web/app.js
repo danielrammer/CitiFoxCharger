@@ -190,6 +190,19 @@ $("stop").addEventListener("click",()=>mutation(async()=>{const result=await api
 $("config-form").addEventListener("submit",event=>{event.preventDefault();mutation(async()=>{const value={smartfox:{host:$("host").value.trim(),port:Number($("port").value),unit_id:Number($("unit").value),firmware:$("firmware").value,poll_seconds:Number($("sf-poll").value),timeout_seconds:Number($("sf-timeout").value),profile:$("profile").value,word_order:$("word-order").value,interpretation_confirmed:$("interpretation").checked},skoda:{vin:$("vin").value.trim(),poll_seconds:Number($("car-poll").value),stale_seconds:Number($("car-stale").value)}};const result=await api("/api/config",value);await loadConfig();toast(result.message);});});
 $("key-form").addEventListener("submit",event=>{event.preventDefault();mutation(async()=>{try{const result=await api("/api/key",{key:$("api-key").value,persist:$("persist").checked});await loadConfig();toast(result.message);}finally{$("api-key").value="";}});});
 $("clear-key").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/key/clear",{});await loadConfig();toast(result.message);}));
+let diagnosticsDownloading=false;
+$("download-diagnostics").addEventListener("click",async event=>{
+ event.preventDefault();if(diagnosticsDownloading)return;
+ diagnosticsDownloading=true;$("download-diagnostics").setAttribute("aria-busy","true");
+ try{
+  const report=await api("/api/diagnostics/download");
+  const blob=new Blob([JSON.stringify(report,null,2)+"\n"],{type:"application/json;charset=utf-8"});
+  const url=URL.createObjectURL(blob),link=document.createElement("a");
+  link.href=url;link.download="CitiFoxCharger-Diagnostics.json";document.body.append(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+ }catch(e){$("diagnostic-summary").textContent=e.message;}
+ finally{diagnosticsDownloading=false;$("download-diagnostics").removeAttribute("aria-busy");}
+});
 $("show-diagnostics").addEventListener("click",async()=>{
  const button=$("show-diagnostics");button.disabled=true;
  try{const report=await api("/api/diagnostics");

@@ -315,6 +315,19 @@ class ServerTests(unittest.TestCase):
         self.assertIn('no-store',headers['Cache-Control'])
         self.assertEqual(self.call('/api/diagnostics',Cookie='')[0],401)
 
+    def test_diagnostic_download_is_an_authenticated_json_attachment_without_device_calls(self):
+        self.service.cache['skoda']={'soc':81,'vin':VIN,'message':KEY}
+        with patch.object(self.service,'status',side_effect=AssertionError('must not poll')):
+            code,body,headers=self.call('/api/diagnostics/download')
+        self.assertEqual(code,200)
+        self.assertEqual(headers['Content-Disposition'],'attachment; filename="CitiFoxCharger-Diagnostics.json"')
+        self.assertIn('application/json',headers['Content-Type'])
+        self.assertIn('no-store',headers['Cache-Control'])
+        self.assertEqual(json.loads(body)['car']['soc'],81)
+        self.assertNotIn(VIN,body.decode());self.assertNotIn(KEY,body.decode())
+        self.assertEqual(self.call('/api/diagnostics/download',Cookie='')[0],401)
+        self.assertNotIn('Content-Disposition',self.call('/api/diagnostics')[2])
+
     def test_static_and_session_security_headers(self):
         status, body, headers = self.call("/")
         self.assertEqual(status, 200)

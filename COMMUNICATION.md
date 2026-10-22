@@ -1,6 +1,6 @@
 # Communication and data flow
 
-This describes the implementation shipped with **CitiFoxCharger 1.8.12**, checked against the source on **19 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
+This describes the implementation shipped with **CitiFoxCharger 1.8.13**, checked against the source on **19 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
 
 ## System overview
 
@@ -118,7 +118,7 @@ The browser never sends the Škoda API key to SMARTFOX or contacts the cloud dir
 | `POST /api/key`, `POST /api/key/clear` | Local-only API-key setup / removal. |
 | `POST /api/skoda/command` | Local-only guarded direct vehicle command route. |
 | `POST /api/smartfox/command` | Legacy local route; Modbus writes remain blocked. |
-| `GET /api/diagnostics` | Authenticated local/home-network cached diagnostics; allowlisted fields, no device calls. |
+| `GET /api/diagnostics`, `GET /api/diagnostics/download` | Authenticated local/home-network cached diagnostics; allowlisted fields, no device calls. |
 | `POST /api/app/update`, `GET /api/app/update/status` | Local/home-network update job and status, with the existing update guards. |
 | `POST /api/app/restart`, `POST /api/app/quit` | Local-only backend process control. |
 
