@@ -7,6 +7,18 @@ let language="en";
 try{const saved=localStorage.getItem("citifox-language");language=["de","en"].includes(saved)?saved:navigator.language.toLowerCase().startsWith("de")?"de":"en";}catch{language=navigator.language.toLowerCase().startsWith("de")?"de":"en";}
 const escape=value=>value.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
 const rules=templates.map(([source,target])=>{let pattern="",last=0;for(const match of source.matchAll(/\{(\d+)\}/g)){pattern+=escape(source.slice(last,match.index))+"(.*?)";last=match.index+match[0].length;}return [new RegExp("^"+pattern+escape(source.slice(last))+"$"),target];});
+Object.assign(messages,{
+ "The vehicle limit remains unconfirmed, including 80%. A+ returns control to the vehicle and SMARTFOX rules and schedules, which may start charging. Check the desired limit directly in MyŠkoda or the car.":"Die Fahrzeug-Ladegrenze bleibt unbestätigt, auch 80 %. In A+ gelten wieder die Regeln und Schaltzeiten von Auto und SMARTFOX; dadurch kann eine Ladung beginnen. Prüfe den gewünschten Grenzwert selbst in MyŠkoda oder im Auto.",
+ "No vehicle start or further limit change will be sent. Automatic target control will end.":"Es wird kein Fahrzeugstart und keine weitere Grenzwertänderung gesendet. Die automatische Zielsteuerung wird beendet.",
+ "Release A+ normal mode":"A+ Normalbetrieb freigeben",
+ "released":"manuell freigegeben",
+ "The vehicle does not return its charging limit. Automatic target control is unavailable; no wallbox or vehicle setting was changed.":"Das Fahrzeug liefert seine Ladegrenze nicht zurück. Automatische Zielsteuerung nicht verfügbar; SMARTFOX und Fahrzeug wurden nicht umgestellt.",
+ "Automatic target control ended. A+ is released; the vehicle limit remains unconfirmed. No vehicle start was sent.":"Zielsteuerung beendet. A+ freigegeben; Fahrzeug-Ladegrenze weiterhin unbestätigt. Kein Fahrzeugstart gesendet.",
+ "Automatic target control requires a readable vehicle limit before preparation and exact confirmation after setting it. Missing readback blocks new attempts without changing SMARTFOX. Existing unconfirmed attempts can be ended explicitly to release A+; this does not confirm the vehicle limit. Charging profiles are not edited.":"Automatische Zielsteuerung erfordert eine auslesbare Fahrzeuggrenze und deren exakte Bestätigung nach einer Änderung. Ohne Rückmeldung bleiben neue Versuche gesperrt, ohne SMARTFOX umzustellen. Einen bereits abgebrochenen Versuch kannst du ausdrücklich beenden und A+ freigeben. Die Fahrzeuggrenze bleibt dabei unbestätigt. Ladeprofile werden nicht bearbeitet.",
+ "Only an aborted preparation without a vehicle start can return to A+ this way.":"Diese Freigabe ist nur nach abgebrochener Vorbereitung ohne Fahrzeugstart möglich.",
+ "Return to A+ is unconfirmed. The Off guard remains active.":"Rückkehr zu A+ unbestätigt. Die Aus-Sperre bleibt aktiv.",
+ "Wallbox Off is unconfirmed. Normal-mode release is blocked.":"Wallbox-Aus unbestätigt. Freigabe des Normalbetriebs gesperrt."
+});
 function german(value,depth=0){
  if(messages[value]!==undefined)return messages[value];
  if(depth<4){for(const [pattern,target]of rules){const match=pattern.exec(value);if(match)return target.replace(/\{(\d+)\}/g,(_,i)=>german(match[Number(i)+1]??"",depth+1));}

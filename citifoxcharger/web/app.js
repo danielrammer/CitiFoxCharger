@@ -31,8 +31,10 @@ function updateControls(){
  const staleOption=session?.can_force_native_with_stale===true&&typeof soc==="number"&&target>soc;
  const retry=session?.can_retry_start===true||session?.can_retry_start_with_stale===true;
  $("target-value").textContent=`${target} %`;$("target").disabled=mutating||(active&&!session?.can_adjust_target);
- $("force").textContent=retry?"↻ Retry start":"↯ Force charge";
- $("force").disabled=mutating||!(session?.can_force_native||staleOption)||typeof soc!=="number"||target<=soc;
+ const release=session?.can_release_native_guard===true;
+ $("force").textContent=release?"Release A+ normal mode":retry?"↻ Retry start":"↯ Force charge";
+ $("force").disabled=mutating||appUpdating||(!release&&(!(session?.can_force_native||staleOption)||typeof soc!=="number"||target<=soc));
+ $("release-limit-guard").hidden=!release;$("release-limit-guard").disabled=mutating||appUpdating;
  $("stop").disabled=mutating||!(session?.can_stop??(active||latest.controls.stop));
  let hint="";
  if(!car.available)hint=car.code==="not_configured"?"Configure vehicle access in Settings.":"The vehicle is currently unreachable.";
@@ -186,7 +188,7 @@ $("target").addEventListener("input",()=>{targetEditing=true;try{localStorage.se
 $("target").addEventListener("change",()=>{if(!activeStates.has(latest?.charging?.status)){targetEditing=false;return;}const target=Number($("target").value);mutation(async()=>{try{await api("/api/charging/target",{target_percent:target});toast(`Charge target ${target}% saved.`);}finally{targetEditing=false;}});});
 $("refresh").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/refresh",{});render(result.status);toast(result.message);}));
 $("quit-app").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/app/quit",{});appStopped=true;clearInterval(refreshTimer);toast(result.message);$("connection-summary").textContent="App stopped";updateControls();}));
-$("force").addEventListener("click",()=>{mutation(async()=>{const body={target_percent:Number($("target").value),request_id:crypto.randomUUID(),allow_stale:true};targetEditing=false;toast("Preparing Smartfox. Vehicle start follows only after charging permission is confirmed.");const result=await api("/api/charging/start",body);if(result.message)toast(result.message);});});
+ $("force").addEventListener("click",()=>{if(latest?.charging?.can_release_native_guard){releaseLimitGuard();return;}mutation(async()=>{const body={target_percent:Number($("target").value),request_id:crypto.randomUUID(),allow_stale:true};targetEditing=false;toast("Preparing Smartfox. Vehicle start follows only after charging permission is confirmed.");const result=await api("/api/charging/start",body);if(result.message)toast(result.message);});});
 $("stop").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/charging/stop",{request_id:crypto.randomUUID()});if(result.message)toast(result.message);},true));
 $("config-form").addEventListener("submit",event=>{event.preventDefault();mutation(async()=>{const value={smartfox:{host:$("host").value.trim(),port:Number($("port").value),unit_id:Number($("unit").value),firmware:$("firmware").value,poll_seconds:Number($("sf-poll").value),timeout_seconds:Number($("sf-timeout").value),profile:$("profile").value,word_order:$("word-order").value,interpretation_confirmed:$("interpretation").checked},skoda:{vin:$("vin").value.trim(),poll_seconds:Number($("car-poll").value),stale_seconds:Number($("car-stale").value)}};const result=await api("/api/config",value);await loadConfig();toast(result.message);});});
 $("key-form").addEventListener("submit",event=>{event.preventDefault();mutation(async()=>{try{const result=await api("/api/key",{key:$("api-key").value,persist:$("persist").checked});await loadConfig();toast(result.message);}finally{$("api-key").value="";}});});
@@ -228,5 +230,10 @@ init();
 window.addEventListener("citifoxlanguagechange",()=>{updateHeaderClock();if(latest)render(latest);});
 
 $("restore-vehicle-limit").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/charging/restore-limit",{request_id:crypto.randomUUID()});if(result.message)toast(result.message);}));
+
+function releaseLimitGuard(){if(latest?.charging?.can_release_native_guard&&!mutating&&!appUpdating)$("release-guard-dialog").showModal();}
+$("cancel-release-guard").addEventListener("click",()=>$("release-guard-dialog").close());
+$("confirm-release-guard").addEventListener("click",()=>{$("release-guard-dialog").close();if(!latest?.charging?.can_release_native_guard)return;mutation(async()=>{const result=await api("/api/charging/release-limit-guard",{request_id:crypto.randomUUID(),accept_unconfirmed_limit:true});if(result.message)toast(result.message);});});
+$("release-limit-guard").addEventListener("click",releaseLimitGuard);
 
 $("confirm-restored-limit").addEventListener("click",()=>{const target=latest?.charging?.vehicle_limit?.restore_percent;if(!Number.isInteger(target))return;const message=CitiFoxI18n.language()==="de"?`Prüfe direkt in MyŠkoda oder im Auto: Die tatsächliche Fahrzeug-Ladegrenze ist wieder ${target} %. Eine 80-%-Schaltzeit allein reicht nicht. Nur bestätigen, wenn du diesen Wert selbst geprüft hast. Danach wird der Normalbetrieb freigegeben; es wird kein Ladestart gesendet.`:`Check directly in MyŠkoda or the vehicle: the actual vehicle charging limit is restored to ${target} %. A scheduled 80% profile alone is insufficient. Confirm only after checking this value yourself. This releases normal operation without sending a charging start.`;if(!window.confirm(message))return;mutation(async()=>{const result=await api("/api/charging/confirm-restored-limit",{request_id:crypto.randomUUID(),target_percent:target,confirmed_at_vehicle:true});if(result.message)toast(result.message);});});

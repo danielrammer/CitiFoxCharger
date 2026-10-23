@@ -73,11 +73,16 @@ class VehicleLimitTests(unittest.TestCase):
         self.assertEqual(self.case.web.mode,'A+')
         self.assertEqual(self.service.vehicle_limit.record['phase'],'rejected')
 
-    def test_unknown_original_limit_uses_user_selected_80_percent_restore(self):
+    def test_missing_readback_blocks_before_wallbox_or_vehicle_writes(self):
         self.service.cache['skoda']['charging_settings']['target_percent']=None
-        result=self.begin()
-        self.assertEqual(result['vehicle_limit']['restore_percent'],80)
-        self.assertEqual(result['vehicle_limit']['restore_source'],'user_default')
+        state=self.service.charging.state()
+        self.assertFalse(state['can_force_native'])
+        self.assertIn('does not return',state['native_limit_reason'])
+        with self.assertRaises(IntegrationError) as error:self.begin()
+        self.assertEqual(error.exception.code,'limit_unreadable')
+        self.assertEqual(self.writes,[])
+        self.assertEqual(self.case.effects,[])
+        self.assertEqual(self.case.web.mode,'A+')
 
     def test_known_original_limit_is_preserved_and_not_replaced_with_default(self):
         self.service.cache['skoda']['charging_settings']['target_percent']=100
@@ -155,6 +160,84 @@ class VehicleLimitTests(unittest.TestCase):
         self.service.charging.tick();self.service.charging.tick()
         self.assertEqual(self.writes,[90,80])
         self.assertNotIn('start',self.case.effects)
+
+    def aborted(self):
+        self.begin(87)
+        self.service.vehicle_limit.save(deadline_epoch=time.time()-1)
+        self.service.charging.tick()
+
+    def test_aborted_unstarted_preparation_can_explicitly_release_aplus_without_api_writes(self):
+        self.aborted()
+        self.assertTrue(self.service.charging.state()['can_release_native_guard'])
+        writes=list(self.writes)
+        with patch.object(self.service.car,'request',side_effect=AssertionError('No vehicle request allowed')):
+            state=self.service.vehicle_limit.release_guard('release-aborted-test-001')
+            self.service.charging.tick()
+            self.service.vehicle_limit.release_guard('release-aborted-test-001')
+        self.assertEqual(self.writes,writes)
+        self.assertEqual(state['vehicle_limit']['phase'],'released')
+        self.assertEqual(state['status'],'closed')
+        self.assertFalse(state['stop_guard'])
+        self.assertIsNone(state['vehicle_limit'].get('restoration_confirmation'))
+        self.assertEqual(self.case.web.mode,'A+')
+        self.assertNotIn('start',self.case.effects)
+        self.assertFalse(self.service.vehicle_limit.busy)
+        from citifoxcharger.charging import ChargingSession
+        self.service.charging=ChargingSession(self.service,self.case.web)
+        self.service.vehicle_limit=VehicleLimit(self.service)
+        self.service.charging.tick()
+        self.assertEqual(self.case.web.mode,'A+')
+        self.assertIn('unconfirmed',self.service.charging.value['message'])
+
+    def test_release_is_not_available_during_verification_or_after_any_vehicle_start(self):
+        self.begin()
+        self.assertFalse(self.service.vehicle_limit.can_release_guard())
+        with self.assertRaises(IntegrationError):self.service.vehicle_limit.release_guard('release-too-soon-0001')
+        self.service.vehicle_limit.save(phase='attention',cancelled=True)
+        for changes in ({'last_start_epoch':time.time()},{'started_at':datetime.now(timezone.utc).isoformat()}):
+            self.service.charging.save(**{'last_start_epoch':None,'started_at':None,**changes})
+            self.assertFalse(self.service.vehicle_limit.can_release_guard())
+            with self.assertRaises(IntegrationError):self.service.vehicle_limit.release_guard('release-after-start-001')
+        self.service.charging.save(last_start_epoch=None,started_at=None)
+        self.service.vehicle_limit.save(retarget=True)
+        self.assertFalse(self.service.vehicle_limit.can_release_guard())
+
+    def test_release_requires_fresh_stopped_local_proof_and_verified_aplus(self):
+        self.aborted()
+        original=self.case.web.read
+        for change in ({'power_kw':7.3},{'power_kw':float('nan')},{'power_kw':True},
+                       {'read_at':'2000-01-01T00:00:00Z'},{'telemetry_available':False},
+                       {'status_code':3},{'mode':'M+'}):
+            with patch.object(self.case.web,'read',side_effect=lambda config,c=change:{**original(config),**c}):
+                with self.assertRaises(IntegrationError):self.service.vehicle_limit.release_guard('release-bad-proof-001')
+            self.assertTrue(self.service.charging.value['stop_guard'])
+            self.assertEqual(self.case.web.mode,'OFF')
+        self.case.web.allow_control=False
+        with self.assertRaises(IntegrationError):self.service.vehicle_limit.release_guard('release-aplus-fail-001')
+        self.assertTrue(self.service.charging.value['stop_guard'])
+        self.case.web.allow_control=True
+        self.service.vehicle_limit.release_guard('release-aplus-fail-001')
+        self.assertEqual(self.case.web.mode,'A+')
+
+    def test_target_and_restore_write_evidence_are_separate_and_survive_timeout(self):
+        self.begin(87)
+        record=self.service.vehicle_limit.record
+        self.assertEqual(record['target_write_outcome'],'accepted')
+        self.assertEqual(record['target_write_http_status'],202)
+        self.service.vehicle_limit.save(deadline_epoch=time.time()-1)
+        self.service.charging.tick()
+        self.uncertain=True
+        self.service.charging.tick()
+        record=self.service.vehicle_limit.record
+        self.assertEqual(record['target_write_outcome'],'accepted')
+        self.assertEqual(record['target_write_http_status'],202)
+        self.assertEqual(record['restore_write_outcome'],'unknown')
+        self.assertEqual(record['restore_write_code'],'network')
+        self.assertIsNone(record['restore_write_http_status'])
+        self.assertEqual(record['target_verification'],'unconfirmed')
+        diagnostic=report(self.service.diagnostic_snapshot(),True)['vehicle_limit']
+        self.assertEqual(diagnostic['target_write_http_status'],202)
+        self.assertEqual(diagnostic['restore_write_code'],'network')
 
     def test_restore_failure_keeps_off_and_requires_explicit_retry(self):
         self.verified();self.service.vehicle_limit.start_restore();self.service.charging.tick()

@@ -151,3 +151,11 @@ Start power proof uses only the charger-specific local power field: two finite f
 ### Preparation versus actual Start (1.9.1)
 
 The internal `prepare_limit` access check skips only the age of the last successful API read, solely for limit-only preparation. Known bounded SOC, valid key/configuration, cached advertised operations, quota and server cooldown checks still apply; older-data preparation also requires fresh local readiness. The real Start path never sets this flag. It must pass the ordinary read-age check after the new post-write target confirmation. No HTTP request can turn the raw Start route into this exception.
+
+### Missing native readback and recovery (1.9.2)
+
+Before a new automatic target preparation, a current integer vehicle limit must be present in the cached API settings. An omitted limit now blocks without SMARTFOX or vehicle writes, instead of entering an unverifiable Off preparation. This gate does not establish that all integer targets are supported. Existing saved attempts can still restore the explicitly chosen 80% fallback.
+
+The explicit release route documented in [COMMUNICATION.md](COMMUNICATION.md) is restricted to cancelled preparations with no recorded vehicle Start/started-at, no retarget, the same VIN and fresh local Off/non-charging power <=0.1 kW. It readback-verifies A+, atomically closes control with phase `released`, stops further limit writes and preserves the unconfirmed-limit warning. It does not unlock an active/uncertain vehicle start or mark API restoration successful. No remote access guard is weakened.
+
+The [official error documentation](https://public.api.connect.skoda-auto.cz/docs) checked on 23 October distinguishes HTTP 429 `rate-limit-exceeded` from `vehicle-not-accepting-requests`. Both obey the cooldown, but only allowlisted published problem names are retained, with HTTP status and separate target/restoration outcome and budget snapshots. Raw upstream problem bodies, arbitrary text and URLs are never persisted or exported. A later successful GET or replenished quota cannot prove an earlier limit PUT succeeded.

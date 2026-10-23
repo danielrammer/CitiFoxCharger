@@ -72,6 +72,10 @@ class VehicleLimit:
     def available(self):
         return bool(self.service.cache.get("skoda", {}).get("charging_settings", {}).get("advertises_set_charging_limit"))
 
+    def readable(self):
+        target = self.service.cache.get("skoda", {}).get("charging_settings", {}).get("target_percent")
+        return type(target) is int and 1 <= target <= 100
+
     @staticmethod
     def validate(target):
         if type(target) is not int or not 1 <= target <= 100:
@@ -83,10 +87,27 @@ class VehicleLimit:
         charger = self.service.web.set_charger_mode(self.service.config.value["smartfox"], "OFF")
         self.service.cache.setdefault("smartfox", {})["charger"] = charger
 
-    def write(self, target):
+    def write(self, target, stage="target"):
+        prefix = stage+"_write_"
+        self.save(**{prefix+"outcome":"unknown", prefix+"at":time.time(),
+                     prefix+"http_status":None, prefix+"code":None, prefix+"problem_type":None})
         try:
             self.service.car.set_charging_limit(target, self.service.config.value["skoda"], self.service.secrets.key)
+            self.save(**{prefix+"outcome":"accepted", prefix+"http_status":self.service.car.last_http_status})
+        except IntegrationError as error:
+            self.save(**{prefix+"outcome":"unknown" if error.uncertain else "rejected",
+                         prefix+"http_status":error.http_status, prefix+"code":error.code,
+                         prefix+"problem_type":error.problem_type})
+            raise
         finally:
+            car = self.service.car
+            try:
+                remaining = int(car.quota_remaining)
+            except (TypeError, ValueError):
+                remaining = None
+            self.save(**{prefix+"quota_remaining":remaining,
+                         prefix+"cooldown_seconds":max(0, math.ceil(car.blocked_until-car.clock())),
+                         prefix+"quota_reset_seconds":max(0, math.ceil(car.quota_reset_at-car.clock()))})
             self.service.save_rate_state()
 
     def begin(self, target, request_id, allow_stale=False, retarget=False):
@@ -110,6 +131,8 @@ class VehicleLimit:
         self.service.update("skoda")
         if not self.available():
             raise IntegrationError("limit_unsupported", "The vehicle does not advertise native charging-limit control. No charging start was sent.")
+        if not self.readable():
+            raise IntegrationError("limit_unreadable", "The vehicle does not return its charging limit. Automatic target control is unavailable; no wallbox or vehicle setting was changed.")
         if not self.budget():
             raise IntegrationError("limit_quota", "Not enough Škoda requests remain to verify and restore the vehicle limit. Wait for the quota reset.")
         if (not self.service.can_command("start", allow_stale, prepare_limit=True) or not self.service.can_command("stop")
@@ -230,6 +253,44 @@ class VehicleLimit:
             self.session.save(message="Normal vehicle limit manually confirmed. No new charging start was sent.")
         return self.session.state()
 
+    def can_release_guard(self):
+        # Only an aborted preparation that NEVER issued vehicle Start can be handed back.
+        return bool(self.record.get("phase") in ("restore_needed", "restoring", "attention")
+                    and self.record.get("cancelled") is True and not self.record.get("retarget")
+                    and self.session.value.get("last_start_epoch") is None
+                    and not self.session.value.get("started_at")
+                    and self.session.value.get("vin") == self.service.config.value["skoda"]["vin"]
+                    and not self.service.stopping and not self.service.app_update_pending)
+
+    def release_guard(self, request_id):
+        if self.record.get("release_request_id") == request_id and self.record.get("phase") == "released":
+            return self.session.state()
+        if not self.can_release_guard():
+            raise IntegrationError("blocked", "Only an aborted preparation without a vehicle start can return to A+ this way.")
+        # Reuse the strict local stopped proof. Do not interpret a stale cloud report as proof.
+        try:
+            self.secure_off()
+        except SmartfoxControlError:
+            raise IntegrationError("smartfox_unverified", "Wallbox Off is unconfirmed. Normal-mode release is blocked.") from None
+        charger = self.service.cache.get("smartfox", {}).get("charger", {})
+        captured, power = timestamp(charger.get("read_at")), charger.get("power_kw")
+        if (charger.get("available") is not True or charger.get("telemetry_available") is not True
+                or charger.get("mode") != "OFF" or captured is None or not -5 <= time.time()-captured <= 30
+                or type(power) not in (int, float) or not math.isfinite(power) or not 0 <= power <= .1
+                or charger.get("status_code") not in (0, 1, 2, 5, 6, 255)):
+            raise IntegrationError("blocked", "Fresh wallbox Off with no charging power is required.")
+        # Persist cancellation before changing hardware. If A+ fails, keep the guard and allow retry.
+        self.save(resume_after_verification=False)
+        try:
+            result = self.service.web.set_charger_mode(self.service.config.value["smartfox"], "A+")
+        except SmartfoxControlError:
+            raise IntegrationError("smartfox_unverified", "Return to A+ is unconfirmed. The Off guard remains active.") from None
+        self.service.cache.setdefault("smartfox", {})["charger"] = result
+        self.session.save(vehicle_limit={**self.record, "phase":"released", "release_request_id":request_id, "released_at":time.time()},
+                          status="closed", stop_guard=False, phase_start_pending=False, user_charger_mode=None,
+                          message="Automatic target control ended. A+ is released; the vehicle limit remains unconfirmed. No vehicle start was sent.")
+        return self.session.state()
+
     def tick(self):
         if self.record.get("phase") == "restored" and self.session.value.get("status") == "restore_pending":
             self.finish_restoration()
@@ -259,7 +320,7 @@ class VehicleLimit:
             self.save(phase="restoring", put_epoch=now, baseline_capture=self.service.cache.get("skoda", {}).get("captured_at"),
                       deadline_epoch=now+180, next_probe_epoch=now+15, probe_count=0, outcome="unknown")
             try:
-                self.write(self.record["restore_percent"])
+                self.write(self.record["restore_percent"], stage="restore")
                 self.save(outcome="accepted")
             except IntegrationError as error:
                 if not error.uncertain:
@@ -284,7 +345,8 @@ class VehicleLimit:
             return True
         if now >= self.record["deadline_epoch"]:
             if phase == "setting":
-                self.save(phase="restore_needed", cancelled=True)
+                self.save(phase="restore_needed", cancelled=True, target_probe_count=self.record.get("probe_count"),
+                          target_verification="unconfirmed", target_deadline_epoch=self.record.get("deadline_epoch"))
                 self.session.save(status="restore_pending", message="Vehicle limit was not confirmed. No start was sent; restoring the normal limit.")
             else:
                 self.attention()

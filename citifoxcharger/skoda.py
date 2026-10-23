@@ -17,9 +17,10 @@ CHARGE_MODES = ("MANUAL","TIMER","TIMER_CHARGING_WITH_CLIMATISATION","PREFERRED_
 
 
 class IntegrationError(Exception):
-    def __init__(self, code, message, retry_seconds=None, uncertain=False):
+    def __init__(self, code, message, retry_seconds=None, uncertain=False, http_status=None, problem_type=None):
         super().__init__(message)
         self.code, self.retry_seconds, self.uncertain = code, retry_seconds, uncertain
+        self.http_status, self.problem_type = http_status, problem_type
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -79,8 +80,10 @@ class SkodaAdapter:
         self.key_expires_at = None
         self.quota_remaining = None
         self.quota_reset_at = 0
+        self.last_http_status = None
 
     def call(self, method, path, key, payload=None, allow_reserved=False, reserved_calls=2):
+        self.last_http_status = None
         if self.clock() < self.blocked_until:
             wait = math.ceil(self.blocked_until - self.clock())
             raise IntegrationError("rate_limit", f"Škoda request limit: wait {wait} seconds.", wait)
@@ -92,6 +95,19 @@ class SkodaAdapter:
             wait = math.ceil(self.quota_reset_at - self.clock())
             raise IntegrationError("quota_reserved", "Remaining Škoda requests are reserved for charging commands.", wait)
         status, headers, body = self.request(method, path, key, payload) if payload is not None else self.request(method, path, key)
+        self.last_http_status = status
+        # Retain only published problem identifiers, never detail, title, VIN or URLs supplied by a server.
+        problem = None
+        if status >= 400:
+            try:
+                value = json.loads(body)
+                kind = value.get("type") if isinstance(value, dict) else None
+                known = ("api-key-expired", "api-key-not-authorized", "operation-not-authorized",
+                         "operation-not-supported", "operation-disabled", "rate-limit-exceeded",
+                         "vehicle-not-accepting-requests")
+                problem = next((name for name in known if kind == BASE+"/problems/"+name), None)
+            except (ValueError, UnicodeError):
+                pass
         headers = {k.lower(): v for k, v in headers.items()}
         self.key_expires_at = headers.get("x-api-key-expires-at", self.key_expires_at)
         self.quota_remaining = headers.get("ratelimit-remaining")
@@ -103,7 +119,8 @@ class SkodaAdapter:
         if status == 429:
             wait = retry_seconds(headers.get("retry-after"))
             self.blocked_until = max(self.blocked_until, self.clock() + wait)
-            raise IntegrationError("rate_limit", "Škoda requires a request cooldown.", math.ceil(wait))
+            raise IntegrationError("rate_limit", "Škoda requires a request cooldown.", math.ceil(wait),
+                                   http_status=status, problem_type=problem)
         messages = {
             401: ("auth", "The API key is invalid or expired. Renew it in MyŠkoda."),
             403: ("forbidden", "The API key or user is not allowed to access this VIN/action."),
@@ -114,7 +131,8 @@ class SkodaAdapter:
         if status != expected:
             code, message = messages.get(status, ("upstream", f"Škoda-Schnittstelle meldet HTTP {status}."))
             # Never return upstream error details: they can contain VINs or other sensitive values.
-            raise IntegrationError(code, message, uncertain=method != "GET" and status >= 500)
+            raise IntegrationError(code, message, uncertain=method != "GET" and status >= 500,
+                                   http_status=status, problem_type=problem)
         if method != "GET":
             return None
         try:

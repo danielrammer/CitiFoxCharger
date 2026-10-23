@@ -32,6 +32,23 @@ class SkodaTests(unittest.TestCase):
 
     def read(self): return self.adapter.read(self.config, KEY)
 
+    def test_published_problem_identifier_distinguishes_vehicle_refusal_from_quota(self):
+        self.status=429
+        self.headers={'RateLimit-Remaining':'11','Retry-After':'30'}
+        self.data={'type':'https://public.api.connect.skoda-auto.cz/problems/vehicle-not-accepting-requests',
+                   'detail':'PRIVATE-VIN-AND-KEY'}
+        with self.assertRaises(IntegrationError) as error:self.read()
+        self.assertEqual(error.exception.http_status,429)
+        self.assertEqual(error.exception.problem_type,'vehicle-not-accepting-requests')
+        self.assertEqual(error.exception.code,'rate_limit')
+        self.assertEqual(self.adapter.quota_remaining,'11')
+        self.assertNotIn('PRIVATE',str(error.exception))
+        self.adapter.blocked_until=0
+        self.data={'type':'https://untrusted.invalid/PRIVATE'}
+        with self.assertRaises(IntegrationError) as error:self.read()
+        self.assertIsNone(error.exception.problem_type)
+
+
     def test_contract_fields_zero_soc_and_unknown_state(self):
         self.data["vehicle"]["charging"]["status"]["battery"]["stateOfChargeInPercent"] = 0
         self.data["vehicle"]["charging"]["status"]["state"] = "NEW_FUTURE_STATE"

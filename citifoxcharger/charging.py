@@ -29,6 +29,8 @@ class ChargingSession:
                             'error':'The previous session needs attention. Please check the vehicle and Smartfox.'}
                 if data.get('status') in restored:
                     self.value['message'] = self.safety_stop_message() if self.safety_stopped else restored[data['status']]
+                    if isinstance(data.get('vehicle_limit'), dict) and data['vehicle_limit'].get('phase') == 'released':
+                        self.value['message'] = "Automatic target control ended. A+ is released; the vehicle limit remains unconfirmed. No vehicle start was sent."
                     if self.safety_stopped and data.get('status') == 'complete':
                         self.value['status'] = 'error'
                 # Restart never repeats a start. Recover through current telemetry and stop/restore only.
@@ -74,8 +76,9 @@ class ChargingSession:
                               and self.service.can_command("start") and self.service.can_command("stop"))
         value["force_reason"] = web.get("control_reason")
         native = getattr(self.service, "vehicle_limit", None)
+        value["can_release_native_guard"] = bool(native and native.can_release_guard())
         native_eligible = not self.active or bool(native and native.protected)
-        native_ready = bool(native_eligible and native and native.available() and native.budget() and not native.busy
+        native_ready = bool(native_eligible and native and native.available() and (native.readable() or native.protected) and native.budget() and not native.busy
                             and web.get("available") and web.get("control_available") and self.service.can_command("stop"))
         value["can_force_native"] = bool(native_ready and (not self.active or retry)
                                           and self.service.can_command("start", prepare_limit=not self.active))
@@ -87,6 +90,7 @@ class ChargingSession:
             and self.service.can_command("start", allow_stale=True, prepare_limit=not self.active))
         value["native_limit_reason"] = ("End the existing cloud-monitored session before using a vehicle target." if self.active and not self.value.get("vehicle_limit") else
                                          "The vehicle does not advertise native charging-limit control." if native and not native.available() else
+                                         "The vehicle does not return its charging limit. Automatic target control is unavailable; no wallbox or vehicle setting was changed." if native and not native.readable() and not self.active else
                                          "Not enough Škoda requests remain to verify and restore the vehicle limit. Wait for the quota reset." if native and not native.budget() else None)
         if not value["can_force"] and not value["force_reason"]:
             if self.active and self.value.get("stop_requested"):

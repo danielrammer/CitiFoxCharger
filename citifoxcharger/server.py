@@ -215,7 +215,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.valid_request(mutation=True) or not self.authenticated(mutation=True):
             return
-        remote_actions = {"/api/app/update","/api/refresh","/api/charging/start","/api/charging/stop","/api/charging/target","/api/charging/restore-limit","/api/charging/confirm-restored-limit",
+        remote_actions = {"/api/app/update","/api/refresh","/api/charging/start","/api/charging/stop","/api/charging/target","/api/charging/restore-limit","/api/charging/confirm-restored-limit","/api/charging/release-limit-guard",
                           "/api/smartfox/heater","/api/smartfox/charger-mode"}
         if self.server.network_auth and urlsplit(self.path).path not in remote_actions:
             self.reply(403,{"error":"Configure device access and the backend directly on the tablet."})
@@ -280,6 +280,14 @@ class Handler(BaseHTTPRequestHandler):
                 if data["action"] == "start":
                     raise IntegrationError("blocked", "Use manual charging with a verified vehicle target.")
                 result = service.command(data["action"], data["request_id"])
+            elif path == "/api/charging/release-limit-guard":
+                if (set(data) != {"request_id", "accept_unconfirmed_limit"}
+                        or data.get("accept_unconfirmed_limit") is not True
+                        or not isinstance(data.get("request_id"), str)
+                        or not re.fullmatch(r"[a-zA-Z0-9-]{16,80}", data["request_id"])):
+                    raise ValueError("Explicit acceptance of the unconfirmed vehicle limit is required.")
+                with service.lock:
+                    result = service.vehicle_limit.release_guard(data["request_id"])
             elif path == "/api/charging/confirm-restored-limit":
                 if (set(data) != {"request_id", "target_percent", "confirmed_at_vehicle"}
                         or data.get("confirmed_at_vehicle") is not True

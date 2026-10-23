@@ -9,6 +9,15 @@ from diagnostics import main, report, saved_status
 
 
 class DiagnosticsTests(unittest.TestCase):
+    def test_write_evidence_exports_only_known_problem_identifiers_and_never_raw_error(self):
+        result=report({'charging':{'vehicle_limit':{'phase':'released','target_write_http_status':429,
+                       'target_write_problem_type':'vehicle-not-accepting-requests','restore_write_problem_type':'PRIVATE',
+                       'target_write_code':'PRIVATE','target_write_outcome':'unknown','raw':'PRIVATE-VIN'}}})
+        self.assertEqual(result['vehicle_limit']['target_write_http_status'],429)
+        self.assertEqual(result['vehicle_limit']['target_write_problem_type'],'vehicle-not-accepting-requests')
+        self.assertIsNone(result['vehicle_limit']['restore_write_problem_type'])
+        self.assertNotIn('PRIVATE',json.dumps(result))
+
     def test_report_omits_secrets_identity_arbitrary_text_and_raw_sections(self):
         data = {'skoda': {'soc':86, 'vin':'PRIVATE-VIN', 'key':'PRIVATE-KEY',
                          'read_at':'PRIVATE-KEY', 'message':'PRIVATE-KEY', 'stale':True},

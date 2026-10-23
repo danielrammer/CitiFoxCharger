@@ -507,6 +507,16 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(self.call('/api/charging/confirm-restored-limit',body)[0],200)
             confirm.assert_called_once_with(80,'manual-restored-http-0001')
 
+    def test_release_guard_requires_session_csrf_and_explicit_acceptance(self):
+        body={'request_id':'release-guard-http-0001','accept_unconfirmed_limit':True}
+        self.assertEqual(self.call('/api/charging/release-limit-guard',body,Cookie='')[0],401)
+        self.assertEqual(self.call('/api/charging/release-limit-guard',body,**{'X-CSRF-Token':'wrong'})[0],403)
+        for invalid in (False,'true',1,None):
+            self.assertEqual(self.call('/api/charging/release-limit-guard',{**body,'accept_unconfirmed_limit':invalid})[0],400)
+        with patch.object(self.service.vehicle_limit,'release_guard',return_value={'status':'closed'}) as release:
+            self.assertEqual(self.call('/api/charging/release-limit-guard',body)[0],200)
+            release.assert_called_once_with(body['request_id'])
+
     def test_charger_mode_route_rejects_other_modes_and_requires_csrf(self):
         body={"mode":"OFF","request_id":"charger-mode-test-0001"}
         self.assertEqual(self.call("/api/smartfox/charger-mode",body,**{"X-CSRF-Token":"wrong"})[0],403)

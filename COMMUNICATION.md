@@ -1,6 +1,6 @@
 # Communication and data flow
 
-This describes the implementation shipped with **CitiFoxCharger 1.9.0**, checked against the source on **22 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
+This describes the implementation shipped with **CitiFoxCharger 1.9.2**, checked against the source on **23 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
 
 ## System overview
 
@@ -24,7 +24,7 @@ flowchart TB
     Web <-->|"Existing SMARTFOX installation\nDevice protocol outside this app"| Charger
     Web -->|"Existing output wiring / control"| Outputs
     Charger ---|"Charging cable / charging permission and power"| Car
-    Backend <-->|"HTTPS JSON; X-API-Key\nVehicle GET; charging start/stop POST"| Cloud
+    Backend <-->|"HTTPS JSON; X-API-Key\nVehicle GET; charging start/stop POST; limit PUT"| Cloud
     Cloud <-->|"Manufacturer vehicle connection\nTelemetry can be delayed"| Car
     Backend <-->|"Local files; key never returned to browser"| Store
 ```
@@ -32,6 +32,10 @@ flowchart TB
 The diagram separates application connections from the existing charger/output wiring and manufacturer vehicle connection. CitiFoxCharger does **not** obtain SOC through the charging cable or SMARTFOX. It does not implement the protocol between SMARTFOX and its charger, or between the vehicle and the manufacturer's cloud.
 
 **Port 8766 requires `https://`.** Plain `http://` on this port can result in a reset connection. Each remote client needs to trust the tablet's public network certificate. The tablet's local browser instead uses `http://127.0.0.1:8765/`. See [NETWORK.md](NETWORK.md) for certificate and firewall setup.
+
+## Unconfirmed native targets
+
+Native target preparation first requires an already readable `charging.settings.targetStateOfChargeInPercent`. Missing readback blocks the attempt before hardware writes. The Citigo's advertised operation alone is not compatibility proof. For an older aborted preparation with no vehicle Start, an explicitly confirmed `POST /api/charging/release-limit-guard` with `accept_unconfirmed_limit: true` may close target control and return to local A+ after fresh Off/zero-power proof. It sends no cloud request and does not assert the limit was restored. A+ may permit scheduled charging. The route has the same session, origin, CSRF and home-network access checks as other control routes.
 
 ## Modbus reads
 

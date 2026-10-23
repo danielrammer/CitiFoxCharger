@@ -229,6 +229,15 @@ class NetworkHttpsTests(unittest.TestCase):
         self.assertEqual(self.call('/api/charging/confirm-restored-limit',body,Authorization='',Cookie='')[0],401)
         self.assertEqual(self.call('/api/charging/confirm-restored-limit',body,Authorization='',**{'X-CSRF-Token':'wrong'})[0],403)
 
+    def test_passwordless_guard_release_requires_session_csrf_and_explicit_acceptance(self):
+        self.server.network_auth=NetworkAuth(validate_network({**configuration(),'authentication':'none','salt':None,'password_hash':None,'iterations':0}))
+        body={'request_id':'remote-guard-release-001','accept_unconfirmed_limit':True}
+        with patch.object(self.service.vehicle_limit,'release_guard',return_value={'status':'closed'}) as release:
+            self.assertEqual(self.call('/api/charging/release-limit-guard',body,Authorization='')[0],200)
+            release.assert_called_once_with(body['request_id'])
+        self.assertEqual(self.call('/api/charging/release-limit-guard',body,Authorization='',Cookie='')[0],401)
+        self.assertEqual(self.call('/api/charging/release-limit-guard',body,Authorization='',**{'X-CSRF-Token':'wrong'})[0],403)
+
     def test_remote_login_never_grants_key_configuration_or_backend_administration(self):
         for path in ('/api/key','/api/key/clear','/api/config','/api/app/quit','/api/app/restart','/api/skoda/command'):
             self.assertEqual(self.call(path,{})[0],403)
