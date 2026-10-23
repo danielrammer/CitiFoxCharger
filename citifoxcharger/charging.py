@@ -92,6 +92,16 @@ class ChargingSession:
                                          "The vehicle does not advertise native charging-limit control." if native and not native.available() else
                                          "The vehicle does not return its charging limit. Automatic target control is unavailable; no wallbox or vehicle setting was changed." if native and not native.readable() and not self.active else
                                          "Not enough Škoda requests remain to verify and restore the vehicle limit. Wait for the quota reset." if native and not native.budget() else None)
+        use_native = bool(native and ((self.active and self.value.get("vehicle_limit")) or
+                          (not self.active and native.available() and native.readable())))
+        value["target_control"] = "vehicle" if use_native else "app"
+        pending_native = bool(native and native.busy)
+        value["can_start_manual"] = not pending_native and value["can_force_native" if use_native else "can_force"]
+        value["can_start_manual_with_stale"] = not pending_native and value["can_force_native_with_stale" if use_native else "can_force_with_stale"]
+        if not use_native and old_report and not pending_native and self.service.manual_start_refresh_available():
+            value["can_start_manual_with_stale"] = True
+        value["manual_start_reason"] = ("Vehicle limit verification or restoration is pending." if pending_native else
+                                          value["native_limit_reason"] if use_native else None)
         if not value["can_force"] and not value["force_reason"]:
             if self.active and self.value.get("stop_requested"):
                 value["force_reason"] = "A stop is awaiting confirmation."

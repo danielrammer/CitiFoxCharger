@@ -517,6 +517,12 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(self.call('/api/charging/release-limit-guard',body)[0],200)
             release.assert_called_once_with(body['request_id'])
 
+    def test_normal_start_route_uses_manual_strategy_dispatch_without_exposing_raw_start(self):
+        body={'request_id':'manual-dispatch-http-0001','target_percent':87,'allow_stale':True}
+        with patch.object(self.service,'start_manual_charging',return_value={'status':'monitoring'}) as start:
+            self.assertEqual(self.call('/api/charging/start',body)[0],200)
+            start.assert_called_once_with(87,body['request_id'],True)
+
     def test_charger_mode_route_rejects_other_modes_and_requires_csrf(self):
         body={"mode":"OFF","request_id":"charger-mode-test-0001"}
         self.assertEqual(self.call("/api/smartfox/charger-mode",body,**{"X-CSRF-Token":"wrong"})[0],403)

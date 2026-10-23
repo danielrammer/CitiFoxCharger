@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.9.2
+# CitiFoxCharger for Windows · 1.9.3
 
 <img src="citifoxcharger/web/brand/logo.png" alt="CitiFoxCharger logo: smooth electric city car, red fox tail and charging plug" width="620">
 
@@ -10,15 +10,23 @@ Both light and dark appearance are available. The light palette uses darker labe
 
 The header displays the current date and time from the browser device, independently of vehicle telemetry. It refreshes on returning to the page and uses the selected interface language. The clock fits inside the existing header height.
 
-The Settings page identifies the running backend as **v1.9.2 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
+The Settings page identifies the running backend as **v1.9.3 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
 
 ## Architecture and communication
 
 See [COMMUNICATION.md](COMMUNICATION.md) for the system and start/stop diagrams, exact Modbus addresses and word counts, XML data fields, SMARTFOX CGI commands, Škoda API calls and browser-to-backend routes. Mermaid diagrams render directly on GitHub. Protocol evidence and compatibility limits are in [INTERFACES.md](INTERFACES.md).
 
+## Manual charging strategy
+
+**1.9.3 restores monitored manual Start for vehicles that omit the native limit.** With no readable/discovered native limit, one click selects SMARTFOX M+, waits for permission/phase switching, then sends one vehicle Start. It does **not** send a limit PUT or edit charging profiles. The app monitors the percentage target from vehicle reports and shows that the target is app-monitored. An accepted Start is distinct from the two-sample local charging-power proof. Target reports trigger local Off before vehicle Stop. Delayed SOC can overshoot the target, and the existing five-minute initial freshness, later data-loss and request-budget guards can stop early; those limitations remain unresolved rather than hidden. This release restores the earlier usable path, not a guarantee of exact SOC.
+
+If the only older-data start blocker is the age of the last successful API read, the normal Start button can request one budgeted GET first, leaving at least four known requests before starting. Real command/access checks are not relaxed, the cloud response is not presented as a new vehicle capture, and failed reads cannot energize the charger. Older SOC remains automatically allowed within the existing bounds, without a checkbox.
+
+When a native limit **is** readable and its operation is advertised, Start retains the native exact-target preflight below. Existing active native sessions keep their verification/restoration logic; an aborted pending native attempt must be explicitly released before switching strategy. There is no silent fallback after an uncertain native write. The normal route uses the common server-side strategy dispatcher, including over the home network.
+
 ## Vehicle-enforced charging target
 
-**1.9.2 compatibility gate:** a valid current vehicle limit must already be readable before a new target attempt can change SMARTFOX or the vehicle. Advertised `setChargingLimit` support alone is insufficient. The supplied Citigo responses omit this field, so automatic target charging is currently unavailable for that response. This release repairs recovery and diagnostics; it does not establish working Citigo target control or SOC accuracy.
+**Native compatibility gate introduced in 1.9.2:** a valid current vehicle limit must already be readable before a native target attempt can change SMARTFOX or the vehicle. Advertised `setChargingLimit` support alone is insufficient. The supplied Citigo responses omit this field, so native target charging remains unconfirmed; 1.9.3 uses the app-monitored path above instead of blocking all manual Start.
 
 If a 1.9.0/1.9.1 preparation was cancelled before any vehicle Start and is stuck restoring the limit, **Release A+ normal mode** replaces the disabled Start button and is also available in Settings. Read and confirm the warning: A+ returns control to vehicle/SMARTFOX rules and schedules and may allow charging; the vehicle limit, including the expected 80%, remains unconfirmed. The action checks fresh local Off/non-charging power at or below 0.1 kW, sends only a readback-verified local A+, closes target control and stops automatic limit-restoration attempts. It never sends vehicle Start or another limit PUT, and never labels the limit restored. It is not available after a vehicle Start, during retargeting, for another VIN or while restarting/updating. Failed local A+ readback retains the guard. A restart preserves the unconfirmed-limit warning.
 

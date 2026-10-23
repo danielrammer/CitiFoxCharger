@@ -315,7 +315,7 @@ class Handler(BaseHTTPRequestHandler):
                     if (set(data) not in ({"target_percent", "request_id"}, {"target_percent", "request_id", "allow_stale"})
                             or type(data.get("allow_stale", False)) is not bool):
                         raise ValueError("Target charge level and request ID are required.")
-                    result = service.force_charge_native(data["target_percent"], request_id, data.get("allow_stale", False))
+                    result = service.start_manual_charging(data["target_percent"], request_id, data.get("allow_stale", False))
                 else:
                     if set(data) != {"request_id"}:
                         raise ValueError("Only a request ID is required.")

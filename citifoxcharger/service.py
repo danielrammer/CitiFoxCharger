@@ -423,6 +423,30 @@ class Service:
                                    "power": self.power.state()},
                     "server_at": utcnow(), "next_skoda_seconds": max(0, int(self.next_due.get("skoda", 0) - time.monotonic()))}
 
+    def start_manual_charging(self, target, request_id, allow_stale=False):
+        """Prefer verifiable vehicle limits; retain monitored Start for cars omitting them."""
+        with self.lock:
+            if self.vehicle_limit.busy:
+                raise IntegrationError("limit_pending", "Vehicle limit verification or restoration is pending.")
+            self.update("skoda")  # Reuse the due read before selecting the strategy.
+            native_session = self.charging.active and bool(self.charging.value.get("vehicle_limit"))
+            if native_session or (not self.charging.active and self.vehicle_limit.available() and self.vehicle_limit.readable()):
+                return self.force_charge_native(target, request_id, allow_stale)
+            if self.manual_start_refresh_available() and allow_stale:
+                self.next_due["skoda"] = 0
+                self.update("skoda")  # One budgeted cloud read, not a wake-up or limit write.
+            return self.force_charge(target, request_id, allow_stale)
+
+    def manual_start_refresh_available(self):
+        if (self.charging.active or self.vehicle_limit.busy or self.can_command("start", True)
+                or not self.can_command("start", True, prepare_limit=True) or not self.can_command("stop")
+                or not self.charging.wallbox_ready()):
+            return False
+        try:
+            return self.car.quota_reset_at <= self.car.clock() or int(self.car.quota_remaining) >= 5
+        except (TypeError, ValueError):
+            return True
+
     def force_charge(self, target, request_id, allow_stale=False):
         with self.lock:
             if self.stopping:raise IntegrationError("blocked","The app is restarting or stopping.")

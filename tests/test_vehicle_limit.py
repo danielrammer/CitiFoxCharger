@@ -84,6 +84,50 @@ class VehicleLimitTests(unittest.TestCase):
         self.assertEqual(self.case.effects,[])
         self.assertEqual(self.case.web.mode,'A+')
 
+    def test_normal_manual_start_without_limit_readback_uses_mplus_and_start_without_put(self):
+        self.charging['settings'].pop('targetStateOfChargeInPercent')
+        self.charging['status']['battery']['stateOfChargeInPercent']=85
+        self.service.next_due['skoda']=0;self.service.update('skoda')
+        state=self.service.charging.state()
+        self.assertTrue(state['can_start_manual'])
+        self.assertEqual(state['target_control'],'app')
+        result=self.service.start_manual_charging(87,'manual-app-target-0001',True)
+        self.assertEqual(self.writes,[])
+        self.assertEqual(self.case.effects,['M+','start'])
+        self.assertEqual(result['status'],'monitoring')
+        self.assertNotIn('vehicle_limit',result)
+        self.service.start_manual_charging(87,'manual-app-target-0001',True)
+        self.assertEqual(self.case.effects,['M+','start'])
+        self.capture(80,87)
+        self.service.charging.tick()
+        self.assertEqual(self.case.effects[-2:],['OFF','stop'])
+        self.assertEqual(self.service.charging.value['stop_cause'],'target')
+
+    def test_manual_dispatch_keeps_native_verification_when_the_limit_is_readable(self):
+        result=self.service.start_manual_charging(87,'manual-native-target-0001',True)
+        self.assertEqual(self.writes,[87])
+        self.assertEqual(self.case.effects,['OFF'])
+        self.assertEqual(result['vehicle_limit']['phase'],'setting')
+        with self.assertRaises(IntegrationError):self.service.start_manual_charging(87,'manual-pending-target-001',True)
+        self.assertNotIn('start',self.case.effects)
+
+    def test_older_soc_automatic_allowance_refreshes_old_api_access_once_without_limit_put(self):
+        self.charging['settings'].pop('targetStateOfChargeInPercent')
+        self.service.next_due['skoda']=0;self.service.update('skoda')
+        self.case.stale_soc(minutes=70)
+        self.service.last_success['skoda']-=600
+        self.service.next_due['skoda']=time.monotonic()+600
+        captured=self.service.cache['skoda']['captured_at']
+        self.assertFalse(self.service.can_command('start',True))
+        self.assertTrue(self.service.charging.state()['can_start_manual_with_stale'])
+        with patch.object(self.service.car,'read',wraps=self.service.car.read) as read:
+            result=self.service.start_manual_charging(87,'manual-aged-access-0001',True)
+        self.assertEqual(read.call_count,1)
+        self.assertEqual(self.writes,[])
+        self.assertEqual(self.case.effects,['M+','start'])
+        self.assertTrue(result['awaiting_fresh_soc'])
+        self.assertEqual(self.service.cache['skoda']['captured_at'],captured)
+
     def test_known_original_limit_is_preserved_and_not_replaced_with_default(self):
         self.service.cache['skoda']['charging_settings']['target_percent']=100
         self.assertEqual(self.begin()['vehicle_limit']['restore_percent'],100)

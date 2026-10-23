@@ -1,6 +1,6 @@
 # Communication and data flow
 
-This describes the implementation shipped with **CitiFoxCharger 1.9.2**, checked against the source on **23 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
+This describes the implementation shipped with **CitiFoxCharger 1.9.3**, checked against the source on **23 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
 
 ## System overview
 
@@ -102,7 +102,7 @@ Source: [skoda.py](citifoxcharger/skoda.py). Fixed origin: **`https://public.api
 | Start charging | `POST /api/v1/vehicles/{vin}/charging/start` | Empty body; HTTP 202 means accepted, not confirmed charging. Requires discovered `startCharging` capability and the app's start guards. |
 | Stop charging | `POST /api/v1/vehicles/{vin}/charging/stop` | Empty body; HTTP 202 means accepted, not confirmed stopped. Later vehicle telemetry verifies the outcome. |
 
-The public adapter sends the four requests listed above. It does not call charge-mode, charging-profile, wake-up, air-conditioning or duration-estimate endpoints. New starts and target changes use the native limit; remaining time is still estimated locally. Support must be established for the configured vehicle by readback, rather than assumed from advertised operation names. See [INTERFACES.md](INTERFACES.md).
+The public adapter sends the four requests listed above. It does not call charge-mode, charging-profile, wake-up, air-conditioning or duration-estimate endpoints. With a readable/discovered native limit, starts and active target changes use verified native control. Otherwise manual Start uses M+ and Start with app SOC monitoring and no limit PUT; active target changes update the app target. Remaining time is estimated locally. Native support must be established by readback, rather than assumed from advertised operation names. See [INTERFACES.md](INTERFACES.md).
 
 ## Browser-to-backend API
 
@@ -114,7 +114,7 @@ The browser never sends the Škoda API key to SMARTFOX or contacts the cloud dir
 | `GET /health` | Application identity, instance ID and release metadata. |
 | `GET /api/status` | Shared cached telemetry, monitoring and control availability. |
 | `POST /api/refresh` | Request a permitted refresh; does not force the vehicle to measure anew. |
-| `POST /api/charging/start` | Native vehicle-limit preflight, then Smartfox M+ and guarded vehicle Start. |
+| `POST /api/charging/start` | Select verified-native preparation when readable; otherwise M+ and guarded Start with app target monitoring. |
 | `POST /api/charging/stop` | Combined local-first charging stop. |
 | `POST /api/charging/target` | Pause and verify a new native limit; resume only a previously physically charging session. Legacy sessions retain local target adjustment. |
 | `POST /api/charging/restore-limit` | Explicit retry of an unconfirmed native-limit restoration under guarded Off. |
@@ -140,12 +140,16 @@ sequenceDiagram
     participant API as Škoda Public API
     UI->>App: POST /api/charging/start (target)
     App->>App: Validate data, capabilities, quota and session
-    App->>SF: Hold Off during native-limit preflight
-    App->>API: PUT /charging/limit {targetStateOfChargeInPercent: target}
-    API-->>App: 202 Accepted (not confirmation)
-    App->>API: GET charging + operations (bounded verification)
-    API-->>App: Newer vehicle capture with matching target
-    Note over App,API: Without matching readback, no M+ or Start
+    alt Native limit already readable and operation advertised
+        App->>SF: Hold Off during native-limit preflight
+        App->>API: PUT /charging/limit {targetStateOfChargeInPercent: target}
+        API-->>App: 202 Accepted (not confirmation)
+        App->>API: GET charging + operations (bounded verification)
+        API-->>App: Newer vehicle capture with matching target
+        Note over App,API: No fallback after an uncertain native write
+    else Native limit absent
+        Note over App: App monitors target from SOC reports; no limit PUT
+    end
     App->>SF: Select M+ if needed; read values.xml
     SF-->>App: Mode, readiness, current, phase-switch state
     opt Phase switching is reported
@@ -168,11 +172,13 @@ sequenceDiagram
     App->>API: Guarded stop processing: read / POST stop as required
     API-->>App: Accepted command / newer vehicle telemetry
     Note over App: Keep Off hold until newer vehicle telemetry confirms stopped
-    App->>API: PUT /charging/limit (previous value or selected 80% fallback)
-    API-->>App: 202 Accepted
-    App->>API: GET charging + operations
-    API-->>App: Newer vehicle capture confirming restored limit
-    App->>SF: Return to A+ after stop and limit-restoration confirmation
+    opt Native limit was used
+        App->>API: PUT /charging/limit (previous value or selected 80% fallback)
+        API-->>App: 202 Accepted
+        App->>API: GET charging + operations
+        API-->>App: Newer vehicle capture confirming restored limit
+    end
+    App->>SF: Return to A+ after required confirmations
     App-->>UI: Stop completed
 ```
 
