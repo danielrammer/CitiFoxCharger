@@ -216,7 +216,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.valid_request(mutation=True) or not self.authenticated(mutation=True):
             return
         remote_actions = {"/api/app/update","/api/refresh","/api/charging/start","/api/charging/stop","/api/charging/target","/api/charging/restore-limit","/api/charging/confirm-restored-limit","/api/charging/release-limit-guard",
-                          "/api/charging/limit-test/set","/api/charging/limit-test/end",
+                          "/api/charging/limit-test/set","/api/charging/limit-test/end","/api/charging/limit-test/start-trial",
                           "/api/smartfox/heater","/api/smartfox/charger-mode"}
         if self.server.network_auth and urlsplit(self.path).path not in remote_actions:
             self.reply(403,{"error":"Configure device access and the backend directly on the tablet."})
@@ -313,6 +313,13 @@ class Handler(BaseHTTPRequestHandler):
                 if set(data) != {"acknowledge_unconfirmed_limit"} or data["acknowledge_unconfirmed_limit"] is not True:
                     raise ValueError("Explicit acknowledgement of an unconfirmed vehicle limit is required.")
                 result = service.end_limit_test(True)
+            elif path == "/api/charging/limit-test/start-trial":
+                if (set(data) != {"target_percent","request_id","accept_unconfirmed_limit"}
+                        or data.get("accept_unconfirmed_limit") is not True
+                        or not isinstance(data.get("request_id"),str)
+                        or not re.fullmatch(r"[a-zA-Z0-9-]{16,80}",data["request_id"])):
+                    raise ValueError("An exact test target and explicit acceptance of an unconfirmed limit are required.")
+                result = service.start_limit_trial(data["target_percent"],data["request_id"],True)
             elif path == "/api/charging/target":
                 if set(data) != {"target_percent"}:
                     raise ValueError("Only target charge level is required.")

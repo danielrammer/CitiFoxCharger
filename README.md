@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.9.4
+# CitiFoxCharger for Windows · 1.9.5
 
 <img src="citifoxcharger/web/brand/logo.png" alt="CitiFoxCharger logo: smooth electric city car, red fox tail and charging plug" width="620">
 
@@ -10,23 +10,38 @@ Both light and dark appearance are available. The light palette uses darker labe
 
 The header displays the current date and time from the browser device, independently of vehicle telemetry. It refreshes on returning to the page and uses the selected interface language. The clock fits inside the existing header height.
 
-The Settings page identifies the running backend as **v1.9.4 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
+The Settings page identifies the running backend as **v1.9.5 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
 
 ## Architecture and communication
 
 See [COMMUNICATION.md](COMMUNICATION.md) for the system and start/stop diagrams, exact Modbus addresses and word counts, XML data fields, SMARTFOX CGI commands, Škoda API calls and browser-to-backend routes. Mermaid diagrams render directly on GitHub. Protocol evidence and compatibility limits are in [INTERFACES.md](INTERFACES.md).
 
-## Isolated vehicle-limit test (1.9.4)
+## Supervised vehicle-stop experiment (1.9.5)
+
+This optional experiment permits **one explicit Start after an accepted or uncertain limit write**, without readback. An upstream HTTP 500 stays unknown; a definite rejection blocks the trial. This is a supervised compatibility test, **not reliable target charging**. The normal manual charging strategy is unchanged.
+
+For a reported SOC of **35%** and an exact test target of **37%**:
+
+1. End regular charging. Select **Charger → Off in CitiFoxCharger** and wait for Off and 0 kW.
+2. In **Settings → Vehicle charging limit → Isolated vehicle-limit test**, enter **37** and click **Send test limit · no charging Start** once. The API schema permits integer limits; the vehicle may reject 37%. There is no rounding.
+3. Click **Supervised Start with unconfirmed limit**, read and confirm. It uses the exact last limit attempt, at most ten minutes old and 1–5 points above reported SOC. It does **not** resend the limit. The backend selects M+, waits up to six minutes for phase switching/readiness and three seconds of settled readiness, then sends one Start. No automatic Start retry.
+4. Observe power and the car's SOC. The app **does not stop at 37%** during this trial. Charging proof requires two local ≥0.5 kW samples at least three seconds apart. A subsequent ≤0.1 kW period lasting 30 seconds is recorded **before** securing Off. That shows power dropped without an app stop; it does **not** prove the cause or successful application of the target. Check actual vehicle SOC separately.
+5. **Stop trial · charger Off**, the main Stop button and the Off dropdown all cancel the trial. Fallbacks also stop locally after **ten minutes from Start**, a **new SOC report at target +2 points**, no confirmed power within three minutes, lost local telemetry, failed preparation or backend restart. Each has a distinct stop cause and is never labelled successful vehicle target completion. These fallbacks require a running backend and reachable SMARTFOX.
+6. The trial leaves SMARTFOX **Off**, with isolation active. Request the normal **80%** explicitly, inspect the result, then end isolation. Restoration remains unconfirmed without readback or direct vehicle verification. Choose A+ separately. No profiles or timers are edited.
+
+The backend monitors with the browser closed. Updates, restart and exit are blocked while a trial runs. Unexpected restart cancels pending Start and secures Off; it never resumes the trial or replays Start/limit. Diagnostics include responses, power timestamps and stop cause without credentials or VIN. The small state machine is in [`limit_trial.py`](citifoxcharger/limit_trial.py): `waiting_ready → observing → stopping → finished`, persisted in private `vehicle-limit-test.json`.
+
+## Isolated vehicle-limit test (introduced in 1.9.4)
 
 This release adds a capability test in **Settings → Vehicle charging limit → Isolated vehicle-limit test**. It does not deploy the separate 2.0 state-machine branch and does not fix or change the normal SOC-controlled charging strategy below.
 
 1. End the current charging session first.
 2. On the CitiFoxCharger overview, choose **Charger → Off** and wait for Off and 0 kW. Selecting Off in CitiFox also preserves the explicit Off choice against normal A+ normalization.
-3. Open the test in Settings, explicitly choose **90%** (or another offered ten-point value) and click **Send test limit · no charging Start** once. Do **not** click Force charge for this test.
+3. Open the test in Settings, explicitly enter an integer from **1 to 100%** and click **Send test limit · no charging Start** once. The vehicle may reject particular values; no rounding is performed. Do **not** click Force charge for this test.
 4. Read the immediate result. **API accepted / HTTP 202 is not vehicle confirmation.** If the API omits the limit, the result explicitly says unconfirmed. The test performs no extra GET loop, automatic retry, charging Start/Stop, SMARTFOX mode write, profile write or timer edit. Check the actual setting in MyŠkoda or the vehicle if available. A missing field is unknown, not proof that setting failed.
 5. Use **Send normal 80% limit** to request restoration explicitly. It is still unconfirmed unless a newer capture reads back exactly 80% or you check it directly. Then choose **End test · keep Off** and acknowledge the explanation. Ending isolation sends no vehicle or SMARTFOX command; explicit Off remains selected. Select A+ separately only when ready to permit normal schedules again.
 
-New charging starts, A+/M+ changes, VIN edits and key removal are blocked while test isolation is active. Local Off/Stop and key replacement remain available. Test state, uncertain outcomes and request IDs survive restart; no write is replayed. A 30-second spacing prevents repeat test commands (the first explicit 80% restoration can immediately follow another target). The test reserves requests for restoration and respects upstream cooldowns. Existing scheduled vehicle reads may confirm an exact newer readback; there is no automatic wait for a field the car does not return.
+Normal charging starts, A+/M+ changes, VIN edits and key removal are blocked while test isolation is active; the separate supervised trial above is an explicit exception. Local Off/Stop and key replacement remain available. Test state, uncertain outcomes and request IDs survive restart; no write is replayed. A 30-second spacing prevents repeat test commands (the first explicit 80% restoration can immediately follow another target). The test reserves requests for restoration and respects upstream cooldowns. Existing scheduled vehicle reads may confirm an exact newer readback; there is no automatic wait for a field the car does not return.
 
 The same protected endpoints and sanitized diagnostics work over the configured HTTPS home network, including passwordless mode. Diagnostics include targets, accepted/rejected/unknown outcomes, HTTP status, published problem identifiers and readback state, but no VIN, key, identifiers or raw API body. Private test state belongs in the local profile, not Git.
 

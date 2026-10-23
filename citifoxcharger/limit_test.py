@@ -47,6 +47,8 @@ class LimitTest:
 
     def access_reason(self, restoring=False):
         s = self.service
+        if getattr(s, "limit_trial", None) and s.limit_trial.active:
+            return "Stop the supervised vehicle-stop trial before changing its limit."
         if s.stopping or s.app_update_pending:
             return "The app is restarting or updating."
         if s.charging.active or s.vehicle_limit.busy:
@@ -103,8 +105,8 @@ class LimitTest:
                 "attempts":attempts}
 
     def send(self, target, request_id):
-        if type(target) is not int or target not in (50,60,70,80,90,100):
-            raise ValueError("Choose an explicit vehicle-limit test value: 50, 60, 70, 80, 90 or 100%. No rounding.")
+        if type(target) is not int or not 1 <= target <= 100:
+            raise ValueError("Choose an explicit integer test limit from 1 to 100%. The vehicle may reject it. No rounding.")
         previous = next((x for x in self.record["attempts"] if x.get("request_id") == request_id), None)
         if previous:
             if previous.get("target_percent") != target:
@@ -171,6 +173,8 @@ class LimitTest:
             self.persist(record)
 
     def end(self, acknowledge):
+        if getattr(self.service, "limit_trial", None) and self.service.limit_trial.active:
+            raise IntegrationError("limit_trial_active", "Stop the supervised vehicle-stop trial before ending isolation.")
         if acknowledge is not True:
             raise ValueError("Explicit acknowledgement of an unconfirmed vehicle limit is required.")
         record = {"version":1,"active":False,"attempts":[]} if self.record.get("invalid") else {**self.record,"active":False}

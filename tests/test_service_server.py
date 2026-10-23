@@ -330,6 +330,19 @@ class ServerTests(unittest.TestCase):
             send.assert_called_once_with(90,body['request_id'])
         self.assertEqual(self.call('/api/charging/limit-test/end',{'acknowledge_unconfirmed_limit':False})[0],400)
 
+    def test_supervised_trial_http_requires_explicit_consent_origin_session_and_csrf(self):
+        path='/api/charging/limit-test/start-trial'
+        body={'target_percent':37,'request_id':'supervised-http-trial-0001','accept_unconfirmed_limit':True}
+        self.assertEqual(self.call(path,body,Cookie='')[0],401)
+        self.assertEqual(self.call(path,body,Origin='https://elsewhere.example')[0],403)
+        self.assertEqual(self.call(path,body,**{'X-CSRF-Token':'wrong'})[0],403)
+        for value in (False,'true',1,None):
+            self.assertEqual(self.call(path,{**body,'accept_unconfirmed_limit':value})[0],400)
+        self.assertEqual(self.call(path,{**body,'force':True})[0],400)
+        with patch.object(self.service,'start_limit_trial',return_value={'active':True}) as start:
+            self.assertEqual(self.call(path,body)[0],200)
+            start.assert_called_once_with(37,body['request_id'],True)
+
     def test_diagnostics_are_authenticated_sanitized_and_do_not_poll_or_command(self):
         self.service.cache['skoda']={'soc':40,'vin':VIN,'message':KEY,'quota_remaining':'16'}
         self.service.charging.save(status='error',target_percent=83,stop_cause='request_quota')

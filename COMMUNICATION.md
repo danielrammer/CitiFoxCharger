@@ -1,6 +1,6 @@
 # Communication and data flow
 
-This describes the implementation shipped with **CitiFoxCharger 1.9.4**, checked against the source on **23 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
+This describes the implementation shipped with **CitiFoxCharger 1.9.5**, checked against the source on **23 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
 
 ## System overview
 
@@ -211,8 +211,18 @@ The app separately records a start confirmed from two fresh charger-specific pow
 
 ## Isolated vehicle-limit capability test (1.9.4)
 
-`POST /api/charging/limit-test/set` accepts `target_percent` (explicitly 50, 60, 70, 80, 90 or 100) and an idempotent `request_id`. It requires an inactive charging/restoration session, valid vehicle access/advertised limit capability, budget/cooldown permission and a new local read of SMARTFOX Off/zero power. The user Off choice and test intent are saved before exactly one existing `PUT /api/v1/vehicles/{vin}/charging/limit` with `{"targetStateOfChargeInPercent":90}`. No current-limit readback is required to perform this explicit experiment. It sends no charging command or SMARTFOX write.
+`POST /api/charging/limit-test/set` accepts an exact integer `target_percent` from 1 to 100 and an idempotent `request_id`. The vehicle may reject particular values; they are never rounded. It requires an inactive charging/restoration session, valid vehicle access/advertised limit capability, budget/cooldown permission and a new local read of SMARTFOX Off/zero power. The user Off choice and test intent are saved before exactly one existing `PUT /api/v1/vehicles/{vin}/charging/limit` with, for example, `{"targetStateOfChargeInPercent":37}`. No current-limit readback is required to perform this explicit experiment. This endpoint alone sends no charging command or SMARTFOX write.
 
 API acceptance and verification are separate. Missing limits remain `not_returned`. Only an existing scheduled successful GET with an exact, newer post-write vehicle capture can mark a limit `confirmed`. No polling loop, delayed automatic write, Start or retry is created. Persisted uncertain requests are not replayed.
 
 The explicit 80% button sends one separate PUT under the same local Off requirement. `POST /api/charging/limit-test/end` requires `acknowledge_unconfirmed_limit: true`; it only ends isolation and retains explicit Off. A+ requires a separate user action. Test-active Start and mode-change gates are enforced in the service, not just the UI. Both endpoints use the existing session/CSRF/origin and home-network authentication checks. Cached diagnostic exports include an allowlisted test report.
+
+### Optional supervised Start without limit confirmation (1.9.5)
+
+`POST /api/charging/limit-test/start-trial` requires exactly `target_percent`, an idempotent `request_id`, and `accept_unconfirmed_limit: true`. It uses the last accepted/uncertain limit attempt (including HTTP 500), for this VIN, at most ten minutes old. The exact target must be 1–5 percentage points above reported SOC. Definitive rejection, active regular charging/restoration, missing request budget/cooldown permission or unverified local Off/zero power blocks the trial. It never sends another limit PUT.
+
+The backend persists `waiting_ready` before setting local M+, waits for verified readiness/phase switching and three-second settling (six-minute maximum), then persists `observing` and an uncertain Start intent **before** one empty-body vehicle Start POST. A retry/new request ID cannot repeat a trial for the same limit attempt. No cloud readback is required. Existing normal reads continue without a new polling loop.
+
+Target SOC itself does **not** trigger an app stop during the trial. Two ≥0.5 kW local samples ≥3 seconds apart establish charging power. A later ≤0.1 kW interval of 30 seconds records an external power drop before local Off and one vehicle Stop. This never proves why the car stopped or that the limit was applied. Distinct app stop causes include manual Stop/Off, ten minutes from Start, a newer SOC at target +2 points, no power within three minutes, phase/readiness timeout, telemetry loss, mode change and backend restart. Local Off is retried at ten-second intervals when necessary; Start, limit and uncertain Stop are not replayed. Completion requires fresh Off/zero-power readback. No automatic 80% restoration or A+ follows.
+
+The main Stop route `/api/charging/stop` also stops the trial, independently of cloud access. End-isolation, limit changes, normal Starts/mode changes, backend restart/shutdown and updates are blocked until it stops. Unexpected restart cancels a deferred Start and enters `stopping`. The trial state machine is isolated in `limit_trial.py`; persistence shares the private test record. Sanitized diagnostics include HTTP outcomes, physical-power timestamps and the exact stop cause. Session, CSRF, origin and configured HTTPS home-network authentication apply, including passwordless mode.

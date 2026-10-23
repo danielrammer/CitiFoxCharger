@@ -218,6 +218,17 @@ class NetworkHttpsTests(unittest.TestCase):
             self.assertEqual(self.call('/api/charging/limit-test/end',{'acknowledge_unconfirmed_limit':True},Authorization='')[0],200)
             end.assert_called_once_with(True)
 
+    def test_passwordless_remote_supervised_trial_requires_session_origin_and_csrf(self):
+        self.server.network_auth=NetworkAuth(validate_network({**configuration(),'authentication':'none','salt':None,'password_hash':None,'iterations':0}))
+        path='/api/charging/limit-test/start-trial'
+        body={'target_percent':37,'request_id':'network-supervised-0001','accept_unconfirmed_limit':True}
+        self.assertEqual(self.call(path,body,Authorization='',Cookie='')[0],401)
+        self.assertEqual(self.call(path,body,Authorization='',Origin='https://elsewhere.example')[0],403)
+        self.assertEqual(self.call(path,body,Authorization='',**{'X-CSRF-Token':'wrong'})[0],403)
+        with patch.object(self.service,'start_limit_trial',return_value={'active':True}) as start:
+            self.assertEqual(self.call(path,body,Authorization='')[0],200)
+            start.assert_called_once_with(37,body['request_id'],True)
+
     def test_remote_vehicle_and_heat_controls_use_the_existing_single_service(self):
         with patch.object(self.service,'change_target',return_value={'target_percent':82}) as target:
             self.assertEqual(self.call('/api/charging/target',{'target_percent':82})[0],200)

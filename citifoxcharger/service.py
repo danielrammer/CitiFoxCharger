@@ -12,6 +12,7 @@ from .charging import ChargingSession
 from .power import PowerGuard
 from .vehicle_limit import VehicleLimit
 from .limit_test import LimitTest
+from .limit_trial import LimitTrial
 
 
 class Service:
@@ -40,6 +41,7 @@ class Service:
         self.restore_vehicle_cache()
         self.vehicle_limit = VehicleLimit(self)
         self.limit_test = LimitTest(self)
+        self.limit_trial = LimitTrial(self)
 
     def restore_vehicle_cache(self):
         try:
@@ -125,6 +127,9 @@ class Service:
                 except Exception:
                     # Never log credentials or declare monitoring successful after an internal error.
                     with self.lock:
+                        if self.limit_trial.active:
+                            try:self.limit_trial.stop("internal_error")
+                            except (OSError, IntegrationError, SmartfoxControlError):pass
                         if self.charging.active:
                             try:
                                 self.charging.save(status="paused", message="Monitoring interrupted. Check data and local storage.")
@@ -223,6 +228,7 @@ class Service:
                     "charging":copy.deepcopy(self.charging.value),
                     "last_command":copy.deepcopy(self.last_command),
                     "limit_test":self.limit_test.state(),
+                    "limit_trial":self.limit_trial.state(),
                     "monitoring":{"running":self.worker is not None and self.worker.is_alive()},
                     "server_at":utcnow(),
                     "freshness_limit_seconds":min(900,self.config.value["skoda"]["stale_seconds"]),
@@ -236,6 +242,8 @@ class Service:
 
     def prepare_shutdown(self):
         with self.lock:
+            if self.limit_trial.active:
+                raise ValueError("Stop the supervised vehicle-stop trial before exiting.")
             if self.charging.active:
                 if not self.charging.value.get("stop_requested"):
                     raise ValueError("Charging monitoring is active. Stop charging first and wait for confirmation.")
@@ -254,6 +262,8 @@ class Service:
 
     def prepare_restart(self):
         with self.lock:
+            if self.limit_trial.active:
+                raise ValueError("Stop the supervised vehicle-stop trial before restarting.")
             if self.stopping:
                 raise ValueError("The app is already stopping.")
             if (self.secrets.key or self.charging.active) and not self.secrets.persisted:
@@ -419,7 +429,8 @@ class Service:
             self.check_command_observation()
             if not self.stopping:
                 self.charging.tick()
-            self.power.update(self.charging.active and not self.worker_stop.is_set() and not self.stopping)
+                self.limit_trial.tick()
+            self.power.update((self.charging.active or self.limit_trial.active) and not self.worker_stop.is_set() and not self.stopping)
             charging = self.charging.state()
             if self.limit_test.active:
                 reason = "End the vehicle-limit test in Settings first. Charging starts and mode changes are blocked during isolation."
@@ -427,6 +438,11 @@ class Service:
                                 can_force=False,can_force_with_stale=False,can_force_native=False,
                                 can_force_native_with_stale=False,can_retry_start=False,
                                 manual_start_reason=reason,force_reason=reason)
+            trial = self.limit_trial.state()
+            if trial["active"]:
+                charging.update(can_shutdown=False,can_stop=True,can_adjust_target=False,
+                                target_percent=trial["target_percent"],target_control="experiment",
+                                message="Supervised vehicle-stop trial. The app does not stop at the target; time and overshoot fallbacks remain active.")
             return {"smartfox": copy.deepcopy(self.cache.get("smartfox", {"available":False})),
                     "skoda": copy.deepcopy(car),
                     "controls": {a: self.can_command(a) for a in ("start", "stop")},
@@ -434,6 +450,7 @@ class Service:
                     "app_update_pending": self.app_update_pending,
                     "charging": charging,
                     "limit_test": self.limit_test.state(),
+                    "limit_trial": trial,
                     "monitoring": {"running": self.worker is not None and self.worker.is_alive(),
                                    "power": self.power.state()},
                     "server_at": utcnow(), "next_skoda_seconds": max(0, int(self.next_due.get("skoda", 0) - time.monotonic()))}
@@ -507,6 +524,8 @@ class Service:
 
     def stop_charge(self, request_id):
         with self.lock:
+            if self.limit_trial.active:
+                return self.limit_trial.stop("manual")
             if self.stopping:raise IntegrationError("blocked","The app is restarting or stopping.")
             # The verified local Off/readback happens before any slow cloud read.
             if self.web is None:
@@ -556,6 +575,8 @@ class Service:
                 raise IntegrationError("blocked","Charger control is currently unavailable.")
             if mode != "OFF":
                 self.require_no_limit_test()
+            if mode == "OFF" and self.limit_trial.active:
+                return self.limit_trial.stop("manual")
             if mode != "OFF" and self.charging.value.get("stop_guard") and self.charging.active:
                 raise IntegrationError("blocked","Automatic stop is being checked. The charger stays Off until the vehicle confirms the stop.")
             if mode == "M+" and (not self.charging.active or self.charging.value.get("stop_requested")):
@@ -590,6 +611,8 @@ class Service:
 
     def command(self, action, request_id, allow_stale=False):
         with self.lock:
+            if action == "stop" and self.limit_trial.active:
+                return self.limit_trial.stop("manual")
             if action == "start":
                 self.require_no_limit_test()
             if self.stopping:raise IntegrationError("blocked","The app is restarting or stopping.")
@@ -629,3 +652,7 @@ class Service:
     def end_limit_test(self, acknowledge):
         with self.lock:
             return self.limit_test.end(acknowledge)
+
+    def start_limit_trial(self, target, request_id, acknowledge):
+        with self.lock:
+            return self.limit_trial.start(request_id,target,acknowledge)

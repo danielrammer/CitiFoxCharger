@@ -8,6 +8,7 @@ try{const saved=localStorage.getItem("citifox-language");language=["de","en"].in
 const escape=value=>value.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
 const rules=templates.map(([source,target])=>{let pattern="",last=0;for(const match of source.matchAll(/\{(\d+)\}/g)){pattern+=escape(source.slice(last,match.index))+"(.*?)";last=match.index+match[0].length;}return [new RegExp("^"+pattern+escape(source.slice(last))+"$"),target];});
 Object.assign(messages,{
+ "Supervised trial · vehicle limit unconfirmed.":"Beaufsichtigter Test · Fahrzeug-Ladegrenze unbestätigt.",
  "Target monitored by the app · delayed vehicle reports can delay the stop.":"Ziel durch App überwacht · verzögerte Fahrzeugdaten können den Stopp verzögern.",
  "With a readable vehicle limit, manual Start first sets and verifies the exact target. Otherwise the app uses M+ and Start without changing the vehicle limit, and monitors the target using vehicle reports. Delayed or missing data affect stop accuracy and can require a precautionary stop. Existing unconfirmed limit attempts must first be ended explicitly. Charging profiles are not edited.":"Bei auslesbarer Fahrzeuggrenze setzt und prüft die App zuerst das exakte Ziel im Auto. Andernfalls nutzt sie M+ und Start ohne Änderung der Fahrzeuggrenze und überwacht das Ziel anhand der Fahrzeugmeldungen. Verzögerte oder fehlende Daten beeinflussen die Stoppgenauigkeit und können einen vorsorglichen Stopp erfordern. Alte unbestätigte Grenzwertversuche müssen zuerst ausdrücklich beendet werden. Ladeprofile werden nicht bearbeitet.",
  "The vehicle limit remains unconfirmed, including 80%. A+ returns control to the vehicle and SMARTFOX rules and schedules, which may start charging. Check the desired limit directly in MyŠkoda or the car.":"Die Fahrzeug-Ladegrenze bleibt unbestätigt, auch 80 %. In A+ gelten wieder die Regeln und Schaltzeiten von Auto und SMARTFOX; dadurch kann eine Ladung beginnen. Prüfe den gewünschten Grenzwert selbst in MyŠkoda oder im Auto.",
@@ -55,6 +56,29 @@ Object.assign(messages,{
  "SMARTFOX Off cannot be checked. No limit command was sent.":"SMARTFOX Aus nicht prüfbar. Kein Grenzwertbefehl gesendet.",
  "Wait 30 seconds before another vehicle-limit test. No automatic retry is performed.":"Vor einem weiteren Grenzwerttest 30 Sekunden warten. Es gibt keine automatische Wiederholung.",
  "End the vehicle-limit test in Settings first. Charging starts and mode changes are blocked during isolation.":"Zuerst den Grenzwerttest unter Einstellungen beenden. Ladestarts und Moduswechsel sind im Testmodus gesperrt."
+});
+Object.assign(messages,{
+ "Sending a test limit alone never starts charging or changes SMARTFOX mode. A separate supervised trial can explicitly start with an unconfirmed limit. Existing charging schedules are not edited.":"Das Senden einer Testgrenze startet keine Ladung und ändert den SMARTFOX-Modus nicht. Ein separater, beaufsichtigter Versuch kann ausdrücklich mit unbestätigter Grenze starten. Bestehende Ladepläne bleiben erhalten.",
+ "Exact integer, no rounding. The vehicle may reject values such as 37%.":"Exakter ganzzahliger Wert, keine Rundung. Das Fahrzeug kann Werte wie 37 % ablehnen.",
+ "Supervised Start with unconfirmed limit":"Beaufsichtigter Teststart mit unbestätigter Grenze",
+ "Stop trial · charger Off":"Test stoppen · Ladestation Aus",
+ "Supervised vehicle-stop trial":"Beaufsichtigter Test des Fahrzeug-Stopps",
+ "Accept unconfirmed limit and start trial":"Unbestätigte Grenze akzeptieren und Test starten",
+ "Choose an explicit integer test limit from 1 to 100%. The vehicle may reject it. No rounding.":"Ganzzahlige Testgrenze von 1 bis 100 % ausdrücklich wählen. Das Fahrzeug kann sie ablehnen. Keine Rundung.",
+ "Test isolation active. Only the separate supervised trial can send Start.":"Testmodus aktiv. Nur der separate, beaufsichtigte Versuch kann einen Start senden.",
+ "A supervised vehicle-stop trial is already running.":"Ein beaufsichtigter Fahrzeug-Stopp-Test läuft bereits.",
+ "End charging, restoration and updates before the supervised trial.":"Ladung, Wiederherstellung und Updates vor dem beaufsichtigten Versuch beenden.",
+ "Send an explicit test limit while the charger is Off first.":"Zuerst bei ausgeschalteter Ladestation eine Testgrenze ausdrücklich senden.",
+ "A rejected limit cannot be used for this trial.":"Eine ausdrücklich abgelehnte Grenze kann für diesen Versuch nicht verwendet werden.",
+ "This limit attempt already had a trial. No automatic or repeated Start.":"Zu diesem Grenzwertversuch gab es bereits einen Teststart. Kein automatischer oder wiederholter Start.",
+ "The explicit test-limit attempt must be no older than ten minutes.":"Die ausdrücklich gesendete Testgrenze darf höchstens zehn Minuten alt sein.",
+ "For this short trial choose a target 1 to 5 percentage points above the reported SOC.":"Für diesen kurzen Versuch ein Ziel 1 bis 5 Prozentpunkte über dem gemeldeten Ladestand wählen.",
+ "Start/stop access and request budget are required for the supervised trial.":"Für den beaufsichtigten Versuch sind Start/Stopp-Zugriff und genügend Anfragen nötig.",
+ "Stop the supervised vehicle-stop trial before changing its limit.":"Vor Änderung der Grenze den beaufsichtigten Fahrzeug-Stopp-Test stoppen.",
+ "Stop the supervised vehicle-stop trial before ending isolation.":"Vor Beenden des Testmodus den beaufsichtigten Fahrzeug-Stopp-Test stoppen.",
+ "Supervised vehicle-stop trial. The app does not stop at the target; time and overshoot fallbacks remain active.":"Beaufsichtigter Fahrzeug-Stopp-Test. Die App stoppt nicht am Ziel; Zeit- und Überschreitungsgrenzen bleiben aktiv.",
+ "Stop the supervised vehicle-stop trial before exiting.":"Vor Beenden der App den beaufsichtigten Fahrzeug-Stopp-Test stoppen.",
+ "Stop the supervised vehicle-stop trial before restarting.":"Vor dem Neustart den beaufsichtigten Fahrzeug-Stopp-Test stoppen."
 });
 function german(value,depth=0){
  if(messages[value]!==undefined)return messages[value];

@@ -1,4 +1,12 @@
-# Isolated vehicle-limit test — 1.9.4
+# Supervised vehicle-stop trial — 1.9.5
+
+Validation on 23 October 2026: **418 offline tests passed in 53.493 seconds** using `python -m unittest discover -s tests -v`. The 21 new trial tests cover one explicit Start after an uncertain HTTP 500, no additional limit write, no app stop at target, distinct external-power-drop/time/overshoot/manual causes, phase switching, restart cancellation, local Stop without cloud access, one vehicle Stop even if local Off fails, idempotency, persistence failure and sanitized diagnostics. New local HTTP and passwordless HTTPS tests retain explicit consent, session, origin and CSRF requirements. The isolated test also checks sending exactly 37 without rounding or starting.
+
+All devices and cloud responses in these tests are simulated. No native vehicle-limit application or physical 37% stop is claimed. Real Citigo compatibility remains unconfirmed. The normal manual charging strategy is unchanged.
+
+Browser validation used a separate fake-adapter backend on localhost: 35% SOC, exact 37% PUT returning HTTP 500, explicit confirmation, one subsequent Start, 7.3 kW proof, browser reload without another Start and manual local-first Stop. No browser errors or warnings were recorded. The overview measured 800×1280 with scroll width 800 and scroll height 1280 in both themes; screenshots are labelled simulated and kept outside the repository. Real credentials and hardware were not used.
+
+## Previous isolated vehicle-limit test — 1.9.4
 
 Validation on 23 October 2026: **394 offline tests passed in 51.440 seconds**, including **22 isolated-limit tests**, two new local HTTP tests and one passwordless HTTPS integration test. The command was `python -m unittest discover -s tests -v`.
 

@@ -60,10 +60,16 @@ class LimitTestTests(unittest.TestCase):
         self.assertNotIn('PRIVATE',json.dumps(result))
 
     def test_unsupported_test_values_are_never_rounded(self):
-        for value in (87,True,90.0,'90',None,0,110):
+        for value in (True,90.0,'90',None,0,110):
             with self.assertRaises(ValueError):self.send(value)
         self.assertEqual(self.puts,[])
         self.assertFalse(self.service.limit_test.active)
+
+    def test_exact_37_is_sent_without_rounding_or_start(self):
+        result=self.send(37)
+        self.assertEqual(self.puts[-1][1],{'targetStateOfChargeInPercent':37})
+        self.assertEqual(result['attempts'][-1]['target_percent'],37)
+        self.assertEqual(self.case.effects,self.effects)
 
     def test_every_start_and_normal_mode_entry_is_blocked_during_isolation(self):
         self.send()
