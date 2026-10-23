@@ -96,13 +96,14 @@ function renderLimitTest(){
 }
 function trialDescription(trial,de){
  if(!trial.phase)return "";
- const phases={waiting_ready:de?"Warte auf M+ und Ladebereitschaft / Phasenumschaltung":"Waiting for M+ and readiness / phase switching",observing:de?"Test läuft; kein App-Stopp am Ziel":"Trial running; no app stop at target",stopping:de?"Test wird gestoppt; Aus wird geprüft":"Stopping trial; checking Off",finished:de?"Test beendet; Aus und 0 kW bestätigt":"Trial ended; Off and zero power confirmed"};
+ const phases={waiting_ready:de?"Warte auf M+ und Ladebereitschaft / Phasenumschaltung":"Waiting for M+ and readiness / phase switching",observing:de?"Test läuft; kein App-Stopp am Ziel":"Trial running; no app stop at target",waiting_resume:trial.phase_ended_at?(de?"Phasenumschaltung beendet; warte auf erneute Ladeleistung":"Phase switching ended; waiting for charging power to resume"):(de?"Phasenumschaltung nach Start; warte, kein erneuter Startbefehl":"Phase switching after Start; waiting without another Start request"),stopping:de?"Test wird gestoppt; Aus wird geprüft":"Stopping trial; checking Off",finished:de?"Test beendet; Aus und 0 kW bestätigt":"Trial ended; Off and zero power confirmed"};
  const causes={manual:de?"manueller Stopp":"manual stop",external_power_stop:de?"Leistung ohne App-Stopp abgefallen; Ursache/Zielerreichung unbestätigt. Danach durch Aus abgesichert":"Power dropped without an app stop; cause/target unconfirmed. Subsequently secured Off",time_guard:de?"App-Abbruch nach 10 Minuten; kein Nachweis für Fahrzeug-Stopp":"App fallback after 10 minutes; no proof of vehicle stop",overshoot_guard:de?"App-Abbruch bei Ziel +2 Prozentpunkten; kein Fahrzeug-Stopp am Ziel":"App fallback at target +2 percentage points; no vehicle stop at target",no_charging_power:de?"Keine Ladeleistung binnen 3 Minuten bestätigt":"No charging power confirmed within 3 minutes",backend_restart:de?"App-Abbruch nach Backend-Neustart":"App fallback after backend restart"};
  const details=[`${trial.target_percent} % · ${phases[trial.phase]||trial.phase}`];
  const outcome=de?({accepted:"API angenommen",unknown:"Ausgang unbekannt",rejected:"abgelehnt"}[trial.start_outcome]||trial.start_outcome):trial.start_outcome;
  if(trial.start_outcome)details.push(`${de?"Startanfrage":"Start request"}: ${outcome}${trial.start_http_status?` · HTTP ${trial.start_http_status}`:""}`);
  if(trial.power_confirmed_at)details.push(`${de?"Ladeleistung bestätigt":"Charging power confirmed"}: ${date(trial.power_confirmed_at)}`);
- if(trial.stop_cause)details.push(causes[trial.stop_cause]||(de?`App-Abbruch: ${trial.stop_cause}`:`App fallback: ${trial.stop_cause}`));
+ if(trial.power_resumed_at)details.push(`${de?"Ladeleistung nach Umschaltung bestätigt":"Charging power resumed after switching"}: ${date(trial.power_resumed_at)}`);
+ if(trial.stop_cause)details.push(trial.stop_cause==="phase_resume_failed"?(de?"App-Abbruch: 3 Minuten nach Phasenumschaltung keine erneute Ladeleistung; kein Fahrzeug-Stopp am Ziel":"App fallback: no resumed power within 3 minutes after phase switching; not a vehicle stop at target"):(causes[trial.stop_cause]||(de?`App-Abbruch: ${trial.stop_cause}`:`App fallback: ${trial.stop_cause}`)));
  return details.join("\n");
 }
 function renderEnergy(charger){

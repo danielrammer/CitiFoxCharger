@@ -1,4 +1,10 @@
-# Supervised vehicle-stop trial — 1.9.5
+# Late phase-switching pause — 1.9.6
+
+Validation on 23 October 2026: **427 offline tests passed in 91.971 seconds**. Nine additional scenarios cover phase switching after initial Start/power proof, switching before the first power proof, resumed-power confirmation without a second Start, a distinct no-resume fallback, unchanged time/SOC guards, bounded switching, manual Stop and restart cancellation. The earlier unflagged external power-stop test still passes.
+
+A fake-adapter browser preview showed 0 kW during late phase switching, M+ retained and an explicit waiting message, with no automatic Stop or second Start. At 800×1280 the overview measured scroll width 800 and scroll height 1280 with no browser errors/warnings. The screenshot is labelled simulated and stored outside Git. No running tablet or real vehicle was modified. This correction does not establish whether the real vehicle accepts the limit.
+
+## Supervised vehicle-stop trial — 1.9.5
 
 Validation on 23 October 2026: **418 offline tests passed in 53.493 seconds** using `python -m unittest discover -s tests -v`. The 21 new trial tests cover one explicit Start after an uncertain HTTP 500, no additional limit write, no app stop at target, distinct external-power-drop/time/overshoot/manual causes, phase switching, restart cancellation, local Stop without cloud access, one vehicle Stop even if local Off fails, idempotency, persistence failure and sanitized diagnostics. New local HTTP and passwordless HTTPS tests retain explicit consent, session, origin and CSRF requirements. The isolated test also checks sending exactly 37 without rounding or starting.
 

@@ -15,7 +15,7 @@ from .smartfox_web import SmartfoxControlError
 
 
 class LimitTrial:
-    RUNNING = ("waiting_ready", "observing", "stopping")
+    RUNNING = ("waiting_ready", "observing", "waiting_resume", "stopping")
 
     def __init__(self, service):
         self.service = service
@@ -67,7 +67,8 @@ class LimitTrial:
         result = {key:copy.deepcopy(self.record.get(key)) for key in (
             "phase", "target_percent", "initial_soc", "created_at", "start_at",
             "start_outcome", "start_http_status", "power_confirmed_at", "power_stopped_at",
-            "stop_at", "stop_cause", "stop_outcome", "stop_http_status", "finished_at")}
+            "stop_at", "stop_cause", "stop_outcome", "stop_http_status", "finished_at",
+            "phase_started_at", "phase_ended_at", "power_resumed_at")}
         result.update(active=self.active, can_start=self.reason() is None, reason=self.reason())
         return result
 
@@ -210,6 +211,38 @@ class LimitTrial:
             return
         if now >= r["runtime_deadline"]:
             self.stop("time_guard")
+            return
+        # A phase change can begin AFTER the first Start/power proof. Its known
+        # zero-power pause is not an external vehicle stop. Keep the original
+        # ten-minute trial deadline and never replay Start to force a resume.
+        if charger.get("phase_switching"):
+            if r["phase"] != "waiting_resume":
+                self.save(phase="waiting_resume", phase_started_at=utcnow(), phase_ended_at=None,
+                          phase_deadline=now+360, resume_deadline=None, high_since=None, low_since=None)
+            elif now >= r["phase_deadline"]:
+                self.stop("phase_timeout")
+            elif r.get("resume_deadline") is not None:
+                self.save(phase_ended_at=None, resume_deadline=None, high_since=None, low_since=None)
+            return
+        if r["phase"] == "waiting_resume":
+            if r.get("resume_deadline") is None:
+                self.save(phase_ended_at=utcnow(), resume_deadline=now+180,
+                          high_since=None, low_since=None)
+                return
+            if now >= r["resume_deadline"]:
+                self.stop("phase_resume_failed")
+                return
+            # Require fresh post-switch physical power, not an old cloud state.
+            if charger["power_kw"] >= .5:
+                read = timestamp(charger["read_at"])
+                if r.get("high_since") is None:
+                    self.save(high_since=read)
+                elif read-r["high_since"] >= 3:
+                    self.save(phase="observing", power_resumed_at=charger["read_at"],
+                              power_confirmed_at=r.get("power_confirmed_at") or charger["read_at"],
+                              high_since=read, low_since=None)
+            elif r.get("high_since") is not None:
+                self.save(high_since=None)
             return
         power, read = charger["power_kw"], timestamp(charger["read_at"])
         if power >= .5:

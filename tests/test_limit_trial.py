@@ -118,6 +118,82 @@ class LimitTrialTests(unittest.TestCase):
         self.assertNotIn('start',self.case.effects)
         self.assertEqual(self.s.limit_trial.record['stop_cause'],'phase_timeout')
 
+    def late_phase(self,prove=True):
+        self.start();self.ready()
+        if prove:self.prove_power()
+        self.case.web.phase_switching=True
+        self.tick_power(0)
+
+    def test_late_phase_switch_is_not_mistaken_for_external_power_stop(self):
+        self.late_phase()
+        self.s.limit_trial.save(low_since=time.time()-31)
+        self.tick_power(0)
+        self.assertEqual(self.s.limit_trial.record['phase'],'waiting_resume')
+        self.assertIsNone(self.s.limit_trial.state()['power_stopped_at'])
+        self.assertNotIn('stop',self.case.effects)
+        self.assertEqual(self.case.effects.count('start'),1)
+        self.assertEqual(self.case.web.mode,'M+')
+
+    def test_late_phase_before_initial_power_does_not_hit_initial_power_timeout(self):
+        self.late_phase(prove=False)
+        self.s.limit_trial.save(start_at='2000-01-01T00:00:00Z')
+        self.tick_power(0)
+        self.assertTrue(self.s.limit_trial.active)
+        self.assertNotIn('stop',self.case.effects)
+
+    def test_power_resume_after_late_phase_needs_new_proof_without_second_start(self):
+        self.late_phase()
+        original_deadline=self.s.limit_trial.record['runtime_deadline']
+        self.case.web.phase_switching=False;self.tick_power(0)
+        self.tick_power(7.3)
+        self.s.limit_trial.save(high_since=time.time()-4);self.tick_power(7.3)
+        self.assertEqual(self.s.limit_trial.record['phase'],'observing')
+        self.assertIsNotNone(self.s.limit_trial.state()['power_resumed_at'])
+        self.assertEqual(self.s.limit_trial.record['runtime_deadline'],original_deadline)
+        self.assertEqual(self.case.effects.count('start'),1)
+        self.assertNotIn('stop',self.case.effects)
+
+    def test_no_resume_is_a_distinct_app_fallback_not_target_completion(self):
+        self.late_phase()
+        self.case.web.phase_switching=False;self.tick_power(0)
+        self.s.limit_trial.save(resume_deadline=time.time()-1);self.tick_power(0)
+        self.assertEqual(self.s.limit_trial.record['stop_cause'],'phase_resume_failed')
+        self.assertIsNone(self.s.limit_trial.state()['power_stopped_at'])
+        self.assertEqual(self.case.effects.count('start'),1)
+        self.assertEqual(self.case.effects[-2:],['OFF','stop'])
+
+    def test_late_phase_keeps_original_time_and_overshoot_guards(self):
+        self.late_phase()
+        self.s.limit_trial.save(runtime_deadline=time.time()-1);self.tick_power(0)
+        self.assertEqual(self.s.limit_trial.record['stop_cause'],'time_guard')
+
+    def test_late_phase_still_honours_new_soc_overshoot_guard(self):
+        self.late_phase()
+        self.s.cache['skoda'].update(soc=39,captured_at=datetime.now(timezone.utc).isoformat())
+        self.tick_power(0)
+        self.assertEqual(self.s.limit_trial.record['stop_cause'],'overshoot_guard')
+        self.assertIsNone(self.s.limit_trial.state()['power_stopped_at'])
+
+    def test_late_phase_has_its_own_bounded_wait(self):
+        self.late_phase()
+        self.s.limit_trial.save(phase_deadline=time.time()-1);self.tick_power(0)
+        self.assertEqual(self.s.limit_trial.record['stop_cause'],'phase_timeout')
+
+    def test_manual_stop_cancels_late_phase_wait(self):
+        self.late_phase()
+        self.s.stop_charge('stop-late-phase-0001')
+        self.assertEqual(self.s.limit_trial.record['stop_cause'],'manual')
+        self.assertEqual(self.case.effects.count('start'),1)
+        self.assertEqual(self.case.web.mode,'OFF')
+
+    def test_restart_in_resume_wait_never_sends_another_start(self):
+        self.late_phase()
+        recovered=Service(self.case.config,self.case.secrets,self.s.sf,self.s.car,self.case.web,self.s.power)
+        recovered.status()
+        self.assertEqual(recovered.limit_trial.record['stop_cause'],'backend_restart')
+        self.assertEqual(self.case.effects.count('start'),1)
+        self.assertEqual(self.case.web.mode,'OFF')
+
     def test_missing_telemetry_stops_locally(self):
         self.start();self.ready()
         self.s.cache['smartfox']['charger']['available']=False

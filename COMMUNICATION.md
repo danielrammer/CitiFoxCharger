@@ -1,6 +1,6 @@
 # Communication and data flow
 
-This describes the implementation shipped with **CitiFoxCharger 1.9.5**, checked against the source on **23 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
+This describes the implementation shipped with **CitiFoxCharger 1.9.6**, checked against the source on **23 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
 
 ## System overview
 
@@ -226,3 +226,5 @@ The backend persists `waiting_ready` before setting local M+, waits for verified
 Target SOC itself does **not** trigger an app stop during the trial. Two ≥0.5 kW local samples ≥3 seconds apart establish charging power. A later ≤0.1 kW interval of 30 seconds records an external power drop before local Off and one vehicle Stop. This never proves why the car stopped or that the limit was applied. Distinct app stop causes include manual Stop/Off, ten minutes from Start, a newer SOC at target +2 points, no power within three minutes, phase/readiness timeout, telemetry loss, mode change and backend restart. Local Off is retried at ten-second intervals when necessary; Start, limit and uncertain Stop are not replayed. Completion requires fresh Off/zero-power readback. No automatic 80% restoration or A+ follows.
 
 The main Stop route `/api/charging/stop` also stops the trial, independently of cloud access. End-isolation, limit changes, normal Starts/mode changes, backend restart/shutdown and updates are blocked until it stops. Unexpected restart cancels a deferred Start and enters `stopping`. The trial state machine is isolated in `limit_trial.py`; persistence shares the private test record. Sanitized diagnostics include HTTP outcomes, physical-power timestamps and the exact stop cause. Session, CSRF, origin and configured HTTPS home-network authentication apply, including passwordless mode.
+
+**Late phase switching (1.9.6):** verified local `phase_switching` during observation enters `waiting_resume`, clears pending low-power completion evidence and keeps M+. Its own six-minute bound and the original ten-minute trial deadline both apply. After the switching flag clears, new ≥0.5 kW readings at least three seconds apart are required within three minutes. They return to `observing` without another Start POST. Otherwise `phase_resume_failed` records an app fallback. Diagnostics include `phase_started_at`, `phase_ended_at` and `power_resumed_at`. The +2 SOC guard and manual Stop remain active during switching; no deadline or limit is extended. No phase flag means the original zero-power stop detection still applies.

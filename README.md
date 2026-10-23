@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.9.5
+# CitiFoxCharger for Windows · 1.9.6
 
 <img src="citifoxcharger/web/brand/logo.png" alt="CitiFoxCharger logo: smooth electric city car, red fox tail and charging plug" width="620">
 
@@ -10,13 +10,15 @@ Both light and dark appearance are available. The light palette uses darker labe
 
 The header displays the current date and time from the browser device, independently of vehicle telemetry. It refreshes on returning to the page and uses the selected interface language. The clock fits inside the existing header height.
 
-The Settings page identifies the running backend as **v1.9.5 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
+The Settings page identifies the running backend as **v1.9.6 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
 
 ## Architecture and communication
 
 See [COMMUNICATION.md](COMMUNICATION.md) for the system and start/stop diagrams, exact Modbus addresses and word counts, XML data fields, SMARTFOX CGI commands, Škoda API calls and browser-to-backend routes. Mermaid diagrams render directly on GitHub. Protocol evidence and compatibility limits are in [INTERFACES.md](INTERFACES.md).
 
 ## Supervised vehicle-stop experiment (1.9.5)
+
+**1.9.6 also handles phase switching reported after Start.** A known phase-switching pause no longer counts as an external target stop. The backend keeps M+, waits at most six minutes for switching and then at most three minutes for fresh physical charging power. It sends no additional Start. If power does not resume, the distinct `phase_resume_failed` app stop explains that limitation; it is not successful vehicle target completion. The original ten-minute trial deadline and target +2 fallback remain in force and are never extended. A vehicle that needs another authorization after switching may still require a separate user attempt; automatic Start replay is not introduced.
 
 This optional experiment permits **one explicit Start after an accepted or uncertain limit write**, without readback. An upstream HTTP 500 stays unknown; a definite rejection blocks the trial. This is a supervised compatibility test, **not reliable target charging**. The normal manual charging strategy is unchanged.
 
@@ -29,7 +31,7 @@ For a reported SOC of **35%** and an exact test target of **37%**:
 5. **Stop trial · charger Off**, the main Stop button and the Off dropdown all cancel the trial. Fallbacks also stop locally after **ten minutes from Start**, a **new SOC report at target +2 points**, no confirmed power within three minutes, lost local telemetry, failed preparation or backend restart. Each has a distinct stop cause and is never labelled successful vehicle target completion. These fallbacks require a running backend and reachable SMARTFOX.
 6. The trial leaves SMARTFOX **Off**, with isolation active. Request the normal **80%** explicitly, inspect the result, then end isolation. Restoration remains unconfirmed without readback or direct vehicle verification. Choose A+ separately. No profiles or timers are edited.
 
-The backend monitors with the browser closed. Updates, restart and exit are blocked while a trial runs. Unexpected restart cancels pending Start and secures Off; it never resumes the trial or replays Start/limit. Diagnostics include responses, power timestamps and stop cause without credentials or VIN. The small state machine is in [`limit_trial.py`](citifoxcharger/limit_trial.py): `waiting_ready → observing → stopping → finished`, persisted in private `vehicle-limit-test.json`.
+The backend monitors with the browser closed. Updates, restart and exit are blocked while a trial runs. Unexpected restart cancels pending Start and secures Off; it never resumes the trial or replays Start/limit. Diagnostics include responses, power/phase timestamps and stop cause without credentials or VIN. The small state machine is in [`limit_trial.py`](citifoxcharger/limit_trial.py): `waiting_ready → observing ↔ waiting_resume → stopping → finished`, persisted in private `vehicle-limit-test.json`.
 
 ## Isolated vehicle-limit test (introduced in 1.9.4)
 
