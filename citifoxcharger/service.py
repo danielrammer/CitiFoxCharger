@@ -356,7 +356,8 @@ class Service:
                 # Explicit manual-session exception; never extend the displayed freshness.
                 if age is None or not -300 <= age <= 86400 or type(current.get("soc")) is not int or not 0 <= current["soc"] <= 100:
                     return False
-                max_read_age = 300
+                max_read_age = (300 if current.get("stale", True) or age > self.config.value["skoda"]["stale_seconds"]
+                                else max(1200, 2 * self.config.value["skoda"]["poll_seconds"]))
             else:
                 if current.get("stale", True) or age is None or not -300 <= age <= self.config.value["skoda"]["stale_seconds"]:
                     return False

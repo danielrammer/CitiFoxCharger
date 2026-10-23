@@ -1424,3 +1424,34 @@ class ChargingTests(unittest.TestCase):
         self.service.charging.tick()
         self.assertEqual(self.web.mode, "OFF")
         self.assertEqual(self.service.charging.value["status"], "closed")
+
+    def test_automatic_older_data_permission_does_not_shorten_fresh_report_access(self):
+        self.service.last_success["skoda"] -= 600
+        self.assertTrue(self.service.can_command("start"))
+        self.assertTrue(self.service.can_command("start", allow_stale=True))
+        self.service.cache["skoda"].update(stale=True,
+            captured_at=(datetime.now(timezone.utc)-timedelta(minutes=30)).isoformat())
+        self.assertFalse(self.service.can_command("start", allow_stale=True))
+
+    def test_stop_quota_snapshot_is_retained_after_the_cloud_budget_changes(self):
+        from citifoxcharger.diagnostics import report
+        self.force(90)
+        self.service.car.quota_remaining="2"
+        self.service.car.quota_reset_at=self.service.car.clock()+600
+        self.service.charging.tick()
+        self.assertEqual(self.service.charging.value["stop_cause"], "request_quota")
+        self.service.car.quota_remaining="17"
+        snapshot=report({"charging":self.service.charging.value})["session"]
+        self.assertEqual(snapshot["stop_trigger_quota_remaining"], 2)
+        self.assertEqual(snapshot["stop_trigger_cooldown_seconds"], 0)
+        self.assertGreater(snapshot["stop_trigger_quota_reset_seconds"], 590)
+
+    def test_stop_snapshot_distinguishes_a_cooldown_from_unknown_remaining_quota(self):
+        self.force(90)
+        self.service.car.quota_remaining=None
+        self.service.car.blocked_until=self.service.car.clock()+120
+        self.service.charging.tick()
+        snapshot=self.service.charging.value
+        self.assertEqual(snapshot["stop_cause"], "request_quota")
+        self.assertIsNone(snapshot["stop_trigger_quota_remaining"])
+        self.assertGreater(snapshot["stop_trigger_cooldown_seconds"], 110)

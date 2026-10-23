@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.8.15
+# CitiFoxCharger for Windows · 1.8.16
 
 <img src="citifoxcharger/web/brand/logo.png" alt="CitiFoxCharger logo: smooth electric city car, red fox tail and charging plug" width="620">
 
@@ -10,11 +10,17 @@ Both light and dark appearance are available. The light palette uses darker labe
 
 The header displays the current date and time from the browser device, independently of vehicle telemetry. It refreshes on returning to the page and uses the selected interface language. The clock fits inside the existing header height.
 
-The Settings page identifies the running backend as **v1.8.15 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
+The Settings page identifies the running backend as **v1.8.16 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
 
 ## Architecture and communication
 
 See [COMMUNICATION.md](COMMUNICATION.md) for the system and start/stop diagrams, exact Modbus addresses and word counts, XML data fields, SMARTFOX CGI commands, Škoda API calls and browser-to-backend routes. Mermaid diagrams render directly on GitHub. Protocol evidence and compatibility limits are in [INTERFACES.md](INTERFACES.md).
+
+## Manual start with the last reported SOC
+
+Version 1.8.16 removes the older-data checkbox. Manual Start and M+ automatically pass the bounded older-data permission; the original capture timestamp and stale badge remain visible. This does not remove the five-minute new-report deadline, active-stop guard, cloud quota/cooldown checks or local readiness checks. It is a usability change, not proof of reliable percentage enforcement.
+
+Diagnostics now preserve `stop_trigger_quota_remaining`, `stop_trigger_cooldown_seconds` and `stop_trigger_quota_reset_seconds` at the moment an automatic stop is triggered. Unknown remaining quota stays null. Later quota resets cannot overwrite these historical values; older reports have null fields. This distinguishes a low known budget from a server cooldown without storing credentials or raw responses.
 
 ## Recovering a stopped session
 
@@ -124,11 +130,11 @@ After confirmation, A+ is restored unless Off was explicitly selected. A+ allows
 
 The target is checked against cloud vehicle reports, not a continuously measured native battery limit. Delayed reports can cause overshoot before the threshold is known. The reported 82%/86% incident on backend 1.6.0 was ended manually by the user. Version 1.6.1 fixed identified stop gaps; an exact root cause and a successful real automatic target-stop cycle on the tablet still require confirmation.
 
-An explicitly permitted start with older SOC has a persistent **five-minute deadline** for a new report captured after the start. Without it the app requests a stop and holds Off. This can explain early stops, but is not established as the actual cause of the reported early interruptions. Later loss of data allows at most five minutes of recovery and no more than **15 minutes since the last valid report**, or a shorter configured freshness limit. It does not leave M+ active indefinitely.
+A manually requested start with older SOC has a persistent **five-minute deadline** for a new report captured after the start. Without it the app requests a stop and holds Off. This can explain early stops, but is not established as the actual cause of the reported early interruptions. Later loss of data allows at most five minutes of recovery and no more than **15 minutes since the last valid report**, or a shorter configured freshness limit. It does not leave M+ active indefinitely.
 
 ### Older data and retrying a start
 
-The **Use the last reported battery level** checkbox allows one explicit manual start only when SOC is known and no older than 24 hours, a successful API/capability read is at most five minutes old, and local readiness with no charging power is at most 30 seconds old. The displayed timestamps and stale label remain unchanged. It does not override a missing key, unsupported operation, server cooldown or active stop.
+Clicking **Force charge** or selecting M+ for a new manual session automatically permits the last reported battery level; there is no separate checkbox. For an aged report, SOC must be known and no older than 24 hours, a successful API/capability read must be at most five minutes old, and local readiness with no charging power must be at most 30 seconds old. The displayed timestamps and stale label remain unchanged. It does not override a missing key, unsupported operation, server cooldown or active stop.
 
 **Retry start** requires fresh local readiness, no physical charging above 0.1 kW, available start/stop access and at least 30 seconds since the previous attempt. A newer non-charging report or ten minutes of unconfirmed outcome is also required. A new deliberate click sends one new start and preserves the existing target. Duplicate request IDs do not repeat commands. Starts are never automatically replayed, including after restart.
 
@@ -192,7 +198,7 @@ Open **Settings → Diagnostics and connection details → Show diagnostics**, o
 
 ### Missing vehicle data during charging
 
-The optional start-with-older-data consent is expandable to preserve the compact tablet overview.
+The overview shows the age badge and vehicle/report timestamps without an extra older-data consent panel. The target tablet layout stays compact.
 
 Within the last five minutes before the SOC age limit, the scheduler can advance up to three cloud reads per unchanged vehicle report, at least 90 seconds apart, when quota and server cooldown permit. The two-command reserve is retained. Regular earlier reads are reused; restarting does not reset the probe bound. This reads the cloud cache and cannot force the car to measure again.
 

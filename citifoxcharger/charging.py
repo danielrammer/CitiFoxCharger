@@ -326,8 +326,19 @@ class ChargingSession:
     def automatic_stop(self, reason, cause="target"):
         """A blocked cloud command must never bypass the independent local stop."""
         car = self.service.cache.get("skoda", {})
+        adapter = self.service.car
+        try:
+            quota = int(adapter.quota_remaining)
+            if not 0 <= quota <= 1000000:
+                quota = None
+        except (TypeError, ValueError):
+            quota = None
+        clock = adapter.clock()
         self.save(stop_trigger_soc=car.get("soc"), stop_trigger_captured_at=car.get("captured_at"),
-                  stop_trigger_read_at=car.get("read_at"), stop_trigger_at=utcnow())
+                  stop_trigger_read_at=car.get("read_at"), stop_trigger_at=utcnow(),
+                  stop_trigger_quota_remaining=quota,
+                  stop_trigger_cooldown_seconds=max(0, math.ceil(adapter.blocked_until-clock)),
+                  stop_trigger_quota_reset_seconds=max(0, math.ceil(adapter.quota_reset_at-clock)))
         request_id = "limit-stop-" + self.value.get("request_id", "recovered-session") + "-" + str(self.value.get("stop_failures", 0))
         try:
             self.stop(request_id, automatic=True)
