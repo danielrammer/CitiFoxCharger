@@ -8,6 +8,19 @@ try{const saved=localStorage.getItem("citifox-language");language=["de","en"].in
 const escape=value=>value.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
 const rules=templates.map(([source,target])=>{let pattern="",last=0;for(const match of source.matchAll(/\{(\d+)\}/g)){pattern+=escape(source.slice(last,match.index))+"(.*?)";last=match.index+match[0].length;}return [new RegExp("^"+pattern+escape(source.slice(last))+"$"),target];});
 Object.assign(messages,{
+ "Vehicle-stop test target":"Fahrzeug-Stopp-Testziel",
+ "Vehicle-stop trial: no app stop at target; maximum 60 minutes after Start. Manual stops and app fallbacks make the test inconclusive.":"Fahrzeug-Stopp-Test: kein App-Stopp am Ziel; maximal 60 Minuten ab Start. Manuelle Stopps und App-Abbrüche machen den Test nicht auswertbar.",
+ "1 · Charger Off for test":"1 · Ladestation für Test ausschalten",
+ "Prepare the vehicle-stop test in Settings.":"Den Fahrzeug-Stopp-Test unter Einstellungen vorbereiten.",
+ "Vehicle-stop test preparation. No trial Start has been sent.":"Fahrzeug-Stopp-Test wird vorbereitet. Noch kein Teststart gesendet.",
+ "Prepare vehicle-stop test · 60 min":"Fahrzeug-Stopp-Test vorbereiten · 60 Min.",
+ "Vehicle-stop test ACTIVE · no app stop at target":"FAHRZEUG-STOPP-TEST AKTIV · kein App-Stopp am Ziel",
+ "Vehicle-stop test prepared · see Settings":"Fahrzeug-Stopp-Test vorbereitet · Einstellungen",
+ "Start vehicle-stop test · 60 min":"Fahrzeug-Test starten · 60 Min.",
+ "Vehicle-stop test running":"Fahrzeug-Stopp-Test läuft",
+ "Vehicle-stop test · see Settings":"Fahrzeug-Stopp-Test · Einstellungen",
+ "Manual charge · app stops at target":"Manuell laden · App stoppt am Ziel",
+ "Manual charge · vehicle target":"Manuell laden · Fahrzeug-Ziel",
  "Supervised trial · vehicle limit unconfirmed.":"Beaufsichtigter Test · Fahrzeug-Ladegrenze unbestätigt.",
  "Target monitored by the app · delayed vehicle reports can delay the stop.":"Ziel durch App überwacht · verzögerte Fahrzeugdaten können den Stopp verzögern.",
  "With a readable vehicle limit, manual Start first sets and verifies the exact target. Otherwise the app uses M+ and Start without changing the vehicle limit, and monitors the target using vehicle reports. Delayed or missing data affect stop accuracy and can require a precautionary stop. Existing unconfirmed limit attempts must first be ended explicitly. Charging profiles are not edited.":"Bei auslesbarer Fahrzeuggrenze setzt und prüft die App zuerst das exakte Ziel im Auto. Andernfalls nutzt sie M+ und Start ohne Änderung der Fahrzeuggrenze und überwacht das Ziel anhand der Fahrzeugmeldungen. Verzögerte oder fehlende Daten beeinflussen die Stoppgenauigkeit und können einen vorsorglichen Stopp erfordern. Alte unbestätigte Grenzwertversuche müssen zuerst ausdrücklich beendet werden. Ladeprofile werden nicht bearbeitet.",

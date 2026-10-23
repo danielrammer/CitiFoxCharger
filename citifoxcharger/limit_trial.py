@@ -16,6 +16,7 @@ from .smartfox_web import SmartfoxControlError
 
 class LimitTrial:
     RUNNING = ("waiting_ready", "observing", "waiting_resume", "stopping")
+    RUNTIME_LIMIT_SECONDS = 3600
 
     def __init__(self, service):
         self.service = service
@@ -69,7 +70,19 @@ class LimitTrial:
             "start_outcome", "start_http_status", "power_confirmed_at", "power_stopped_at",
             "stop_at", "stop_cause", "stop_outcome", "stop_http_status", "finished_at",
             "phase_started_at", "phase_ended_at", "power_resumed_at")}
-        result.update(active=self.active, can_start=self.reason() is None, reason=self.reason())
+        duration = self.record.get("runtime_limit_seconds")
+        if type(duration) is not int or not 1 <= duration <= self.RUNTIME_LIMIT_SECONDS:
+            # Existing reports retain their actual old ten-minute limit. An
+            # update never silently extends a running or completed experiment.
+            start = timestamp(self.record.get("start_at"))
+            deadline = self.record.get("runtime_deadline")
+            duration = (round(deadline-start) if start is not None and type(deadline) in (int,float)
+                        and math.isfinite(deadline) and 0 < deadline-start <= self.RUNTIME_LIMIT_SECONDS else
+                        600 if self.record else self.RUNTIME_LIMIT_SECONDS)
+        result.update(active=self.active, can_start=self.reason() is None, reason=self.reason(),
+                      runtime_limit_seconds=duration,
+                      evaluation=("external_power_drop_observed" if self.record.get("stop_cause") == "external_power_stop"
+                                  else "inconclusive_app_stop" if self.record.get("stop_cause") else "pending"))
         return result
 
     def start(self, request_id, target, acknowledge):
@@ -96,6 +109,7 @@ class LimitTrial:
         test = copy.deepcopy(s.limit_test.record)
         test["trial"] = {"phase":"waiting_ready", "request_id":request_id,
                          "target_percent":target, "initial_soc":s.cache["skoda"]["soc"],
+                         "runtime_limit_seconds":self.RUNTIME_LIMIT_SECONDS,
                          "limit_requested_at":attempt["requested_at"], "created_at":utcnow(),
                          "ready_deadline":time.time()+360}
         s.limit_test.persist(test)
@@ -189,7 +203,7 @@ class LimitTrial:
                 self.stop("start_access_lost")
                 return
             # Clear deferred intent before POST; never resend an uncertain Start.
-            self.save(phase="observing", start_at=utcnow(), start_outcome="unknown", runtime_deadline=now+600)
+            self.save(phase="observing", start_at=utcnow(), start_outcome="unknown", runtime_deadline=now+self.RUNTIME_LIMIT_SECONDS)
             s.command_after = time.monotonic()+30
             try:
                 s.car.command("start", s.config.value["skoda"], s.secrets.key)
@@ -202,7 +216,7 @@ class LimitTrial:
                 s.save_rate_state()
             return
         # SOC at the requested target does NOT stop this experiment. The +2 guard
-        # and ten-minute deadline are fallbacks, explicitly reported as app stops.
+        # and sixty-minute deadline are fallbacks, explicitly reported as app stops.
         car = s.cache.get("skoda", {})
         captured = timestamp(car.get("captured_at"))
         if (type(car.get("soc")) is int and captured is not None
@@ -214,7 +228,7 @@ class LimitTrial:
             return
         # A phase change can begin AFTER the first Start/power proof. Its known
         # zero-power pause is not an external vehicle stop. Keep the original
-        # ten-minute trial deadline and never replay Start to force a resume.
+        # trial deadline and never replay Start to force a resume.
         if charger.get("phase_switching"):
             if r["phase"] != "waiting_resume":
                 self.save(phase="waiting_resume", phase_started_at=utcnow(), phase_ended_at=None,

@@ -100,11 +100,47 @@ class LimitTrialTests(unittest.TestCase):
         self.assertEqual(self.s.limit_trial.record['stop_cause'],'no_charging_power')
         self.assertIsNone(self.s.limit_trial.state()['power_stopped_at'])
 
-    def test_ten_minute_guard_is_explicit_app_stop(self):
+    def test_new_trial_uses_exact_sixty_minute_runtime(self):
+        from citifoxcharger.skoda import timestamp
+        self.start();self.ready()
+        r=self.s.limit_trial.record
+        self.assertEqual(r['runtime_limit_seconds'],3600)
+        self.assertAlmostEqual(r['runtime_deadline']-timestamp(r['start_at']),3600,delta=1)
+        self.assertEqual(self.s.limit_trial.state()['runtime_limit_seconds'],3600)
+
+    def test_ten_elapsed_minutes_do_not_stop_a_proven_charging_trial(self):
+        self.start();self.ready();self.prove_power()
+        start=time.time()-601
+        self.s.limit_trial.save(start_at=datetime.fromtimestamp(start,timezone.utc).isoformat(),runtime_deadline=start+3600)
+        self.tick_power(4.5)
+        self.assertTrue(self.s.limit_trial.active)
+        self.assertNotIn('stop',self.case.effects)
+
+    def test_sixty_minute_guard_is_explicit_inconclusive_app_stop(self):
         self.start();self.ready();self.s.limit_trial.save(runtime_deadline=time.time()-1)
         self.tick_power(7.3)
         self.assertEqual(self.s.limit_trial.record['stop_cause'],'time_guard')
         self.assertIsNone(self.s.limit_trial.state()['power_stopped_at'])
+        self.assertEqual(self.s.limit_trial.state()['evaluation'],'inconclusive_app_stop')
+
+    def test_historical_ten_minute_report_is_not_relabelled_as_sixty(self):
+        from citifoxcharger.skoda import timestamp
+        self.start();self.ready()
+        record=copy.deepcopy(self.s.limit_test.record)
+        record['trial'].pop('runtime_limit_seconds')
+        record['trial']['runtime_deadline']=timestamp(record['trial']['start_at'])+600
+        self.s.limit_test.persist(record)
+        self.assertEqual(self.s.limit_trial.state()['runtime_limit_seconds'],600)
+
+    def test_restore_80_keeps_completed_trial_evidence(self):
+        self.start();self.s.stop_charge('preserve-trial-0001')
+        self.fixture.send(80,'restore-trial-evidence-0001')
+        report_data=report(self.s.diagnostic_snapshot(),True)['limit_trial']
+        self.assertEqual(report_data['target_percent'],37)
+        self.assertEqual(report_data['phase'],'finished')
+        self.assertEqual(report_data['stop_cause'],'manual')
+        self.assertEqual(report_data['runtime_limit_seconds'],3600)
+        self.assertEqual(report_data['evaluation'],'inconclusive_app_stop')
 
     def test_phase_switch_waits_then_one_start_only(self):
         self.case.web.phase_switching=True;self.start()

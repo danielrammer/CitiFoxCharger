@@ -132,6 +132,8 @@ class LimitTest:
         s.charging.save(user_charger_mode="OFF")
         record = {"version":1,"active":True,"vehicle":self.identity(),
                   "attempts":(self.record["attempts"]+[attempt])[-10:]}
+        if self.record.get("vehicle") == self.identity() and isinstance(self.record.get("trial"),dict):
+            record["trial"] = copy.deepcopy(self.record["trial"])  # Keep evidence when requesting normal 80%.
         self.persist(record)  # Must succeed before a possibly uncertain PUT.
         try:
             s.car.set_charging_limit(target,s.config.value["skoda"],s.secrets.key)

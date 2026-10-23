@@ -31,10 +31,14 @@ function updateControls(){
  const session=latest.charging,car=latest.skoda,active=activeStates.has(session?.status)||latest.limit_trial?.active===true,target=Number($("target").value),soc=car.soc;
  const staleOption=session?.can_start_manual_with_stale===true&&typeof soc==="number"&&target>soc;
  const retry=session?.can_retry_start===true||session?.can_retry_start_with_stale===true;
- $("target-value").textContent=`${target} %`;$("target").disabled=mutating||(active&&!session?.can_adjust_target);
+ $("target-value").textContent=`${target} %`;$("target").disabled=mutating||latest.limit_test?.active===true||(active&&!session?.can_adjust_target);
  const release=session?.can_release_native_guard===true;
- $("force").textContent=release?"Release A+ normal mode":retry?"↻ Retry start":"↯ Force charge";
- $("force").disabled=mutating||appUpdating||(!release&&(!(session?.can_start_manual||staleOption)||typeof soc!=="number"||target<=soc));
+ const trialMode=latest.limit_test?.active===true,trialReady=trialMode&&latest.limit_trial?.can_start===true;
+ $("target-label").textContent=trialMode?"Vehicle-stop test target":"Force charge to";
+ $("force").textContent=release?"Release A+ normal mode":trialMode?(latest.limit_trial?.active?"Vehicle-stop test running":trialReady?"Start vehicle-stop test · 60 min":"Vehicle-stop test · see Settings"):retry?"↻ Retry start":session?.target_control==="vehicle"?"Manual charge · vehicle target":"Manual charge · app stops at target";
+ $("force").disabled=mutating||appUpdating||(trialMode?!trialReady:(!release&&(!(session?.can_start_manual||staleOption)||typeof soc!=="number"||target<=soc)));
+ $("open-limit-trial").textContent=latest.limit_trial?.active?"Vehicle-stop test ACTIVE · no app stop at target":trialMode?"Vehicle-stop test prepared · see Settings":"Prepare vehicle-stop test · 60 min";
+ $("open-limit-trial").disabled=mutating||appUpdating||appStopped;
  $("release-limit-guard").hidden=!release;$("release-limit-guard").disabled=mutating||appUpdating;
  $("stop").disabled=mutating||!(session?.can_stop??(active||latest.controls.stop));
  let hint="";
@@ -42,6 +46,7 @@ function updateControls(){
  else if(target<=soc)hint="The selected target is already reached.";
  else if((session?.manual_start_reason||session?.force_reason)&&!session.can_start_manual&&!staleOption)hint=session.manual_start_reason||session.force_reason;
  else if(car.stale&&!staleOption&&!session?.awaiting_fresh_soc)hint="Waiting for current vehicle data.";
+ if(trialMode)hint=trialReady?"":latest.limit_trial?.active?"":latest.limit_trial?.reason||"Prepare the vehicle-stop test in Settings.";
  if((active||session?.status==="error")&&session?.message)hint="";
  $("operation-hint").textContent=hint;$("operation-hint").hidden=!hint;
  updateHeaterControls();updateEta();
@@ -79,6 +84,7 @@ function updateHeaterControls(){
 function renderLimitTest(){
  const test=latest.limit_test||{},trial=latest.limit_trial||{},busy=mutating||appUpdating||appStopped,de=CitiFoxI18n.language()==="de";
  $("send-limit-test").disabled=busy||!test.can_set;
+ $("prepare-limit-test-off").disabled=busy||trial.active||activeStates.has(latest.charging?.status)||!latest.smartfox?.charger?.control_available;
  $("limit-test-target").disabled=busy||trial.active;
  $("restore-limit-test").disabled=busy||!test.can_restore;
  $("end-limit-test").disabled=busy||!test.active||trial.active;
@@ -103,7 +109,8 @@ function trialDescription(trial,de){
  if(trial.start_outcome)details.push(`${de?"Startanfrage":"Start request"}: ${outcome}${trial.start_http_status?` · HTTP ${trial.start_http_status}`:""}`);
  if(trial.power_confirmed_at)details.push(`${de?"Ladeleistung bestätigt":"Charging power confirmed"}: ${date(trial.power_confirmed_at)}`);
  if(trial.power_resumed_at)details.push(`${de?"Ladeleistung nach Umschaltung bestätigt":"Charging power resumed after switching"}: ${date(trial.power_resumed_at)}`);
- if(trial.stop_cause)details.push(trial.stop_cause==="phase_resume_failed"?(de?"App-Abbruch: 3 Minuten nach Phasenumschaltung keine erneute Ladeleistung; kein Fahrzeug-Stopp am Ziel":"App fallback: no resumed power within 3 minutes after phase switching; not a vehicle stop at target"):(causes[trial.stop_cause]||(de?`App-Abbruch: ${trial.stop_cause}`:`App fallback: ${trial.stop_cause}`)));
+ if(trial.stop_cause)details.push(trial.stop_cause==="time_guard"?(de?`App-Abbruch nach ${Math.round((trial.runtime_limit_seconds||600)/60)} Minuten`:`App fallback after ${Math.round((trial.runtime_limit_seconds||600)/60)} minutes`):trial.stop_cause==="phase_resume_failed"?(de?"App-Abbruch: 3 Minuten nach Phasenumschaltung keine erneute Ladeleistung; kein Fahrzeug-Stopp am Ziel":"App fallback: no resumed power within 3 minutes after phase switching; not a vehicle stop at target"):(causes[trial.stop_cause]||(de?`App-Abbruch: ${trial.stop_cause}`:`App fallback: ${trial.stop_cause}`)));
+ if(trial.evaluation==="inconclusive_app_stop")details.push(de?"FAHRZEUG-STOPP-TEST NICHT AUSWERTBAR: App oder Bedienung hat eingegriffen.":"VEHICLE-STOP TEST INCONCLUSIVE: app or user intervened.");
  return details.join("\n");
 }
 function renderEnergy(charger){
@@ -158,6 +165,7 @@ function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=
  $("charger-mode").textContent=charger.available?(limit.phase==="verified"?`${charger.mode||"Mode unknown"} · Vehicle target ${limit.target_percent}% ✓`:`Smartfox · ${charger.mode||"Mode unknown"}`):"Smartfox · unreachable";
  $("connection-summary").textContent=`Škoda ${car.available?"connected":"unreachable"} · Smartfox ${sf.available?"connected":"unreachable"}`;
  if(data.limit_trial?.active){$("target").value=data.limit_trial.target_percent;targetInitialized=true;}
+ else if(data.limit_test?.active&&data.limit_test.attempts?.length){$("target").value=data.limit_test.attempts.at(-1).target_percent;targetInitialized=true;}
  else if(session&&!targetEditing&&(!targetInitialized||activeStates.has(session.status))){let target=session.target_percent;try{if(!targetInitialized&&!activeStates.has(session.status)){const saved=Number(localStorage.getItem("charging-target"));if(Number.isInteger(saved)&&saved>=1&&saved<=100)target=saved;}}catch{}$("target").value=target;targetInitialized=true;}
  const active=activeStates.has(session?.status)||data.limit_trial?.active===true,power=data.monitoring?.power;
  $("monitoring-note").hidden=!active;
@@ -165,7 +173,7 @@ function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=
  $("quit-app").disabled=!localAdmin||!session?.can_shutdown||mutating;
  $("session-status").classList.toggle("session-quiet",session?.status==="monitoring"&&isCharging&&!session?.awaiting_fresh_soc&&!session?.stop_requested);
  $("normal-mode-note").textContent=data.limit_trial?.active?"Supervised trial · vehicle limit unconfirmed.":session?.user_charger_mode==="OFF"?(charger.available&&charger.mode==="OFF"?"Charger explicitly switched Off.":"Off selected · change is unconfirmed."):session?.status==="closed"?"Previous monitoring is closed. Select a new target or A+.":session?.stop_guard?"Charger kept Off until the vehicle confirms the stop.":activeStates.has(session?.status)&&session.target_control==="app"?"Target monitored by the app · delayed vehicle reports can delay the stop.":"Normal mode A+ · schedules are preserved.";
- const trialMessage=data.limit_test?.active&&data.limit_trial?.phase?trialDescription(data.limit_trial,CitiFoxI18n.language()==="de"):"";
+ const trialMessage=data.limit_test?.active?(data.limit_trial?.phase?trialDescription(data.limit_trial,CitiFoxI18n.language()==="de"):"Vehicle-stop test preparation. No trial Start has been sent."):"";
  const showPhase=switching&&!session?.stop_requested;$("session-status").hidden=!showPhase&&!session?.message&&!trialMessage;$("session-status").textContent=trialMessage||(showPhase?phaseMessage(charger):session?.message||"");$("session-status").classList.toggle("phase-wait",showPhase);$("session-status").classList.toggle("safety-stopped",session?.status==="error"&&["missing_soc","missing_initial_soc","phase_wait","request_quota","vehicle_limit_start","vehicle_limit_lost"].includes(session?.stop_cause));
  $("car-message").textContent=car.message||"";$("sf-notice").textContent=sf.notice||"";$("sf-control-reason").textContent=charger.control_reason||charger.message||"";
  $("sf-web-meta").textContent=`Charge mode: ${charger.mode||"unknown"} · Power: ${charger.power_kw??"—"} kW · Wallbox: ${charger.status_text||"unknown"} · Setpoint: ${charger.offered_current_a??"—"} A · Last read: ${date(charger.read_at||sf.read_at)}`;
@@ -221,7 +229,12 @@ $("target").addEventListener("input",()=>{targetEditing=true;try{localStorage.se
 $("target").addEventListener("change",()=>{if(!activeStates.has(latest?.charging?.status)){targetEditing=false;return;}const target=Number($("target").value);mutation(async()=>{try{await api("/api/charging/target",{target_percent:target});toast(`Charge target ${target}% saved.`);}finally{targetEditing=false;}});});
 $("refresh").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/refresh",{});render(result.status);toast(result.message);}));
 $("quit-app").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/app/quit",{});appStopped=true;clearInterval(refreshTimer);toast(result.message);$("connection-summary").textContent="App stopped";updateControls();}));
- $("force").addEventListener("click",()=>{if(latest?.charging?.can_release_native_guard){releaseLimitGuard();return;}mutation(async()=>{const body={target_percent:Number($("target").value),request_id:crypto.randomUUID(),allow_stale:true};targetEditing=false;toast("Preparing Smartfox. Vehicle start follows only after charging permission is confirmed.");const result=await api("/api/charging/start",body);if(result.message)toast(result.message);});});
+ $("force").addEventListener("click",()=>{if(latest?.limit_test?.active){openTrialDialog();return;}if(latest?.charging?.can_release_native_guard){releaseLimitGuard();return;}mutation(async()=>{const body={target_percent:Number($("target").value),request_id:crypto.randomUUID(),allow_stale:true};targetEditing=false;toast("Preparing Smartfox. Vehicle start follows only after charging permission is confirmed.");const result=await api("/api/charging/start",body);if(result.message)toast(result.message);});});
+$("open-limit-trial").addEventListener("click",()=>{
+ document.querySelector('[data-tab="settings"]').click();$("limit-test-panel").open=true;
+ if(!latest?.limit_test?.active&&Number.isInteger(latest?.skoda?.soc))$("limit-test-target").value=Math.min(100,latest.skoda.soc+2);
+ $("limit-test-panel").scrollIntoView({block:"start",behavior:"instant"});
+});
 $("stop").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/charging/stop",{request_id:crypto.randomUUID()});if(result.message)toast(result.message);},true));
 $("config-form").addEventListener("submit",event=>{event.preventDefault();mutation(async()=>{const value={smartfox:{host:$("host").value.trim(),port:Number($("port").value),unit_id:Number($("unit").value),firmware:$("firmware").value,poll_seconds:Number($("sf-poll").value),timeout_seconds:Number($("sf-timeout").value),profile:$("profile").value,word_order:$("word-order").value,interpretation_confirmed:$("interpretation").checked},skoda:{vin:$("vin").value.trim(),poll_seconds:Number($("car-poll").value),stale_seconds:Number($("car-stale").value)}};const result=await api("/api/config",value);await loadConfig();toast(result.message);});});
 $("key-form").addEventListener("submit",event=>{event.preventDefault();mutation(async()=>{try{const result=await api("/api/key",{key:$("api-key").value,persist:$("persist").checked});await loadConfig();toast(result.message);}finally{$("api-key").value="";}});});
@@ -244,7 +257,8 @@ $("show-diagnostics").addEventListener("click",async()=>{
  try{const report=await api("/api/diagnostics");
   $("diagnostic-json").textContent=JSON.stringify(report,null,2);$("diagnostic-json").hidden=false;
   const causes={vehicle_limit_start:"Vehicle start failed after limit verification.",vehicle_limit_lost:"The vehicle charging limit changed unexpectedly.",request_quota:"Stopped because Škoda request limits prevent charge-level monitoring.",missing_soc:"Stopped because vehicle data became too old.",missing_initial_soc:"Stopped because no new vehicle data arrived after start.",phase_wait:"Stopped during charging preparation.",target:"Stopped at the monitored target."};
-  $("diagnostic-summary").textContent=causes[report.session?.stop_cause]||"Current cached status. Diagnostics do not query the vehicle.";
+  const trial=report.limit_trial||{},de=CitiFoxI18n.language()==="de";
+  $("diagnostic-summary").textContent=trial.phase&&(trial.active||report.limit_test?.active)?(trial.evaluation==="inconclusive_app_stop"?(de?"Fahrzeug-Stopp-Test nicht auswertbar: App oder Bedienung hat eingegriffen.":"Vehicle-stop test inconclusive: app or user intervened."):trial.evaluation==="external_power_drop_observed"?(de?"Leistungsabfall vor App-Stopp beobachtet; Fahrzeug-Ladegrenze weiterhin unbestätigt.":"Power drop observed before app stop; vehicle limit still unconfirmed."):(de?"Fahrzeug-Stopp-Test läuft; keine App-Abschaltung am Ziel.":"Vehicle-stop test active; no app stop at target.")):(causes[report.session?.stop_cause]||"Current cached status. Diagnostics do not query the vehicle.");
  }catch(e){$("diagnostic-summary").textContent=e.message;}finally{button.disabled=false;}
 });
 async function init(){try{csrf=(await api("/api/session")).csrf;await loadRelease();await loadConfig();await refresh();refreshTimer=setInterval(refresh,10000);await resumeUpdate();}catch(e){error(e.message);}}
@@ -273,18 +287,23 @@ $("send-limit-test").addEventListener("click",()=>mutation(async()=>{
  await api("/api/charging/limit-test/set",{target_percent:Number($("limit-test-target").value),request_id:crypto.randomUUID()});
  toast("Single vehicle-limit request completed. Check the result in Settings. No charging Start was sent.");
 }));
+$("prepare-limit-test-off").addEventListener("click",()=>mutation(async()=>{
+ await api("/api/smartfox/charger-mode",{mode:"OFF",request_id:crypto.randomUUID()});
+}));
 $("restore-limit-test").addEventListener("click",()=>mutation(async()=>{
  await api("/api/charging/limit-test/set",{target_percent:80,request_id:crypto.randomUUID()});
  toast("Normal 80% limit requested. API acceptance alone does not confirm restoration.");
 }));
 let trialTarget=null;
-$("start-limit-trial").addEventListener("click",()=>{
+function openTrialDialog(){
+ if(mutating||appUpdating||appStopped||latest?.limit_trial?.can_start!==true)return;
  const attempts=latest?.limit_test?.attempts||[];trialTarget=attempts.at(-1)?.target_percent;
  if(!Number.isInteger(trialTarget))return;
  const de=CitiFoxI18n.language()==="de";
- $("limit-trial-confirmation").textContent=de?`Testziel ${trialTarget} %; zuletzt gemeldet ${latest.skoda.soc} %. Die Ladegrenze ist unbestätigt, auch nach HTTP 500. Dieser Versuch schaltet SMARTFOX auf M+, wartet die Phasenumschaltung ab und sendet genau einen Start. Der Grenzwert wird nicht erneut gesendet. Die App stoppt NICHT bei ${trialTarget} %. Abbruch spätestens 10 Minuten nach dem Startbefehl oder bei einem neu gemeldeten Ladestand ab ${trialTarget+2} %. Diese Abbrüche sind kein Fahrzeug-Stopp am Ziel. Beobachte den Versuch und stoppe bei Bedarf. Ein Leistungsabfall beweist allein keine Zielerreichung. Danach bleibt SMARTFOX aus; 80 % werden nicht automatisch wiederhergestellt.`:`Test target ${trialTarget}%; last reported ${latest.skoda.soc}%. The limit is unconfirmed, including after HTTP 500. This trial selects M+, waits for phase switching and sends exactly one Start without resending the limit. The app does NOT stop at ${trialTarget}%. Fallback stop no later than 10 minutes after Start or on a new SOC report at ${trialTarget+2}% or above. These fallbacks are not a vehicle stop at target. Observe the trial and stop if needed. A power drop alone does not prove target completion. Afterwards SMARTFOX stays Off; 80% is not restored automatically.`;
+ $("limit-trial-confirmation").textContent=de?`FAHRZEUG-STOPP-TEST · maximal 60 Minuten. Testziel ${trialTarget} %; zuletzt gemeldet ${latest.skoda.soc} %. Die Ladegrenze ist unbestätigt, auch nach HTTP 500. Dieser Versuch schaltet SMARTFOX auf M+, wartet die Phasenumschaltung ab und sendet genau einen Start. Der Grenzwert wird nicht erneut gesendet. Die App stoppt NICHT bei ${trialTarget} %. Abbruch spätestens 60 Minuten nach dem Startbefehl oder bei einem neu gemeldeten Ladestand ab ${trialTarget+2} %. Manuelle Stopps und Abbrüche machen den Fahrzeug-Stopp-Test nicht auswertbar. Beobachte den Versuch und stoppe bei Bedarf. Ein Leistungsabfall beweist allein keine Zielerreichung. Danach bleibt SMARTFOX aus; 80 % werden nicht automatisch wiederhergestellt.`:`VEHICLE-STOP TEST · maximum 60 minutes. Test target ${trialTarget}%; last reported ${latest.skoda.soc}%. The limit is unconfirmed, including after HTTP 500. This trial selects M+, waits for phase switching and sends exactly one Start without resending the limit. The app does NOT stop at ${trialTarget}%. Fallback stop no later than 60 minutes after Start or on a new SOC report at ${trialTarget+2}% or above. Manual stops and app fallbacks make the vehicle-stop test inconclusive. Observe the trial and stop if needed. A power drop alone does not prove target completion. Afterwards SMARTFOX stays Off; 80% is not restored automatically.`;
  $("start-limit-trial-dialog").showModal();
-});
+}
+$("start-limit-trial").addEventListener("click",openTrialDialog);
 $("cancel-limit-trial").addEventListener("click",()=>$("start-limit-trial-dialog").close());
 $("confirm-limit-trial").addEventListener("click",()=>{
  $("start-limit-trial-dialog").close();const target=trialTarget;

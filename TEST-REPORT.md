@@ -1,4 +1,10 @@
-# Late phase-switching pause — 1.9.6
+# Sixty-minute supervised vehicle-stop trial — 1.9.7
+
+Validation on 23 October 2026: **431 offline tests passed in 94.012 seconds**. Added cases verify an exact 3600-second runtime, continued proven charging after ten elapsed minutes, explicit inconclusive evaluation for a time fallback, honest historical ten-minute reports and preserved trial evidence after the normal 80% request. Exact-target SOC still does not trigger an app stop; the existing +2, device, phase and manual-stop guards remain.
+
+Fake-adapter browser validation exercised the overview shortcut, explicit local Off, one 37% PUT returning HTTP 500, the overview Start opening the same explicit sixty-minute consent dialog, one subsequent vehicle Start and physical power proof. The overview identified the active vehicle-stop test and disabled its slider/normal Start. Manual Stop was labelled inconclusive, and the GUI diagnostic retained `runtime_limit_seconds: 3600`, timestamps and that evaluation after an explicit 80% request. No browser errors/warnings occurred. Both themes at 800×1280 measured scroll width 800 and scroll height 1280, including the completed/inconclusive state. Screenshots are labelled simulated and kept outside Git. No real devices, credentials or tablet service were used.
+
+## Late phase-switching pause — 1.9.6
 
 Validation on 23 October 2026: **427 offline tests passed in 91.971 seconds**. Nine additional scenarios cover phase switching after initial Start/power proof, switching before the first power proof, resumed-power confirmation without a second Start, a distinct no-resume fallback, unchanged time/SOC guards, bounded switching, manual Stop and restart cancellation. The earlier unflagged external power-stop test still passes.
 
