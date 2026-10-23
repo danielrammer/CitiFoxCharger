@@ -21,6 +21,41 @@ Object.assign(messages,{
  "Return to A+ is unconfirmed. The Off guard remains active.":"Rückkehr zu A+ unbestätigt. Die Aus-Sperre bleibt aktiv.",
  "Wallbox Off is unconfirmed. Normal-mode release is blocked.":"Wallbox-Aus unbestätigt. Freigabe des Normalbetriebs gesperrt."
 });
+Object.assign(messages,{
+ "Isolated vehicle-limit test":"Isolierter Fahrzeug-Grenzwerttest",
+ "This test changes the vehicle charging limit. It sends no charging Start and never changes SMARTFOX mode. Existing charging schedules are not edited.":"Dieser Test ändert die Fahrzeug-Ladegrenze. Er sendet keinen Ladestart und ändert den SMARTFOX-Modus nicht. Bestehende Ladepläne werden nicht bearbeitet.",
+ "End any current charging session.":"Eine laufende Ladesitzung zuerst beenden.",
+ "In CitiFoxCharger select Charger → Off. Wait for Off and 0 kW.":"In CitiFoxCharger bei Ladestation → Aus wählen. Auf Aus und 0 kW warten.",
+ "Choose a test limit and send it once. Do not use Force charge for this test.":"Testgrenze auswählen und einmal senden. Für diesen Test nicht „Manuell laden“ verwenden.",
+ "Check the actual vehicle limit in MyŠkoda or the car if displayed. API acceptance alone is not confirmation.":"Falls angezeigt: die tatsächliche Fahrzeuggrenze in MyŠkoda oder im Auto prüfen. API-Annahme allein ist keine Bestätigung.",
+ "Send the normal 80% limit, then end the test. The charger stays Off. Select A+ separately when you want normal operation again.":"Normale 80-%-Grenze senden, danach Test beenden. Die Ladestation bleibt aus. Für den Normalbetrieb anschließend ausdrücklich A+ wählen.",
+ "Explicit test limit":"Ausdrücklich gewählte Testgrenze",
+ "Send test limit · no charging Start":"Testgrenze senden · kein Ladestart",
+ "Send normal 80% limit":"Normale 80-%-Grenze senden",
+ "End test · keep Off":"Test beenden · Aus beibehalten",
+ "No vehicle-limit test has been run.":"Noch kein Fahrzeug-Grenzwerttest ausgeführt.",
+ "End isolated limit test":"Isolierten Grenzwerttest beenden",
+ "Ending the test sends no command and leaves the charger Off. An accepted 80% request does not prove restoration. Check the actual vehicle limit before allowing normal charging. If the limit is not visible in MyŠkoda or the car, it remains unconfirmed.":"Das Beenden sendet keinen Befehl und belässt die Ladestation auf Aus. Eine angenommene 80-%-Anfrage beweist die Wiederherstellung nicht. Vor normalem Laden die tatsächliche Fahrzeuggrenze prüfen. Wird sie in MyŠkoda und im Auto nicht angezeigt, bleibt sie unbestätigt.",
+ "End test and keep charger Off":"Test beenden und Ladestation aus lassen",
+ "Test isolation active. No charging Start or automatic SMARTFOX mode change will be sent.":"Testmodus aktiv. Kein Ladestart und kein automatischer SMARTFOX-Moduswechsel werden gesendet.",
+ "Single vehicle-limit request completed. Check the result in Settings. No charging Start was sent.":"Einzelne Grenzwertanfrage abgeschlossen. Ergebnis unter Einstellungen prüfen. Kein Ladestart gesendet.",
+ "Normal 80% limit requested. API acceptance alone does not confirm restoration.":"Normale 80-%-Grenze angefordert. API-Annahme allein bestätigt die Wiederherstellung nicht.",
+ "Test isolation ended. The charger remains explicitly Off; no charging Start was sent.":"Testmodus beendet. Ladestation bleibt ausdrücklich aus; kein Ladestart gesendet.",
+ "End the current charging session and restoration before testing a vehicle limit.":"Vor dem Grenzwerttest die aktuelle Ladesitzung und Wiederherstellung beenden.",
+ "The saved limit test is invalid. End the test before starting a new one.":"Gespeicherter Grenzwerttest ungültig. Zuerst den Test beenden, bevor ein neuer begonnen wird.",
+ "The limit test belongs to another vehicle. End it without sending another command.":"Der Grenzwerttest gehört zu einem anderen Fahrzeug. Ohne weiteren Befehl beenden.",
+ "Configure vehicle access before testing a limit.":"Vor dem Test den Fahrzeugzugriff einrichten.",
+ "Renew the API key before testing a limit.":"Vor dem Test den API-Schlüssel erneuern.",
+ "Vehicle access and advertised charging-limit support are required for this test.":"Für diesen Test werden Fahrzeugzugriff und gemeldete Unterstützung der Ladegrenze benötigt.",
+ "Not enough Škoda requests remain. Wait for the quota reset.":"Nicht genügend Škoda-Anfragen verfügbar. Kontingent zurücksetzen lassen.",
+ "Local SMARTFOX access is required for the test.":"Für den Test wird lokaler SMARTFOX-Zugriff benötigt.",
+ "In CitiFoxCharger select Charger → Off, then wait for Off and 0 kW before testing.":"Vor dem Test in CitiFoxCharger bei Ladestation → Aus wählen und auf Aus und 0 kW warten.",
+ "No limit test is active.":"Kein Grenzwerttest aktiv.",
+ "Choose an explicit vehicle-limit test value: 50, 60, 70, 80, 90 or 100%. No rounding.":"Testgrenze ausdrücklich wählen: 50, 60, 70, 80, 90 oder 100 %. Keine automatische Rundung.",
+ "SMARTFOX Off cannot be checked. No limit command was sent.":"SMARTFOX Aus nicht prüfbar. Kein Grenzwertbefehl gesendet.",
+ "Wait 30 seconds before another vehicle-limit test. No automatic retry is performed.":"Vor einem weiteren Grenzwerttest 30 Sekunden warten. Es gibt keine automatische Wiederholung.",
+ "End the vehicle-limit test in Settings first. Charging starts and mode changes are blocked during isolation.":"Zuerst den Grenzwerttest unter Einstellungen beenden. Ladestarts und Moduswechsel sind im Testmodus gesperrt."
+});
 function german(value,depth=0){
  if(messages[value]!==undefined)return messages[value];
  if(depth<4){for(const [pattern,target]of rules){const match=pattern.exec(value);if(match)return target.replace(/\{(\d+)\}/g,(_,i)=>german(match[Number(i)+1]??"",depth+1));}

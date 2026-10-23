@@ -36,10 +36,22 @@ def report(status, live=False):
     modes = settings.get('available_modes')
     modes = [mode for mode in CHARGE_MODES if mode in modes] if isinstance(modes,list) else []
     version = status.get('backend_version')
+    limit_test = status.get('limit_test',{})
+    limit_test = limit_test if isinstance(limit_test,dict) else {}
+    attempts = limit_test.get('attempts')
+    test_report = {**selected(limit_test,flags=('active',)), 'attempts':[
+        selected(item,numbers=('target_percent','http_status','reported_limit','quota_remaining','cooldown_seconds'),
+                 dates=('requested_at','verified_at'), enums={
+                     'outcome':('accepted','rejected','unknown'),
+                     'verification':('not_returned','awaiting_new_capture','confirmed','different'),
+                     'code':('network','auth','forbidden','unsupported','not_found','rate_limit','quota_reserved','protocol','upstream'),
+                     'problem_type':('api-key-expired','api-key-not-authorized','operation-not-authorized','operation-not-supported','operation-disabled','rate-limit-exceeded','vehicle-not-accepting-requests')})
+        for item in attempts[-10:]] if isinstance(attempts,list) else []}
     return {'report_version': 1, 'program_version': __version__,
             'backend_version': version if isinstance(version, str) and re.fullmatch(r'\d+\.\d+\.\d+', version) else None,
             'generated_at': utcnow(),
             'source': 'running_backend' if live else 'saved_files_only',
+            'limit_test':test_report,
             'car': {**selected(car, numbers=('soc',), flags=('available','stale'), dates=('captured_at','read_at'),
                               enums={'code':('ok','partial','network','quota_reserved','rate_limit','auth','forbidden','not_found','unsupported','protocol','upstream','not_configured'),
                                      'state':('CHARGING','CONNECT_CABLE','CONSERVING','READY_FOR_CHARGING','DISCHARGING','CHARGING_INTERRUPTED'),

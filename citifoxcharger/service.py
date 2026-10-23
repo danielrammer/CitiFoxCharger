@@ -11,6 +11,7 @@ from .smartfox_web import SmartfoxWeb, SmartfoxControlError
 from .charging import ChargingSession
 from .power import PowerGuard
 from .vehicle_limit import VehicleLimit
+from .limit_test import LimitTest
 
 
 class Service:
@@ -38,6 +39,7 @@ class Service:
         self.restore_rate_state()
         self.restore_vehicle_cache()
         self.vehicle_limit = VehicleLimit(self)
+        self.limit_test = LimitTest(self)
 
     def restore_vehicle_cache(self):
         try:
@@ -220,6 +222,7 @@ class Service:
                     "smartfox":copy.deepcopy(self.cache.get("smartfox",{})),
                     "charging":copy.deepcopy(self.charging.value),
                     "last_command":copy.deepcopy(self.last_command),
+                    "limit_test":self.limit_test.state(),
                     "monitoring":{"running":self.worker is not None and self.worker.is_alive()},
                     "server_at":utcnow(),
                     "freshness_limit_seconds":min(900,self.config.value["skoda"]["stale_seconds"]),
@@ -273,6 +276,7 @@ class Service:
 
     def save_config(self, value):
         with self.lock:
+            self.require_no_limit_test()
             if self.charging.active:
                 raise ValueError("Please end the active charging session first.")
             self.config.save(validate(value))
@@ -287,6 +291,7 @@ class Service:
 
     def clear_key(self):
         with self.lock:
+            self.require_no_limit_test()
             if self.charging.active:
                 raise ValueError("Please end the active charging session first. An expired key can be replaced.")
             self.secrets.clear()
@@ -312,6 +317,8 @@ class Service:
             self.cache[source] = value
             if value.get("available"):
                 self.last_success[source] = time.monotonic()
+                if source == "skoda":
+                    self.limit_test.observe(value)
         except IntegrationError as error:
             previous = self.cache.get(source, {})
             if error.code == "quota_reserved" and previous.get("available"):
@@ -413,12 +420,20 @@ class Service:
             if not self.stopping:
                 self.charging.tick()
             self.power.update(self.charging.active and not self.worker_stop.is_set() and not self.stopping)
+            charging = self.charging.state()
+            if self.limit_test.active:
+                reason = "End the vehicle-limit test in Settings first. Charging starts and mode changes are blocked during isolation."
+                charging.update(can_start_manual=False,can_start_manual_with_stale=False,
+                                can_force=False,can_force_with_stale=False,can_force_native=False,
+                                can_force_native_with_stale=False,can_retry_start=False,
+                                manual_start_reason=reason,force_reason=reason)
             return {"smartfox": copy.deepcopy(self.cache.get("smartfox", {"available":False})),
                     "skoda": copy.deepcopy(car),
                     "controls": {a: self.can_command(a) for a in ("start", "stop")},
                     "last_command": copy.deepcopy(self.last_command), "events": copy.deepcopy(self.events),
                     "app_update_pending": self.app_update_pending,
-                    "charging": self.charging.state(),
+                    "charging": charging,
+                    "limit_test": self.limit_test.state(),
                     "monitoring": {"running": self.worker is not None and self.worker.is_alive(),
                                    "power": self.power.state()},
                     "server_at": utcnow(), "next_skoda_seconds": max(0, int(self.next_due.get("skoda", 0) - time.monotonic()))}
@@ -426,6 +441,7 @@ class Service:
     def start_manual_charging(self, target, request_id, allow_stale=False):
         """Prefer verifiable vehicle limits; retain monitored Start for cars omitting them."""
         with self.lock:
+            self.require_no_limit_test()
             if self.vehicle_limit.busy:
                 raise IntegrationError("limit_pending", "Vehicle limit verification or restoration is pending.")
             self.update("skoda")  # Reuse the due read before selecting the strategy.
@@ -449,6 +465,7 @@ class Service:
 
     def force_charge(self, target, request_id, allow_stale=False):
         with self.lock:
+            self.require_no_limit_test()
             if self.stopping:raise IntegrationError("blocked","The app is restarting or stopping.")
             self.power.update(not self.stopping)
             try:
@@ -458,6 +475,7 @@ class Service:
 
     def force_charge_native(self, target, request_id, allow_stale=False):
         with self.lock:
+            self.require_no_limit_test()
             if self.stopping or self.app_update_pending:
                 raise IntegrationError("blocked", "The app is restarting or updating.")
             self.power.update(True)
@@ -536,6 +554,8 @@ class Service:
                 raise ValueError("Only Off, A+ and M+ are supported here.")
             if self.stopping or self.web is None:
                 raise IntegrationError("blocked","Charger control is currently unavailable.")
+            if mode != "OFF":
+                self.require_no_limit_test()
             if mode != "OFF" and self.charging.value.get("stop_guard") and self.charging.active:
                 raise IntegrationError("blocked","Automatic stop is being checked. The charger stays Off until the vehicle confirms the stop.")
             if mode == "M+" and (not self.charging.active or self.charging.value.get("stop_requested")):
@@ -570,6 +590,8 @@ class Service:
 
     def command(self, action, request_id, allow_stale=False):
         with self.lock:
+            if action == "start":
+                self.require_no_limit_test()
             if self.stopping:raise IntegrationError("blocked","The app is restarting or stopping.")
             if request_id in self.command_results:
                 return copy.deepcopy(self.command_results[request_id])
@@ -595,3 +617,15 @@ class Service:
                 del self.command_results[next(iter(self.command_results))]
             self.event(("Start" if action == "start" else "Stop") + ": " + command["message"])
             return copy.deepcopy(command)
+
+    def require_no_limit_test(self):
+        if self.limit_test.active:
+            raise IntegrationError("limit_test_active", "End the vehicle-limit test in Settings first. Charging starts and mode changes are blocked during isolation.")
+
+    def test_vehicle_limit(self, target, request_id):
+        with self.lock:
+            return self.limit_test.send(target,request_id)
+
+    def end_limit_test(self, acknowledge):
+        with self.lock:
+            return self.limit_test.end(acknowledge)

@@ -10,6 +10,7 @@ network/
 CitiFoxCharger-Home-Network.cer
 *.tmp
 charging-session.json
+vehicle-limit-test.json
 .instance.lock
 brave-profile/
 .env

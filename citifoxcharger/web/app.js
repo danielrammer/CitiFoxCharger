@@ -25,6 +25,7 @@ function toast(message){$("toast").textContent=message;$("toast").hidden=false;s
 async function api(path,data){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000);try{const response=await fetch(path,{method:data===undefined?"GET":"POST",credentials:"same-origin",cache:"no-store",signal:controller.signal,headers:data===undefined?{}:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:data===undefined?undefined:JSON.stringify(data)});const result=await response.json();if(!response.ok){const problem=new Error(result.error||"Request failed.");problem.status=response.status;throw problem;}return result;}catch(e){if(e.name==="AbortError")throw new Error("No response. Check charging status before trying again.");throw e;}finally{clearTimeout(timer);}}
 function updateControls(){
  if(!latest)return;
+ renderLimitTest();
  $("reload-app").disabled=mutating||appUpdating;
  if(appStopped){for(const id of ["force","stop","target","quit-app","heater-mode","heater2-mode","hot-water-mode","station-mode"])$(id).disabled=true;return;}
  const session=latest.charging,car=latest.skoda,active=activeStates.has(session?.status),target=Number($("target").value),soc=car.soc;
@@ -73,7 +74,21 @@ function updateHeaterControls(){
  $("station-mode").title=guarded?"Charger kept Off until the vehicle confirms the stop.":"Change mode";
  const active=activeStates.has(latest?.charging?.status),manual=active?!latest.charging.stop_requested&&latest.controls.start&&latest.controls.stop:Number($("target").value)>latest.skoda.soc&&(latest?.charging?.can_start_manual||latest?.charging?.can_start_manual_with_stale);
  $("station-mode").querySelector('option[value="M+"]').disabled=!manual;
- $("station-mode").querySelector('option[value="A+"]').disabled=active&&latest.charging.stop_guard===true;
+ $("station-mode").querySelector('option[value="A+"]').disabled=(active&&latest.charging.stop_guard===true)||latest.limit_test?.active===true;
+}
+function renderLimitTest(){
+ const test=latest.limit_test||{},busy=mutating||appUpdating||appStopped,de=CitiFoxI18n.language()==="de";
+ $("send-limit-test").disabled=busy||!test.can_set;
+ $("limit-test-target").disabled=busy;
+ $("restore-limit-test").disabled=busy||!test.can_restore;
+ $("end-limit-test").disabled=busy||!test.active;
+ $("limit-test-reason").textContent=test.reason||(test.active?"Test isolation active. No charging Start or automatic SMARTFOX mode change will be sent.":"");
+ const rows=(test.attempts||[]).slice(-3).map(item=>{
+  const outcome=item.outcome==="accepted"?(de?"API angenommen":"API accepted"):item.outcome==="rejected"?(de?"abgelehnt":"rejected"):(de?"Ausgang unbekannt":"outcome unknown");
+  const verification=item.verification==="confirmed"?(de?"Fahrzeuggrenze bestätigt":"vehicle limit confirmed"):item.verification==="not_returned"?(de?"Fahrzeug liefert keine Ladegrenze; nicht bestätigt":"vehicle returns no limit; unconfirmed"):item.verification==="different"?(de?`Fahrzeug meldet ${item.reported_limit} %; Ziel nicht bestätigt`:`vehicle reports ${item.reported_limit}%; target unconfirmed`):(de?"keine neuere Bestätigung":"no newer confirmation");
+  return `${item.target_percent} % · ${outcome}${item.http_status?` · HTTP ${item.http_status}`:""} · ${verification}${item.code?` · ${item.problem_type||item.code}`:""}`;
+ });
+ $("limit-test-result").textContent=rows.length?rows.join("\n"):(de?"Noch kein Fahrzeug-Grenzwerttest ausgeführt.":"No vehicle-limit test has been run.");
 }
 function renderEnergy(charger){
  const energy=charger.energy||{},readAge=(Date.now()-Date.parse(energy.read_at))/1000;
@@ -235,5 +250,22 @@ function releaseLimitGuard(){if(latest?.charging?.can_release_native_guard&&!mut
 $("cancel-release-guard").addEventListener("click",()=>$("release-guard-dialog").close());
 $("confirm-release-guard").addEventListener("click",()=>{$("release-guard-dialog").close();if(!latest?.charging?.can_release_native_guard)return;mutation(async()=>{const result=await api("/api/charging/release-limit-guard",{request_id:crypto.randomUUID(),accept_unconfirmed_limit:true});if(result.message)toast(result.message);});});
 $("release-limit-guard").addEventListener("click",releaseLimitGuard);
+
+$("send-limit-test").addEventListener("click",()=>mutation(async()=>{
+ await api("/api/charging/limit-test/set",{target_percent:Number($("limit-test-target").value),request_id:crypto.randomUUID()});
+ toast("Single vehicle-limit request completed. Check the result in Settings. No charging Start was sent.");
+}));
+$("restore-limit-test").addEventListener("click",()=>mutation(async()=>{
+ await api("/api/charging/limit-test/set",{target_percent:80,request_id:crypto.randomUUID()});
+ toast("Normal 80% limit requested. API acceptance alone does not confirm restoration.");
+}));
+$("end-limit-test").addEventListener("click",()=>$("end-limit-test-dialog").showModal());
+$("cancel-end-limit-test").addEventListener("click",()=>$("end-limit-test-dialog").close());
+$("confirm-end-limit-test").addEventListener("click",()=>{
+ $("end-limit-test-dialog").close();mutation(async()=>{
+  await api("/api/charging/limit-test/end",{acknowledge_unconfirmed_limit:true});
+  toast("Test isolation ended. The charger remains explicitly Off; no charging Start was sent.");
+ });
+});
 
 $("confirm-restored-limit").addEventListener("click",()=>{const target=latest?.charging?.vehicle_limit?.restore_percent;if(!Number.isInteger(target))return;const message=CitiFoxI18n.language()==="de"?`Prüfe direkt in MyŠkoda oder im Auto: Die tatsächliche Fahrzeug-Ladegrenze ist wieder ${target} %. Eine 80-%-Schaltzeit allein reicht nicht. Nur bestätigen, wenn du diesen Wert selbst geprüft hast. Danach wird der Normalbetrieb freigegeben; es wird kein Ladestart gesendet.`:`Check directly in MyŠkoda or the vehicle: the actual vehicle charging limit is restored to ${target} %. A scheduled 80% profile alone is insufficient. Confirm only after checking this value yourself. This releases normal operation without sending a charging start.`;if(!window.confirm(message))return;mutation(async()=>{const result=await api("/api/charging/confirm-restored-limit",{request_id:crypto.randomUUID(),target_percent:target,confirmed_at_vehicle:true});if(result.message)toast(result.message);});});

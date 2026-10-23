@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.9.3
+# CitiFoxCharger for Windows · 1.9.4
 
 <img src="citifoxcharger/web/brand/logo.png" alt="CitiFoxCharger logo: smooth electric city car, red fox tail and charging plug" width="620">
 
@@ -10,11 +10,25 @@ Both light and dark appearance are available. The light palette uses darker labe
 
 The header displays the current date and time from the browser device, independently of vehicle telemetry. It refreshes on returning to the page and uses the selected interface language. The clock fits inside the existing header height.
 
-The Settings page identifies the running backend as **v1.9.3 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
+The Settings page identifies the running backend as **v1.9.4 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
 
 ## Architecture and communication
 
 See [COMMUNICATION.md](COMMUNICATION.md) for the system and start/stop diagrams, exact Modbus addresses and word counts, XML data fields, SMARTFOX CGI commands, Škoda API calls and browser-to-backend routes. Mermaid diagrams render directly on GitHub. Protocol evidence and compatibility limits are in [INTERFACES.md](INTERFACES.md).
+
+## Isolated vehicle-limit test (1.9.4)
+
+This release adds a capability test in **Settings → Vehicle charging limit → Isolated vehicle-limit test**. It does not deploy the separate 2.0 state-machine branch and does not fix or change the normal SOC-controlled charging strategy below.
+
+1. End the current charging session first.
+2. On the CitiFoxCharger overview, choose **Charger → Off** and wait for Off and 0 kW. Selecting Off in CitiFox also preserves the explicit Off choice against normal A+ normalization.
+3. Open the test in Settings, explicitly choose **90%** (or another offered ten-point value) and click **Send test limit · no charging Start** once. Do **not** click Force charge for this test.
+4. Read the immediate result. **API accepted / HTTP 202 is not vehicle confirmation.** If the API omits the limit, the result explicitly says unconfirmed. The test performs no extra GET loop, automatic retry, charging Start/Stop, SMARTFOX mode write, profile write or timer edit. Check the actual setting in MyŠkoda or the vehicle if available. A missing field is unknown, not proof that setting failed.
+5. Use **Send normal 80% limit** to request restoration explicitly. It is still unconfirmed unless a newer capture reads back exactly 80% or you check it directly. Then choose **End test · keep Off** and acknowledge the explanation. Ending isolation sends no vehicle or SMARTFOX command; explicit Off remains selected. Select A+ separately only when ready to permit normal schedules again.
+
+New charging starts, A+/M+ changes, VIN edits and key removal are blocked while test isolation is active. Local Off/Stop and key replacement remain available. Test state, uncertain outcomes and request IDs survive restart; no write is replayed. A 30-second spacing prevents repeat test commands (the first explicit 80% restoration can immediately follow another target). The test reserves requests for restoration and respects upstream cooldowns. Existing scheduled vehicle reads may confirm an exact newer readback; there is no automatic wait for a field the car does not return.
+
+The same protected endpoints and sanitized diagnostics work over the configured HTTPS home network, including passwordless mode. Diagnostics include targets, accepted/rejected/unknown outcomes, HTTP status, published problem identifiers and readback state, but no VIN, key, identifiers or raw API body. Private test state belongs in the local profile, not Git.
 
 ## Manual charging strategy
 

@@ -302,6 +302,34 @@ class ServerTests(unittest.TestCase):
         connection.close()
         return status, body, returned
 
+    def test_isolated_limit_test_http_never_starts_or_changes_mode(self):
+        from test_limit_test import LimitTestTests
+        fixture=LimitTestTests();fixture.setUp();self.addCleanup(fixture.doCleanups)
+        self.service=self.server.service=fixture.service
+        code,body,_=self.call('/api/charging/limit-test/set',{'target_percent':90,'request_id':'http-limit-test-0001'})
+        self.assertEqual(code,200)
+        self.assertEqual(json.loads(body)['attempts'][-1]['outcome'],'accepted')
+        self.assertEqual(fixture.case.effects,fixture.effects)
+        code,_,_=self.call('/api/charging/start',{'target_percent':90,'request_id':'blocked-start-http-0001','allow_stale':True})
+        self.assertEqual(code,409)
+        code,body,_=self.call('/api/diagnostics')
+        self.assertTrue(json.loads(body)['limit_test']['active'])
+        self.assertNotIn(VIN.encode(),body)
+        self.assertEqual(self.call('/api/charging/limit-test/end',{'acknowledge_unconfirmed_limit':True})[0],200)
+        self.assertEqual(fixture.case.effects,fixture.effects)
+
+    def test_isolated_limit_test_requires_origin_session_csrf_and_explicit_body(self):
+        body={'target_percent':90,'request_id':'http-limit-test-0001'}
+        with patch.object(self.service,'test_vehicle_limit',return_value={'active':True}) as send:
+            self.assertEqual(self.call('/api/charging/limit-test/set',body,Cookie='')[0],401)
+            self.assertEqual(self.call('/api/charging/limit-test/set',body,Origin='https://elsewhere.example')[0],403)
+            self.assertEqual(self.call('/api/charging/limit-test/set',body,**{'X-CSRF-Token':'wrong'})[0],403)
+            self.assertEqual(self.call('/api/charging/limit-test/set',{**body,'start':True})[0],400)
+            send.assert_not_called()
+            self.assertEqual(self.call('/api/charging/limit-test/set',body)[0],200)
+            send.assert_called_once_with(90,body['request_id'])
+        self.assertEqual(self.call('/api/charging/limit-test/end',{'acknowledge_unconfirmed_limit':False})[0],400)
+
     def test_diagnostics_are_authenticated_sanitized_and_do_not_poll_or_command(self):
         self.service.cache['skoda']={'soc':40,'vin':VIN,'message':KEY,'quota_remaining':'16'}
         self.service.charging.save(status='error',target_percent=83,stop_cause='request_quota')

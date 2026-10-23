@@ -203,6 +203,21 @@ class NetworkHttpsTests(unittest.TestCase):
         self.assertNotIn('PRIVATE',body.decode())
         self.assertEqual(json.loads(body)['car']['soc'],40)
 
+    def test_passwordless_remote_isolated_limit_test_requires_session_and_csrf(self):
+        self.server.network_auth=NetworkAuth(validate_network({**configuration(),'authentication':'none','salt':None,'password_hash':None,'iterations':0}))
+        body={'target_percent':90,'request_id':'remote-limit-probe-0001'}
+        with patch.object(self.service,'test_vehicle_limit',return_value={'active':True}) as send:
+            self.assertEqual(self.call('/api/charging/limit-test/set',body,Authorization='')[0],200)
+            send.assert_called_once_with(90,body['request_id'])
+        with patch.object(self.service,'test_vehicle_limit') as send:
+            self.assertEqual(self.call('/api/charging/limit-test/set',body,Authorization='',Cookie='')[0],401)
+            self.assertEqual(self.call('/api/charging/limit-test/set',body,Authorization='',**{'X-CSRF-Token':'wrong'})[0],403)
+            self.assertEqual(self.call('/api/charging/limit-test/set',body,Authorization='',Origin='https://elsewhere.example')[0],403)
+            send.assert_not_called()
+        with patch.object(self.service,'end_limit_test',return_value={'active':False}) as end:
+            self.assertEqual(self.call('/api/charging/limit-test/end',{'acknowledge_unconfirmed_limit':True},Authorization='')[0],200)
+            end.assert_called_once_with(True)
+
     def test_remote_vehicle_and_heat_controls_use_the_existing_single_service(self):
         with patch.object(self.service,'change_target',return_value={'target_percent':82}) as target:
             self.assertEqual(self.call('/api/charging/target',{'target_percent':82})[0],200)

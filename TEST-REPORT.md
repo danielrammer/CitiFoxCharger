@@ -1,3 +1,17 @@
+# Isolated vehicle-limit test — 1.9.4
+
+Validation on 23 October 2026: **394 offline tests passed in 51.440 seconds**, including **22 isolated-limit tests**, two new local HTTP tests and one passwordless HTTPS integration test. The command was `python -m unittest discover -s tests -v`.
+
+The scenarios cover a missing current limit, one exact PUT, accepted/rejected/unknown outcomes, no automatic retry, request-ID replay prevention across restart, explicit 80% restoration, preserved Off, all Start/A+/M+ entry points blocked during isolation, active session/restoration rejection, current local Off/zero-power proof, quota/cooldown reserve, persistence failure before write, invalid saved state, exact newer readback, diagnostics sanitization, authentication, origin and CSRF checks. The existing normal charging tests are retained unchanged.
+
+Browser QA used only simulated adapters. The German Settings test sent 90% then 80%, displayed HTTP 202 separately from missing/unconfirmed readback and ended isolation while SMARTFOX remained Off. The overview Start button was disabled during isolation. Main overview dimensions matched **800 × 1280** in both themes without page overflow; no JS warnings/errors appeared before the test server was stopped. Settings may scroll. No real vehicle or SMARTFOX command was sent by the agent.
+
+This release enables a real capability test; it does **not** confirm Citigo native-limit support, deploy the 2.0 state-machine branch or change the ordinary SOC-monitored target algorithm. The user must inspect the actual vehicle setting if available. An accepted 80% restoration is explicitly unconfirmed when the API omits the limit. Ending isolation never automatically selects A+ or starts charging.
+
+---
+
+## Previous validation history
+
 # Validation report · 1.9.3
 
 Date: **23 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.

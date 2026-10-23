@@ -1,6 +1,6 @@
 # Communication and data flow
 
-This describes the implementation shipped with **CitiFoxCharger 1.9.3**, checked against the source on **23 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
+This describes the implementation shipped with **CitiFoxCharger 1.9.4**, checked against the source on **23 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
 
 ## System overview
 
@@ -208,3 +208,11 @@ After confirmation, the vehicle enforces its limit even when SOC polling is stal
 Diagnostics add a sanitized `vehicle_limit` object with requested/restoration percentages, readback phase, source of the restoration value, write/verification times, probe count and request outcome. Captured SOC remains unchanged. Existing local SMARTFOX M+ time/energy settings remain in effect and can independently stop a charge. A successful live cycle on this Citigo is still unconfirmed; missing native readback blocks Start rather than simulating support.
 
 The app separately records a start confirmed from two fresh charger-specific power samples >=0.5 kW over >=3 seconds. This does not write SOC. If automatic restoration cannot be read back, Settings offers explicit user confirmation of the actual restored limit through `POST /api/charging/confirm-restored-limit`; it requires fresh local Off/zero-power proof and records a user confirmation, never API proof or a new Start.
+
+## Isolated vehicle-limit capability test (1.9.4)
+
+`POST /api/charging/limit-test/set` accepts `target_percent` (explicitly 50, 60, 70, 80, 90 or 100) and an idempotent `request_id`. It requires an inactive charging/restoration session, valid vehicle access/advertised limit capability, budget/cooldown permission and a new local read of SMARTFOX Off/zero power. The user Off choice and test intent are saved before exactly one existing `PUT /api/v1/vehicles/{vin}/charging/limit` with `{"targetStateOfChargeInPercent":90}`. No current-limit readback is required to perform this explicit experiment. It sends no charging command or SMARTFOX write.
+
+API acceptance and verification are separate. Missing limits remain `not_returned`. Only an existing scheduled successful GET with an exact, newer post-write vehicle capture can mark a limit `confirmed`. No polling loop, delayed automatic write, Start or retry is created. Persisted uncertain requests are not replayed.
+
+The explicit 80% button sends one separate PUT under the same local Off requirement. `POST /api/charging/limit-test/end` requires `acknowledge_unconfirmed_limit: true`; it only ends isolation and retains explicit Off. A+ requires a separate user action. Test-active Start and mode-change gates are enforced in the service, not just the UI. Both endpoints use the existing session/CSRF/origin and home-network authentication checks. Cached diagnostic exports include an allowlisted test report.
