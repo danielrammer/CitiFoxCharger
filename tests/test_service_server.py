@@ -385,6 +385,13 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status,409)
         self.assertEqual(json.loads(body)["code"],"blocked")
 
+    def test_limit_restore_requires_session_csrf_and_exact_request(self):
+        body={'request_id':'restore-http-test-0001'}
+        self.assertEqual(self.call('/api/charging/restore-limit',body,Cookie='')[0],401)
+        self.assertEqual(self.call('/api/charging/restore-limit',body,**{'X-CSRF-Token':'wrong'})[0],403)
+        self.assertEqual(self.call('/api/charging/restore-limit',{})[0],400)
+        self.assertEqual(self.call('/api/charging/restore-limit',body)[0],409)
+
     def test_stale_start_flag_is_optional_boolean_and_scoped_to_manual_start(self):
         body={"target_percent":90,"request_id":"explicit-stale-test-0001"}
         for value in ("true",1,None,[],{}):
@@ -426,10 +433,23 @@ class ServerTests(unittest.TestCase):
         self.addCleanup(fixture.doCleanups)
         self.service=self.server.service=fixture.service
         fixture.web.phase_switching=True
-        status,body,_=self.call('/api/charging/start',{'target_percent':86,'request_id':'phase-http-start-00001'})
+        original=fixture.service.car.request
+        def request(method,path,key,payload=None):
+            if method=='PUT':return 202,{},b''
+            return original(method,path,key)
+        fixture.service.car.request=request
+        fixture.data['vehicle']['operations'].append({'name':'setChargingLimit'})
+        fixture.data['vehicle']['charging']['settings']={'targetStateOfChargeInPercent':80}
+        fixture.service.next_due['skoda']=0
+        status,body,_=self.call('/api/charging/start',{'target_percent':90,'request_id':'phase-http-start-00001'})
         self.assertEqual(status,200)
-        self.assertTrue(json.loads(body)['phase_start_pending'])
-        self.assertEqual(fixture.effects,['M+'])
+        self.assertEqual(json.loads(body)['vehicle_limit']['phase'],'setting')
+        self.assertEqual(fixture.effects,['OFF'])
+        fixture.data['vehicle']['charging']['settings']['targetStateOfChargeInPercent']=90
+        fixture.data['vehicle']['charging']['carCapturedTimestamp']=datetime.now(timezone.utc).isoformat()
+        fixture.service.next_due['skoda']=0;fixture.service.update('skoda');fixture.service.charging.tick()
+        self.assertTrue(fixture.service.charging.value['phase_start_pending'])
+        self.assertEqual(fixture.effects,['OFF','M+'])
         status,body,_=self.call('/api/status')
         self.assertEqual(status,200)
         self.assertTrue(json.loads(body)['charging']['can_stop'])
@@ -476,6 +496,16 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.call("/api/smartfox/heater",body)[0],409)
         for change in ({"device":"relay4"},{"mode":"timer"},{"request_id":"short"}):
             self.assertEqual(self.call("/api/smartfox/heater",{**body,**change})[0],400)
+
+    def test_manual_restore_confirmation_requires_session_csrf_and_explicit_truth(self):
+        body={'request_id':'manual-restored-http-0001','target_percent':80,'confirmed_at_vehicle':True}
+        self.assertEqual(self.call('/api/charging/confirm-restored-limit',body,Cookie='')[0],401)
+        self.assertEqual(self.call('/api/charging/confirm-restored-limit',body,**{'X-CSRF-Token':'wrong'})[0],403)
+        for invalid in (False,'true',1,None):
+            self.assertEqual(self.call('/api/charging/confirm-restored-limit',{**body,'confirmed_at_vehicle':invalid})[0],400)
+        with patch.object(self.service.vehicle_limit,'confirm_restore_manually',return_value={'status':'error'}) as confirm:
+            self.assertEqual(self.call('/api/charging/confirm-restored-limit',body)[0],200)
+            confirm.assert_called_once_with(80,'manual-restored-http-0001')
 
     def test_charger_mode_route_rejects_other_modes_and_requires_csrf(self):
         body={"mode":"OFF","request_id":"charger-mode-test-0001"}

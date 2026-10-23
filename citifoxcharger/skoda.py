@@ -27,11 +27,11 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def https_request(method, path, key):
+def https_request(method, path, key, payload=None):
     # Fixed trusted origin, certificate validation, no redirects and no environment proxies.
     request = urllib.request.Request(BASE + path, method=method,
-                                     headers={"X-API-Key": key, "Accept": "application/json"},
-                                     data=b"" if method == "POST" else None)
+                                     headers={"X-API-Key": key, "Accept": "application/json", **({"Content-Type":"application/json"} if payload is not None else {})},
+                                     data=json.dumps(payload).encode("utf-8") if payload is not None else b"" if method == "POST" else None)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect(),
                                         urllib.request.HTTPSHandler(context=ssl.create_default_context()))
     try:
@@ -40,11 +40,11 @@ def https_request(method, path, key):
         response = error
     except (OSError, TimeoutError):
         raise IntegrationError("network", "Škoda is unreachable. The outcome of a command is unknown.",
-                               uncertain=method == "POST") from None
+                               uncertain=method != "GET") from None
     with response:
         body = response.read(1024 * 1024 + 1)
         if len(body) > 1024 * 1024:
-            raise IntegrationError("protocol", "The Škoda response is too large.", uncertain=method == "POST")
+            raise IntegrationError("protocol", "The Škoda response is too large.", uncertain=method != "GET")
         return response.code, dict(response.headers.items()), body
 
 
@@ -80,18 +80,18 @@ class SkodaAdapter:
         self.quota_remaining = None
         self.quota_reset_at = 0
 
-    def call(self, method, path, key):
+    def call(self, method, path, key, payload=None, allow_reserved=False, reserved_calls=2):
         if self.clock() < self.blocked_until:
             wait = math.ceil(self.blocked_until - self.clock())
             raise IntegrationError("rate_limit", f"Škoda request limit: wait {wait} seconds.", wait)
         try:
-            reserve = int(self.quota_remaining) <= 2
+            reserve = int(self.quota_remaining) <= reserved_calls
         except (ValueError, TypeError):
             reserve = False
-        if method == "GET" and reserve and self.clock() < self.quota_reset_at:
+        if method == "GET" and reserve and not allow_reserved and self.clock() < self.quota_reset_at:
             wait = math.ceil(self.quota_reset_at - self.clock())
             raise IntegrationError("quota_reserved", "Remaining Škoda requests are reserved for charging commands.", wait)
-        status, headers, body = self.request(method, path, key)
+        status, headers, body = self.request(method, path, key, payload) if payload is not None else self.request(method, path, key)
         headers = {k.lower(): v for k, v in headers.items()}
         self.key_expires_at = headers.get("x-api-key-expires-at", self.key_expires_at)
         self.quota_remaining = headers.get("ratelimit-remaining")
@@ -114,8 +114,8 @@ class SkodaAdapter:
         if status != expected:
             code, message = messages.get(status, ("upstream", f"Škoda-Schnittstelle meldet HTTP {status}."))
             # Never return upstream error details: they can contain VINs or other sensitive values.
-            raise IntegrationError(code, message, uncertain=method == "POST" and status >= 500)
-        if method == "POST":
+            raise IntegrationError(code, message, uncertain=method != "GET" and status >= 500)
+        if method != "GET":
             return None
         try:
             data = json.loads(body)
@@ -125,13 +125,14 @@ class SkodaAdapter:
         except (ValueError, UnicodeError):
             raise IntegrationError("protocol", "Invalid Škoda JSON response.") from None
 
-    def read(self, config, key):
+    def read(self, config, key, allow_reserved=False, reserved_calls=2):
         if not key or not config["vin"]:
             return {"available": False, "code": "not_configured", "soc": None,
                     "message": "Configure the VIN and API key. Citigo compatibility is not yet verified.",
                     "operations": [], "stale": True}
         vin = config["vin"]
-        data = self.call("GET", f"/api/v1/vehicles/{vin}?include=charging,operations", key)
+        data = self.call("GET", f"/api/v1/vehicles/{vin}?include=charging,operations", key,
+                         allow_reserved=allow_reserved, reserved_calls=reserved_calls)
         vehicle = data.get("vehicle")
         if not isinstance(vehicle, dict) or vehicle.get("vin") != vin:
             raise IntegrationError("protocol", "The Škoda response does not belong to the configured VIN.")
@@ -202,3 +203,9 @@ class SkodaAdapter:
         if action not in ("start", "stop"):
             raise ValueError("Unknown vehicle command.")
         self.call("POST", f"/api/v1/vehicles/{config['vin']}/charging/{action}", key)
+
+    def set_charging_limit(self, target, config, key):
+        if type(target) is not int or not 1 <= target <= 100:
+            raise ValueError("Invalid vehicle charging limit.")
+        self.call("PUT", f"/api/v1/vehicles/{config['vin']}/charging/limit", key,
+                  {"targetStateOfChargeInPercent":target})

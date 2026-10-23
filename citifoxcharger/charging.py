@@ -73,6 +73,13 @@ class ChargingSession:
                               and web.get("control_available", False)
                               and self.service.can_command("start") and self.service.can_command("stop"))
         value["force_reason"] = web.get("control_reason")
+        native = getattr(self.service, "vehicle_limit", None)
+        native_eligible = not self.active or bool(native and native.protected)
+        value["can_force_native"] = bool(native_eligible and native and native.available() and native.budget() and value["can_force"] and not native.busy)
+        value["can_force_native_with_stale"] = bool(native_eligible and native and native.available() and native.budget() and value["can_force_with_stale"] and not native.busy)
+        value["native_limit_reason"] = ("End the existing cloud-monitored session before using a vehicle target." if self.active and not self.value.get("vehicle_limit") else
+                                         "The vehicle does not advertise native charging-limit control." if native and not native.available() else
+                                         "Not enough Škoda requests remain to verify and restore the vehicle limit. Wait for the quota reset." if native and not native.budget() else None)
         car = self.service.cache.get("skoda", {})
         if not value["can_force"] and not value["force_reason"]:
             if self.active and self.value.get("stop_requested"):
@@ -143,19 +150,21 @@ class ChargingSession:
         return bool((captured is not None and captured >= last_start and noncharging)
                     or time.time() - last_start >= 600)
 
-    def start(self, target, request_id, allow_stale=False):
+    def start(self, target, request_id, allow_stale=False, vehicle_limit=None):
         if type(allow_stale) is not bool:
             raise ValueError("Permission to use older vehicle data must be true or false.")
         if type(target) is not int or not 1 <= target <= 100:
             raise ValueError("Target charge level must be between 1 and 100%.")
-        if request_id == self.value.get("request_id"):
+        if vehicle_limit is None and request_id == self.value.get("request_id"):
             if target != self.value.get("target_percent"):
                 raise ValueError("This request ID belongs to a different target.")
             return self.state()
-        retrying = self.active
+        retrying = self.active and vehicle_limit is None
         if retrying and (not self.can_retry_start(allow_stale) or target != self.value["target_percent"]):
             raise IntegrationError("session_active", "A manual charging session is already being monitored.")
         self.service.update("skoda")
+        if vehicle_limit is not None and not self.service.vehicle_limit.protected:
+            raise IntegrationError("limit_changed", "The vehicle limit is no longer confirmed. No start was sent.")
         if not self.service.can_command("start", allow_stale) or not self.service.can_command("stop"):
             raise IntegrationError("blocked", "Current vehicle data and start/stop access are required.")
         captured = timestamp(self.service.cache.get("skoda", {}).get("captured_at"))
@@ -174,6 +183,7 @@ class ChargingSession:
         # Persist intent before any hardware effect, bound to this vehicle.
         self.save(replace=True, status="starting", target_percent=target, vin=self.service.config.value["skoda"]["vin"],
                   request_id=request_id, started_at=utcnow(), last_start_epoch=time.time(),
+                  **({"vehicle_limit":vehicle_limit} if vehicle_limit is not None else {}),
                   message="Checking Smartfox charging permission. No vehicle start has been sent yet.")
         try:
             self.service.cache.setdefault("smartfox", {})["charger"] = self.web.set_mode(self.service.config.value["smartfox"], "M+")
@@ -189,7 +199,11 @@ class ChargingSession:
         except (SmartfoxControlError, IntegrationError) as error:
             # Try restoring normal mode; do not pretend rollback or the vehicle start succeeded.
             try:
-                self.service.cache.setdefault("smartfox", {})["charger"] = self.web.set_mode(self.service.config.value["smartfox"], "A+")
+                if vehicle_limit is not None:
+                    self.save(stop_guard=True)
+                    self.restore_auto()
+                else:
+                    self.service.cache.setdefault("smartfox", {})["charger"] = self.web.set_mode(self.service.config.value["smartfox"], "A+")
                 self.save(status="error", message=str(error))
             except SmartfoxControlError:
                 self.save(status="restore_pending", message="Start failed. Return to A+ is not confirmed yet.")
@@ -197,6 +211,8 @@ class ChargingSession:
         return self.state()
 
     def start_vehicle(self, using_stale):
+        if self.value.get("vehicle_limit", {}).get("phase") == "verified":
+            using_stale = False  # The confirmed native limit enforces the stop independently.
         # Clear the deferred intent durably before a possibly uncertain network call.
         started = time.time()
         self.save(phase_start_pending=False, ready_at=utcnow(), last_start_epoch=started,
@@ -264,6 +280,8 @@ class ChargingSession:
             self.automatic_stop("Vehicle start is unconfirmed after phase switching.", cause="phase_wait")
 
     def change_target(self, target):
+        if self.value.get("vehicle_limit"):
+            return self.service.vehicle_limit.retarget(target)
         if type(target) is not int or not 1 <= target <= 100:
             raise ValueError("Target charge level must be between 1 and 100%.")
         if not self.state()["can_adjust_target"]:
@@ -349,22 +367,57 @@ class ChargingSession:
 
     @property
     def safety_stopped(self):
-        return self.value.get("stop_cause") in ("missing_soc","missing_initial_soc","phase_wait","request_quota")
+        return self.value.get("stop_cause") in ("missing_soc","missing_initial_soc","phase_wait","request_quota","vehicle_limit_start","vehicle_limit_lost")
 
     def safety_stop_message(self):
         reason = {"missing_soc":"The target cannot be monitored without current vehicle data.",
                   "missing_initial_soc":"No new vehicle data within five minutes.",
                   "phase_wait":"Charging preparation failed before the target.",
+                  "vehicle_limit_start":"Vehicle start failed after limit verification.",
+                  "vehicle_limit_lost":"The vehicle charging limit changed unexpectedly.",
                   "request_quota":"Škoda request limits prevent further charge-level monitoring."}.get(self.value.get("stop_cause"),"")
         return f"Target {self.value['target_percent']} % was not confirmed reached. " + reason
 
     def finish_stop(self, message):
+        if self.value.get("vehicle_limit") and self.value["vehicle_limit"].get("phase") not in ("restored", "rejected", "not_sent"):
+            self.save(vehicle_stop_confirmed=True)
+            self.service.vehicle_limit.start_restore()
+            return
         # Release the temporary OFF only after newer vehicle telemetry confirms stopped.
         self.save(stop_guard=False)
         self.restore_auto()
         self.save(status="error" if self.safety_stopped else "complete",
                   message=self.safety_stop_message() if self.safety_stopped else message + f" Smartfox is set to {self.normal_name}.",
                   completed_at=utcnow(),vehicle_stop_confirmed=True)
+
+    def observe_start_power(self):
+        """Confirm energy flow at this charge point, independently of cloud SOC.
+
+        Two fresh positive reports at least three seconds apart avoid treating
+        an isolated sample as a confirmed start. This never confirms the target.
+        """
+        if (self.service.stopping or not self.active or self.value.get("stop_requested")
+                or self.value.get("phase_start_pending") or self.value.get("start_confirmed_at")
+                or self.value.get("vin") != self.service.config.value["skoda"]["vin"]):
+            return
+        charger = self.service.cache.get("smartfox", {}).get("charger", {})
+        captured = timestamp(charger.get("read_at"))
+        started, power = self.value.get("last_start_epoch"), charger.get("power_kw")
+        valid = (type(started) in (int, float) and math.isfinite(started)
+                 and captured is not None and started <= captured <= time.time()+5
+                 and -5 <= time.time()-captured <= 30
+                 and charger.get("available") and charger.get("telemetry_available") is True
+                 and charger.get("mode") == "M+" and not charger.get("phase_switching")
+                 and type(power) in (int, float) and math.isfinite(power) and power >= .5)
+        if not valid:
+            if self.value.get("start_power_candidate_at"):
+                self.save(start_power_candidate_at=None)
+            return
+        since = timestamp(self.value.get("start_power_candidate_at"))
+        if since is None or not 0 <= captured-since <= 30:
+            self.save(start_power_candidate_at=charger["read_at"])
+        elif captured-since >= 3:
+            self.save(start_confirmed_at=charger["read_at"], start_confirmation_source="smartfox_power")
 
     def recover_guarded_stop(self):
         """A delayed post-stop report can prove the stop without providing live SOC.
@@ -412,9 +465,13 @@ class ChargingSession:
         return False
 
     def tick(self):
+        native = getattr(self.service, "vehicle_limit", None)
+        if native and native.tick():
+            return
         # Stop evidence is independent of SOC freshness and cloud retry timers.
         if self.recover_guarded_stop():
             return
+        self.observe_start_power()
         # A newly received target report must not wait for the ten-second housekeeping tick.
         if self.stop_if_target_reached():
             return
@@ -422,6 +479,7 @@ class ChargingSession:
         # prohibited further reads. OFF is independent of cloud stop permission.
         if (not self.service.stopping and self.active and not self.value.get("stop_requested")
                 and self.value.get("vin") == self.service.config.value["skoda"]["vin"]
+                and not (native and native.protected)
                 and not self.service.vehicle_read_budget_available()):
             self.automatic_stop("Škoda request limits prevent further charge-level monitoring.", cause="request_quota")
             return
@@ -510,6 +568,17 @@ class ChargingSession:
             else:
                 self.value["message"] = "Start requested. Waiting for a new vehicle charge level; a stop will be requested after five minutes without new data."
                 return
+        if native and native.protected and not self.value.get("stop_requested"):
+            # The verified vehicle limit remains in force without cloud reads.
+            # Do not turn a cloud outage into a premature local charge stop.
+            power = charger.get("power_kw")
+            read_at = timestamp(charger.get("read_at"))
+            charging = (charger.get("available") and charger.get("telemetry_available") and read_at is not None
+                        and -5 <= time.time()-read_at <= 30 and type(power) in (int,float) and power > .1)
+            self.value["message"] = (f"Charging confirmed by SMARTFOX. Vehicle limit {self.value['target_percent']} % verified." if charging and self.value.get("start_confirmed_at") else
+                                     f"Vehicle limit {self.value['target_percent']} % confirmed. Checking charging power." if charging else
+                                     f"Vehicle limit {self.value['target_percent']} % confirmed. Waiting for charging power; target completion is unconfirmed.")
+            return
         max_age = min(900, self.service.config.value["skoda"]["stale_seconds"])
         current_soc = (car.get("available") and not car.get("stale", True) and type(car.get("soc")) is int
                        and captured is not None and -5 <= time.time() - captured <= max_age)

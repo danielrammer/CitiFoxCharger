@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.8.16
+# CitiFoxCharger for Windows · 1.9.0
 
 <img src="citifoxcharger/web/brand/logo.png" alt="CitiFoxCharger logo: smooth electric city car, red fox tail and charging plug" width="620">
 
@@ -10,31 +10,29 @@ Both light and dark appearance are available. The light palette uses darker labe
 
 The header displays the current date and time from the browser device, independently of vehicle telemetry. It refreshes on returning to the page and uses the selected interface language. The clock fits inside the existing header height.
 
-The Settings page identifies the running backend as **v1.8.16 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
+The Settings page identifies the running backend as **v1.9.0 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
 
 ## Architecture and communication
 
 See [COMMUNICATION.md](COMMUNICATION.md) for the system and start/stop diagrams, exact Modbus addresses and word counts, XML data fields, SMARTFOX CGI commands, Škoda API calls and browser-to-backend routes. Mermaid diagrams render directly on GitHub. Protocol evidence and compatibility limits are in [INTERFACES.md](INTERFACES.md).
 
-## Manual start with the last reported SOC
+## Vehicle-enforced charging target
 
-Version 1.8.16 removes the older-data checkbox. Manual Start and M+ automatically pass the bounded older-data permission; the original capture timestamp and stale badge remain visible. This does not remove the five-minute new-report deadline, active-stop guard, cloud quota/cooldown checks or local readiness checks. It is a usability change, not proof of reliable percentage enforcement.
+Each new manual start first writes the exact selected target using the official `PUT /api/v1/vehicles/{vin}/charging/limit`. An accepted request is not enough: the same target must be read back from `charging.settings.targetStateOfChargeInPercent` in a newer vehicle capture after the write. Until then, the wallbox stays Off and no vehicle Start is sent. Some vehicles accept only 50–100% in steps of ten; the app permits an exact integer such as **87%** for testing, but never rounds or retries another target automatically. A rejected or unconfirmed value is an error, not claimed compatibility.
 
-Diagnostics now preserve `stop_trigger_quota_remaining`, `stop_trigger_cooldown_seconds` and `stop_trigger_quota_reset_seconds` at the moment an automatic stop is triggered. Unknown remaining quota stays null. Later quota resets cannot overwrite these historical values; older reports have null fields. This distinguishes a low known budget from a server cooldown without storing credentials or raw responses.
+Once confirmed, M+ and the existing phase-readiness gate precede one vehicle Start. The verified vehicle target remains in force if SOC polling becomes stale or quota runs out, avoiding the old cloud-only freshness stops. Physical accuracy and native-limit support on this Citigo still require a real write/readback/charge/restore test. Existing SMARTFOX M+ time/energy settings can independently stop a charge and are not changed.
 
-## Recovering a stopped session
+The previous readable vehicle limit is restored after the stop; when missing, the user-selected normal value is **80%**. Charging schedules and charge mode are not written. Restoration also requires readback before returning to A+. Settings exposes a bounded retry if restoration is unconfirmed. If the API permanently omits the field, an explicit alternative lets the user confirm the actual restored limit directly in MyŠkoda/the vehicle after local Off and zero-power verification. A timer profile alone is not proof. This manual confirmation is recorded separately from API proof and never sends Start.
 
-Version 1.8.15 separates stop confirmation from SOC freshness. A delayed vehicle capture after the latest stop/start boundary may confirm a stopped vehicle even if its SOC is now stale, provided a fresh, settled local SMARTFOX read confirms Off and no charging power. The old session then ends and the normal A+ mode is restored. An explicit user-selected Off remains Off. The app never starts charging as part of recovery, and a precautionary stop below the target remains an unsuccessful session.
+## Separate proof of charging power
 
-Reports captured before the stop, future timestamps, another vehicle, unavailable telemetry or missing local stop proof cannot release the aged-report guard. The wallbox selector is disabled while the stop guard is active so it cannot appear to accept an overridden mode. After updating, a session explicitly closed with Stop.cmd stays closed; choose A+ explicitly if needed.
+The app confirms a start from two fresh SMARTFOX charge-point power reports of at least **0.5 kW**, at least three seconds apart. House consumption, a raw wallbox status label and an accepted API command do not establish this proof. The diagnostic records `start_confirmed_at` and `start_confirmation_source: smartfox_power`. This proves energy flow at that time; it neither updates SOC nor proves target completion.
 
-This fixes a stuck Off hold. It does not verify a native 87% vehicle limit or guarantee an exact cloud-monitored SOC target.
+## Older SOC and existing sessions
 
-## Request quota and target reliability
+Manual Start automatically allows the last reported SOC within the existing age/access bounds; there is no checkbox. The original capture timestamp and age badge remain visible. Requests still respect Škoda cooldowns and the shared per-VIN quota, reserving calls for stop and restoration. Diagnostic stop snapshots preserve remaining quota, cooldown and reset seconds at the trigger, even if the quota later replenishes.
 
-If the known Škoda quota has only the two command-reserve calls left, or the cloud imposes a request cooldown, an active monitored session now requests local SMARTFOX **Off immediately**, before the ordinary housekeeping interval. The vehicle stop follows where permitted. Off remains guarded until a newer vehicle report confirms the stop. This is a precautionary stop with cause `request_quota`, not successful target completion; no automatic restart is attempted. New starts require at least four remaining calls when a future quota reset is known (one start, one read and two reserved commands). Unknown quota metadata does not establish exhaustion.
-
-**A precise percentage limit is still not guaranteed.** The cloud may return an older vehicle report even on a successful query; the 15-minute freshness ceiling can allow overshoot at high charging power before a quota stop. This change closes the confirmed blind-charging case at quota exhaustion; it does not turn delayed cloud SOC into live telemetry. Native per-vehicle charging-limit enforcement has not been verified, and existing 80% vehicle schedules are preserved.
+Sessions saved before native-limit control retain the earlier cloud-only five-minute/15-minute age and request-quota stop rules. They are not silently treated as vehicle-protected. A delayed post-stop vehicle capture can release an old stop guard when the existing fresh local Off/zero-power checks also pass. Explicitly selected Off and deliberately closed sessions remain respected.
 
 ## Installation and first start
 
@@ -115,22 +113,16 @@ The main page shows the reported battery percentage, current local charging powe
 
 ### Force charge
 
-1. Select a target between **1 and 100%**, above the reported SOC.
-2. The app changes Charger 1 to **M+**, verifies the returned mode and requires three consecutive seconds of observed fresh readiness with an offered current of at least 6 A, within a fifteen-second window. Losing readiness resets the settling window. If Smartfox explicitly reports a **phase switch**, preparation continues in the background instead of failing after fifteen seconds. The page shows **Phase switching**, an amber indicator and Smartfox's remaining seconds when available. Stop remains usable. After switching, a new local report must confirm at least three seconds of readiness before the app sends one vehicle start. The preparation deadline is six minutes; timeout or lost permission secures Off. Restart never replays a pending start. These are app safety bounds, not a promised hardware duration.
-3. Only then is one vehicle start sent. Failed readiness sends no vehicle start and attempts a return to A+.
-4. The backend monitors the target independently of browser timers. A valid report at or above the target, even if now old, requests a conservative stop.
+1. Choose **50, 60, 70, 80, 90 or 100%**, above the reported SOC.
+2. The wallbox is held Off while the vehicle limit is set and verified. The interface shows this preparation; Stop and explicit wallbox Off cancel a pending start.
+3. Once the vehicle limit is confirmed, select M+ and require three consecutive seconds of fresh readiness/current permission. An explicitly reported phase switch continues in the cancellable backend preparation state, with its existing six-minute deadline. One vehicle Start follows stable readiness. Restart never replays a pending start.
+4. Fresh positive local power confirms that charging actually began. An accepted Start alone is not charging confirmation. The vehicle enforces its verified target without relying on live cloud SOC; the backend still requests its local-first stop when a target report arrives.
 
-You can change the slider during monitoring. Releasing it saves the new local target without another start. Lowering it to/below an already reported SOC can request a stop. Once stopping begins, target changes are locked. The application does not program the native vehicle charge limit.
+The slider remains editable during monitoring. Changing a native target pauses the wallbox, writes and verifies the new limit, and resumes only if charging was physically confirmed before that change. An explicitly Off or unconfirmed session is not started by changing its target. Lowering the target to an already reported SOC requests a local-first stop immediately. If a lower limit cannot be changed because of exhausted quota, the app stops locally as a precaution; it does not keep using a higher old limit while displaying a lower new one.
 
-### Automatic target stop and missing data
+### Stop and restoration
 
-An automatic stop first requests and reads back **Off** at the wallbox, then requests the vehicle stop. Cloud failure or exhausted quota cannot skip that local attempt. Off is held until a newer, non-charging vehicle report confirms the stop. A future-dated report beyond the allowed clock tolerance cannot release the hold. Local Off retries remain independent of cloud command backoff. The UI blocks A+/M+ during this hold.
-
-After confirmation, A+ is restored unless Off was explicitly selected. A+ allows normal surplus/scheduled operation and is not a guaranteed power interruption. A confirmed Off setting is a mode confirmation; physical power and vehicle confirmation are separate observations. The app reports unconfirmed outcomes rather than claiming success.
-
-The target is checked against cloud vehicle reports, not a continuously measured native battery limit. Delayed reports can cause overshoot before the threshold is known. The reported 82%/86% incident on backend 1.6.0 was ended manually by the user. Version 1.6.1 fixed identified stop gaps; an exact root cause and a successful real automatic target-stop cycle on the tablet still require confirmation.
-
-A manually requested start with older SOC has a persistent **five-minute deadline** for a new report captured after the start. Without it the app requests a stop and holds Off. This can explain early stops, but is not established as the actual cause of the reported early interruptions. Later loss of data allows at most five minutes of recovery and no more than **15 minutes since the last valid report**, or a shorter configured freshness limit. It does not leave M+ active indefinitely.
+Stop first requests and reads back **Off** at the wallbox, then requests vehicle Stop. Cloud failure cannot bypass the local Off attempt. The previous/normal vehicle limit is restored only after stop confirmation, then verified before normal A+ is released. Missing restoration confirmation remains visible and holds Off. Stop never claims the vehicle reached the target merely because power is zero.
 
 ### Older data and retrying a start
 

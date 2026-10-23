@@ -215,7 +215,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.valid_request(mutation=True) or not self.authenticated(mutation=True):
             return
-        remote_actions = {"/api/app/update","/api/refresh","/api/charging/start","/api/charging/stop","/api/charging/target",
+        remote_actions = {"/api/app/update","/api/refresh","/api/charging/start","/api/charging/stop","/api/charging/target","/api/charging/restore-limit","/api/charging/confirm-restored-limit",
                           "/api/smartfox/heater","/api/smartfox/charger-mode"}
         if self.server.network_auth and urlsplit(self.path).path not in remote_actions:
             self.reply(403,{"error":"Configure device access and the backend directly on the tablet."})
@@ -277,7 +277,24 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Invalid vehicle command.")
                 if not isinstance(data["request_id"], str) or not re.fullmatch(r"[a-zA-Z0-9-]{16,80}", data["request_id"]):
                     raise ValueError("Invalid request ID.")
+                if data["action"] == "start":
+                    raise IntegrationError("blocked", "Use manual charging with a verified vehicle target.")
                 result = service.command(data["action"], data["request_id"])
+            elif path == "/api/charging/confirm-restored-limit":
+                if (set(data) != {"request_id", "target_percent", "confirmed_at_vehicle"}
+                        or data.get("confirmed_at_vehicle") is not True
+                        or type(data.get("target_percent")) is not int
+                        or not isinstance(data.get("request_id"), str)
+                        or not re.fullmatch(r"[a-zA-Z0-9-]{16,80}", data["request_id"])):
+                    raise ValueError("Explicit confirmation of the actual restored vehicle limit is required.")
+                with service.lock:
+                    result = service.vehicle_limit.confirm_restore_manually(data["target_percent"], data["request_id"])
+            elif path == "/api/charging/restore-limit":
+                if (set(data) != {"request_id"} or not isinstance(data["request_id"],str)
+                        or not re.fullmatch(r"[a-zA-Z0-9-]{16,80}",data["request_id"])):
+                    raise ValueError("Invalid request ID.")
+                with service.lock:
+                    result = service.vehicle_limit.retry_restore(data["request_id"])
             elif path == "/api/charging/target":
                 if set(data) != {"target_percent"}:
                     raise ValueError("Only target charge level is required.")
@@ -290,7 +307,7 @@ class Handler(BaseHTTPRequestHandler):
                     if (set(data) not in ({"target_percent", "request_id"}, {"target_percent", "request_id", "allow_stale"})
                             or type(data.get("allow_stale", False)) is not bool):
                         raise ValueError("Target charge level and request ID are required.")
-                    result = service.force_charge(data["target_percent"], request_id, data.get("allow_stale", False))
+                    result = service.force_charge_native(data["target_percent"], request_id, data.get("allow_stale", False))
                 else:
                     if set(data) != {"request_id"}:
                         raise ValueError("Only a request ID is required.")

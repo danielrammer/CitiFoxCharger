@@ -1,6 +1,6 @@
 # Verified interfaces
 
-Evidence reviewed on **16–22 October 2026**; application version **1.8.14**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
+Evidence reviewed on **16–22 October 2026**; application version **1.9.0**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
 
 For an implementation-level overview with diagrams and request/register tables, see [COMMUNICATION.md](COMMUNICATION.md).
 
@@ -96,9 +96,9 @@ The reviewed documentation describes **20 requests per hour and VIN**; response 
 
 No verified public wake-up or force-refresh endpoint was found. The [community MyŠkoda client](https://github.com/skodaconnect/myskoda/blob/main/myskoda/rest_api.py) has a wake-up route with different authentication and daily limits. The [Home Assistant integration](https://github.com/skodaconnect/homeassistant-myskoda/blob/main/docs/entities.md#wake-up-car) also warns about vehicle-dependent limits. Neither proves support for this Citigo or availability using the public API key; no community wake-up was attempted.
 
-The public contract contains `setChargingLimit`, but support and permitted steps for this Citigo are unconfirmed. Typical documented steps of ten percent do not prove that a native 82% limit can be programmed. The app does not send this operation or claim native enforcement.
+The public contract contains `setChargingLimit`, but support and permitted steps for this Citigo are unconfirmed. Typical documented steps of ten percent do not prove that a native 82% limit can be programmed. Version 1.9.0 sends an exact requested value but withholds Start until a matching newer vehicle readback; actual Citigo support remains unconfirmed.
 
-### Local target monitoring
+### Legacy local target monitoring (sessions without a verified vehicle limit)
 
 `POST /api/charging/target` changes only the local target, never repeats a start and does not alter the native vehicle limit. A valid old SOC already at/above target authorizes a conservative stop, not a start. Both manual and automatic stopping request verified local OFF before any vehicle read or cloud request, even when cloud access is blocked. The temporary Off hold survives restart and is released only after newer stopped vehicle telemetry. Future reports beyond the allowed five-second release tolerance cannot release it. A+ is not treated as a power-off guarantee. `charging.can_stop` exposes local stop availability independently of cloud-only `controls.stop`.
 
@@ -138,3 +138,12 @@ SOC freshness is not itself a stop-confirmation requirement. A non-charging vehi
 ## Manual older-SOC permission (1.8.16)
 
 The browser sends the existing Boolean `allow_stale: true` on each manually initiated combined start, including a new session selected through M+. This permission stays scoped to the monitored manual session and does not change the raw vehicle-command route. Age, key/capability, successful-read, local readiness, quota and stop checks remain server-side. Automatic stops persist their pre-command remaining quota, cooldown seconds and quota-reset seconds in the allowlisted diagnostic report, so later counter changes cannot obscure the trigger.
+### Native limit writes (1.9.0)
+
+The official `setChargingLimit` PUT is implemented with a JSON `targetStateOfChargeInPercent` body and per-VIN advertised-operation gating. New GUI/API starts require an exact selected integer target, including a requested 87% test and a newer post-write vehicle capture reading back that setting. No charge-profile or mode write is performed. The previous valid target is restored after stopped confirmation; when absent, the user's explicit fallback is 80%. Restoration also requires readback before A+ release. New native-protected sessions do not stop merely because of stale SOC or an exhausted read quota. A timeout, rejection or missing field is explicitly unconfirmed and never enables Start. The current Citigo diagnostics advertise the operation but omit its target; an actual successful native-limit/start/stop/restoration cycle remains to be validated on the tablet. Existing sections describing absence of native writes refer to the preceding 1.8.x implementation.
+
+### Explicit manual restoration and power proof
+
+`POST /api/charging/confirm-restored-limit` requires a valid session, same-origin/CSRF protections, exact pending restoration percentage, unique request ID and `confirmed_at_vehicle: true`. It is available only after automatic restoration reached the attention state, for the same VIN, with a fresh local Off/non-charging/zero-power readback. It records `restoration_confirmation: user`, whereas automatic readback records `api`. It is an explicit user statement after checking the actual vehicle setting, not an inferred result or a vehicle Start. The route is available to already-authorized home-network control sessions.
+
+Start power proof uses only the charger-specific local power field: two finite fresh readings >=0.5 kW spanning at least three seconds after the current start, on M+ with live connection and no phase switch. Re-reading a cached sample cannot confirm it. This records a start time/source without changing SOC or confirming completion.

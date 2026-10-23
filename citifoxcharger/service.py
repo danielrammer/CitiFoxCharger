@@ -10,6 +10,7 @@ from .skoda import SkodaAdapter, IntegrationError, timestamp
 from .smartfox_web import SmartfoxWeb, SmartfoxControlError
 from .charging import ChargingSession
 from .power import PowerGuard
+from .vehicle_limit import VehicleLimit
 
 
 class Service:
@@ -36,6 +37,7 @@ class Service:
         self.app_update_pending = False
         self.restore_rate_state()
         self.restore_vehicle_cache()
+        self.vehicle_limit = VehicleLimit(self)
 
     def restore_vehicle_cache(self):
         try:
@@ -104,9 +106,10 @@ class Service:
             reset_in = self.car.quota_reset_at - self.car.clock()
         except (TypeError, ValueError, AttributeError):
             remaining, reset_in = 0, 0
-        if remaining > 2 and reset_in > 0:
-            # Keep two calls available for commands; use spare quota for faster charging updates.
-            budget_spacing = math.ceil(reset_in / (remaining - 2))
+        reserve = 3 if self.vehicle_limit.protected else 2
+        if remaining > reserve and reset_in > 0:
+            # Native sessions also need calls to restore and verify their limit.
+            budget_spacing = math.ceil(reset_in / (remaining - reserve))
             return max(60 if charging else max(600, configured), budget_spacing)
         return max(180, configured) if charging else max(600, configured)
 
@@ -290,14 +293,17 @@ class Service:
             self.reset()
             self.event("API key removed.")
 
-    def update(self, source):
+    def update(self, source, verify_restoration=False):
         now = time.monotonic()
         if now < self.next_due.get(source, 0):
             return
         config = self.config.value[source]
         self.last_attempt[source] = now
         try:
-            value = self.sf.read(config) if source == "smartfox" else self.car.read(config, self.secrets.key)
+            value = (self.sf.read(config) if source == "smartfox" else
+                     self.car.read(config, self.secrets.key, allow_reserved=True) if verify_restoration else
+                     self.car.read(config, self.secrets.key, reserved_calls=3) if self.vehicle_limit.protected else
+                     self.car.read(config, self.secrets.key))
             if source == "smartfox":
                 try:
                     value["charger"] = self.web.read(config) if self.web else {"available": False, "control_available": False}
@@ -390,11 +396,13 @@ class Service:
     def status(self):
         with self.lock:
             if not self.stopping:
-                self.charging.stop_if_target_reached()
+                if not self.vehicle_limit.busy:
+                    self.charging.stop_if_target_reached()
                 self.update("smartfox")
                 self.prioritize_target_poll()
                 self.prioritize_freshness_poll()
-                self.update("skoda")
+                if not self.vehicle_limit.busy or (self.charging.value.get("stop_requested") and self.vehicle_limit.record.get("phase") == "setting"):
+                    self.update("skoda")
             car = self.cache.get("skoda", {"available":False,"stale":True})
             captured = timestamp(car.get("captured_at"))
             if captured is None or not -300 <= time.time() - captured <= self.config.value["skoda"]["stale_seconds"]:
@@ -419,6 +427,16 @@ class Service:
             self.power.update(not self.stopping)
             try:
                 return self.charging.start(target, request_id, allow_stale)
+            finally:
+                self.power.update(self.charging.active and not self.worker_stop.is_set())
+
+    def force_charge_native(self, target, request_id, allow_stale=False):
+        with self.lock:
+            if self.stopping or self.app_update_pending:
+                raise IntegrationError("blocked", "The app is restarting or updating.")
+            self.power.update(True)
+            try:
+                return self.vehicle_limit.begin(target, request_id, allow_stale)
             finally:
                 self.power.update(self.charging.active and not self.worker_stop.is_set())
 
@@ -508,6 +526,10 @@ class Service:
             if len(self.heater_results)>100:
                 del self.heater_results[next(iter(self.heater_results))]
             # Explicit OFF must survive the ordinary A+ normalization and a pending target stop.
+            if mode == "OFF" and self.vehicle_limit.record.get("phase") == "setting":
+                # Cancel a pending native start durably before any later readback.
+                self.charging.save(status="paused", stop_requested=True, stop_guard=True,
+                                   stop_intent_epoch=time.time(), phase_start_pending=False)
             self.charging.save(user_charger_mode="OFF" if mode == "OFF" else None,
                                stop_guard=self.charging.value.get("stop_guard", False) if self.charging.active else False)
             try:

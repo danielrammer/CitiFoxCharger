@@ -1455,3 +1455,36 @@ class ChargingTests(unittest.TestCase):
         self.assertEqual(snapshot["stop_cause"], "request_quota")
         self.assertIsNone(snapshot["stop_trigger_quota_remaining"])
         self.assertGreater(snapshot["stop_trigger_cooldown_seconds"], 110)
+
+    def test_local_power_confirms_start_with_old_soc_but_never_confirms_target(self):
+        self.force(90)
+        now=time.time()
+        self.service.charging.save(last_start_epoch=now-20)
+        self.service.cache['skoda'].update(stale=True,soc=40,state='CHARGING_INTERRUPTED')
+        charger=self.service.cache['smartfox']['charger']
+        charger.update(mode='M+',power_kw=7.3,read_at=datetime.fromtimestamp(now-5,timezone.utc).isoformat())
+        self.service.charging.observe_start_power()
+        self.assertIsNone(self.service.charging.value.get('start_confirmed_at'))
+        # Re-reading the same sample is not a second confirmation.
+        self.service.charging.observe_start_power()
+        self.assertIsNone(self.service.charging.value.get('start_confirmed_at'))
+        charger['read_at']=datetime.fromtimestamp(now,timezone.utc).isoformat()
+        self.service.charging.observe_start_power()
+        self.assertEqual(self.service.charging.value['start_confirmation_source'],'smartfox_power')
+        self.assertEqual(self.service.cache['skoda']['soc'],40)
+        self.assertNotEqual(self.service.charging.value['status'],'complete')
+
+    def test_local_power_start_proof_ignores_bad_or_pre_start_samples(self):
+        self.force(90)
+        charger=self.service.cache['smartfox']['charger']
+        saved=copy.deepcopy(charger)
+        for changes in ({'power_kw':0},{'power_kw':float('nan')},{'power_kw':True},
+                        {'power_kw':7.3,'available':False},{'power_kw':7.3,'mode':'OFF'},
+                        {'power_kw':7.3,'telemetry_available':False},
+                        {'power_kw':7.3,'phase_switching':True},
+                        {'power_kw':7.3,'read_at':datetime.fromtimestamp(time.time()-60,timezone.utc).isoformat()}):
+            with self.subTest(changes=changes):
+                self.service.cache['smartfox']['charger']={**saved,**changes}
+                self.service.charging.observe_start_power()
+                self.assertIsNone(self.service.charging.value.get('start_confirmed_at'))
+                self.assertIsNone(self.service.charging.value.get('start_power_candidate_at'))

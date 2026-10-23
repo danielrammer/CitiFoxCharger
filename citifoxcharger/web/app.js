@@ -28,16 +28,16 @@ function updateControls(){
  $("reload-app").disabled=mutating||appUpdating;
  if(appStopped){for(const id of ["force","stop","target","quit-app","heater-mode","heater2-mode","hot-water-mode","station-mode"])$(id).disabled=true;return;}
  const session=latest.charging,car=latest.skoda,active=activeStates.has(session?.status),target=Number($("target").value),soc=car.soc;
- const staleOption=session?.can_force_with_stale===true&&typeof soc==="number"&&target>soc;
+ const staleOption=session?.can_force_native_with_stale===true&&typeof soc==="number"&&target>soc;
  const retry=session?.can_retry_start===true||session?.can_retry_start_with_stale===true;
  $("target-value").textContent=`${target} %`;$("target").disabled=mutating||(active&&!session?.can_adjust_target);
  $("force").textContent=retry?"↻ Retry start":"↯ Force charge";
- $("force").disabled=mutating||!(session?.can_force||staleOption)||typeof soc!=="number"||target<=soc;
+ $("force").disabled=mutating||!(session?.can_force_native||staleOption)||typeof soc!=="number"||target<=soc;
  $("stop").disabled=mutating||!(session?.can_stop??(active||latest.controls.stop));
  let hint="";
  if(!car.available)hint=car.code==="not_configured"?"Configure vehicle access in Settings.":"The vehicle is currently unreachable.";
  else if(target<=soc)hint="The selected target is already reached.";
- else if(session?.force_reason&&!session.can_force&&!staleOption)hint=session.force_reason;
+ else if((session?.native_limit_reason||session?.force_reason)&&!session.can_force_native&&!staleOption)hint=session.native_limit_reason||session.force_reason;
  else if(car.stale&&!staleOption&&!session?.awaiting_fresh_soc)hint="Waiting for current vehicle data.";
  if((active||session?.status==="error")&&session?.message)hint="";
  $("operation-hint").textContent=hint;$("operation-hint").hidden=!hint;
@@ -69,7 +69,7 @@ function updateHeaterControls(){
  const guarded=activeStates.has(latest?.charging?.status)&&latest.charging.stop_guard===true;
  $("station-mode").disabled=mutating||!live||!charger.control_available||guarded;
  $("station-mode").title=guarded?"Charger kept Off until the vehicle confirms the stop.":"Change mode";
- const active=activeStates.has(latest?.charging?.status),manual=active?!latest.charging.stop_requested&&latest.controls.start&&latest.controls.stop:Number($("target").value)>latest.skoda.soc&&(latest?.charging?.can_force||latest?.charging?.can_force_with_stale);
+ const active=activeStates.has(latest?.charging?.status),manual=active?!latest.charging.stop_requested&&latest.controls.start&&latest.controls.stop:Number($("target").value)>latest.skoda.soc&&(latest?.charging?.can_force_native||latest?.charging?.can_force_native_with_stale);
  $("station-mode").querySelector('option[value="M+"]').disabled=!manual;
  $("station-mode").querySelector('option[value="A+"]').disabled=active&&latest.charging.stop_guard===true;
 }
@@ -111,6 +111,9 @@ function renderEnergy(charger){
 }
 function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=sf.charger||{},session=data.charging;
  renderEnergy(charger);
+ const limit=session?.vehicle_limit||{},reportedLimit=car.charging_settings?.target_percent;
+ $("vehicle-limit-info").textContent=limit.phase?`Vehicle limit: ${limit.phase} · Target ${limit.target_percent} % · Restore ${limit.restore_percent} %`:`Reported vehicle limit: ${reportedLimit??"unknown"} · Default restore limit: 80 %`;
+ $("restore-vehicle-limit").hidden=limit.phase!=="attention";$("restore-vehicle-limit").disabled=mutating||appUpdating;$("confirm-restored-limit").hidden=limit.phase!=="attention";$("confirm-restored-limit").disabled=mutating||appUpdating;
  $("soc").textContent=car.soc??"—";$("soc-track").style.width=`${car.soc??0}%`;$("battery-fill").style.width=`${car.soc??0}%`;
  const powerAge=(Date.now()-Date.parse(charger.read_at))/1000,livePower=charger.available&&Number.isFinite(powerAge)&&powerAge>=-5&&powerAge<=30&&charger.telemetry_available!==false&&typeof charger.power_kw==="number";
  const switching=livePhaseSwitch(charger),isCharging=!switching&&(livePower?charger.power_kw>0.1:car.state==="CHARGING"&&!car.stale&&car.available);
@@ -119,16 +122,16 @@ function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=
  const quotaBlocked=["quota_reserved","rate_limit"].includes(car.code);
  const carLabel=quotaBlocked?"Škoda request limit":car.available?(car.stale?"Stale · "+ageBrief(car.captured_at):"Connected"):car.code==="not_configured"?"Not configured":"Unreachable";$("car-badge").textContent=carLabel;$("car-badge").className=`badge ${car.available&&!car.stale&&!quotaBlocked?"good":"warn"}`;
  $("car-time").textContent=`Last vehicle report: ${date(car.captured_at)}`;$("car-read").textContent=`Last successful query: ${date(car.read_at)}`;
- $("charger-mode").textContent=charger.available?`Smartfox · ${charger.mode||"Mode unknown"}`:"Smartfox · unreachable";
+ $("charger-mode").textContent=charger.available?(limit.phase==="verified"?`${charger.mode||"Mode unknown"} · Vehicle target ${limit.target_percent}% ✓`:`Smartfox · ${charger.mode||"Mode unknown"}`):"Smartfox · unreachable";
  $("connection-summary").textContent=`Škoda ${car.available?"connected":"unreachable"} · Smartfox ${sf.available?"connected":"unreachable"}`;
- if(session&&!targetEditing&&(!targetInitialized||activeStates.has(session.status))){let target=session.target_percent;try{if(!targetInitialized&&!activeStates.has(session.status)){const saved=Number(localStorage.getItem("charging-target"));if(saved>=1&&saved<=100)target=saved;}}catch{}$("target").value=target;targetInitialized=true;}
+ if(session&&!targetEditing&&(!targetInitialized||activeStates.has(session.status))){let target=session.target_percent;try{if(!targetInitialized&&!activeStates.has(session.status)){const saved=Number(localStorage.getItem("charging-target"));if(Number.isInteger(saved)&&saved>=1&&saved<=100)target=saved;}}catch{}$("target").value=target;targetInitialized=true;}
  const active=activeStates.has(session?.status),power=data.monitoring?.power;
  $("monitoring-note").hidden=!active;
  $("monitoring-note").textContent=active?(power?.warning||(!data.monitoring?.running?"Background monitoring is unconfirmed. Please check the app.":power?.requested&&power.on_ac_power===true?"Monitoring in background · screen may turn off.":"Monitoring active. Keep the tablet plugged in and prevent automatic sleep.")):"";
  $("quit-app").disabled=!localAdmin||!session?.can_shutdown||mutating;
  $("session-status").classList.toggle("session-quiet",session?.status==="monitoring"&&isCharging&&!session?.awaiting_fresh_soc&&!session?.stop_requested);
  $("normal-mode-note").textContent=session?.user_charger_mode==="OFF"?(charger.available&&charger.mode==="OFF"?"Charger explicitly switched Off.":"Off selected · change is unconfirmed."):session?.stop_guard?"Charger kept Off until the vehicle confirms the stop.":"Normal mode A+ · schedules are preserved.";
- const showPhase=switching&&!session?.stop_requested;$("session-status").hidden=!showPhase&&!session?.message;$("session-status").textContent=showPhase?phaseMessage(charger):session?.message||"";$("session-status").classList.toggle("phase-wait",showPhase);$("session-status").classList.toggle("safety-stopped",session?.status==="error"&&["missing_soc","missing_initial_soc","phase_wait","request_quota"].includes(session?.stop_cause));
+ const showPhase=switching&&!session?.stop_requested;$("session-status").hidden=!showPhase&&!session?.message;$("session-status").textContent=showPhase?phaseMessage(charger):session?.message||"";$("session-status").classList.toggle("phase-wait",showPhase);$("session-status").classList.toggle("safety-stopped",session?.status==="error"&&["missing_soc","missing_initial_soc","phase_wait","request_quota","vehicle_limit_start","vehicle_limit_lost"].includes(session?.stop_cause));
  $("car-message").textContent=car.message||"";$("sf-notice").textContent=sf.notice||"";$("sf-control-reason").textContent=charger.control_reason||charger.message||"";
  $("sf-web-meta").textContent=`Charge mode: ${charger.mode||"unknown"} · Power: ${charger.power_kw??"—"} kW · Wallbox: ${charger.status_text||"unknown"} · Setpoint: ${charger.offered_current_a??"—"} A · Last read: ${date(charger.read_at||sf.read_at)}`;
  $("api-meta").textContent=`Next query in ${data.next_skoda_seconds} s · Key valid until ${date(car.key_expires_at)} · Quota left: ${car.quota_remaining??"unknown"}${car.errors?.length?" · "+car.errors.join(", "):""}`;
@@ -205,7 +208,7 @@ $("show-diagnostics").addEventListener("click",async()=>{
  const button=$("show-diagnostics");button.disabled=true;
  try{const report=await api("/api/diagnostics");
   $("diagnostic-json").textContent=JSON.stringify(report,null,2);$("diagnostic-json").hidden=false;
-  const causes={request_quota:"Stopped because Škoda request limits prevent charge-level monitoring.",missing_soc:"Stopped because vehicle data became too old.",missing_initial_soc:"Stopped because no new vehicle data arrived after start.",phase_wait:"Stopped during charging preparation.",target:"Stopped at the monitored target."};
+  const causes={vehicle_limit_start:"Vehicle start failed after limit verification.",vehicle_limit_lost:"The vehicle charging limit changed unexpectedly.",request_quota:"Stopped because Škoda request limits prevent charge-level monitoring.",missing_soc:"Stopped because vehicle data became too old.",missing_initial_soc:"Stopped because no new vehicle data arrived after start.",phase_wait:"Stopped during charging preparation.",target:"Stopped at the monitored target."};
   $("diagnostic-summary").textContent=causes[report.session?.stop_cause]||"Current cached status. Diagnostics do not query the vehicle.";
  }catch(e){$("diagnostic-summary").textContent=e.message;}finally{button.disabled=false;}
 });
@@ -223,3 +226,7 @@ window.addEventListener("focus",updateHeaderClock);
 init();
 
 window.addEventListener("citifoxlanguagechange",()=>{updateHeaderClock();if(latest)render(latest);});
+
+$("restore-vehicle-limit").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/charging/restore-limit",{request_id:crypto.randomUUID()});if(result.message)toast(result.message);}));
+
+$("confirm-restored-limit").addEventListener("click",()=>{const target=latest?.charging?.vehicle_limit?.restore_percent;if(!Number.isInteger(target))return;const message=CitiFoxI18n.language()==="de"?`Prüfe direkt in MyŠkoda oder im Auto: Die tatsächliche Fahrzeug-Ladegrenze ist wieder ${target} %. Eine 80-%-Schaltzeit allein reicht nicht. Nur bestätigen, wenn du diesen Wert selbst geprüft hast. Danach wird der Normalbetrieb freigegeben; es wird kein Ladestart gesendet.`:`Check directly in MyŠkoda or the vehicle: the actual vehicle charging limit is restored to ${target} %. A scheduled 80% profile alone is insufficient. Confirm only after checking this value yourself. This releases normal operation without sending a charging start.`;if(!window.confirm(message))return;mutation(async()=>{const result=await api("/api/charging/confirm-restored-limit",{request_id:crypto.randomUUID(),target_percent:target,confirmed_at_vehicle:true});if(result.message)toast(result.message);});});

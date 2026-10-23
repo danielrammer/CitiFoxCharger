@@ -211,6 +211,24 @@ class NetworkHttpsTests(unittest.TestCase):
             self.assertEqual(self.call('/api/smartfox/heater',{'device':'heater2','mode':'auto','request_id':'remote-heater-test-001'})[0],200)
             heater.assert_called_once_with('heater2','auto','remote-heater-test-001')
 
+    def test_passwordless_remote_limit_restore_retains_session_and_csrf_checks(self):
+        self.server.network_auth=NetworkAuth(validate_network({**configuration(),'authentication':'none','salt':None,'password_hash':None,'iterations':0}))
+        body={'request_id':'remote-limit-restore-0001'}
+        with patch.object(self.service.vehicle_limit,'retry_restore',return_value={'message':'Pending'}) as restore:
+            self.assertEqual(self.call('/api/charging/restore-limit',body,Authorization='')[0],200)
+            restore.assert_called_once_with(body['request_id'])
+        self.assertEqual(self.call('/api/charging/restore-limit',body,Authorization='',Cookie='')[0],401)
+        self.assertEqual(self.call('/api/charging/restore-limit',body,Authorization='',**{'X-CSRF-Token':'wrong'})[0],403)
+
+    def test_passwordless_manual_restoration_remains_explicit_and_csrf_protected(self):
+        self.server.network_auth=NetworkAuth(validate_network({**configuration(),'authentication':'none','salt':None,'password_hash':None,'iterations':0}))
+        body={'request_id':'remote-manual-restore-001','target_percent':80,'confirmed_at_vehicle':True}
+        with patch.object(self.service.vehicle_limit,'confirm_restore_manually',return_value={'status':'error'}) as confirm:
+            self.assertEqual(self.call('/api/charging/confirm-restored-limit',body,Authorization='')[0],200)
+            confirm.assert_called_once_with(80,body['request_id'])
+        self.assertEqual(self.call('/api/charging/confirm-restored-limit',body,Authorization='',Cookie='')[0],401)
+        self.assertEqual(self.call('/api/charging/confirm-restored-limit',body,Authorization='',**{'X-CSRF-Token':'wrong'})[0],403)
+
     def test_remote_login_never_grants_key_configuration_or_backend_administration(self):
         for path in ('/api/key','/api/key/clear','/api/config','/api/app/quit','/api/app/restart','/api/skoda/command'):
             self.assertEqual(self.call(path,{})[0],403)
