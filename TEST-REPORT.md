@@ -1,8 +1,10 @@
-# Validation report · 1.9.0
+# Validation report · 1.9.1
 
 Date: **23 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.
 
 ## Existing baseline and new work
+
+Version **1.9.1** reproduces the reported disabled-button state with a closed old 90% session, charger Off, 85% SOC captured 70 minutes ago and a successful API read ten minutes ago. The native 87% preflight is enabled without fabricating a new read time, sends only the limit PUT and never sends Start before a newer matching capture. A second test verifies that actual/raw Start retains the API-read gate and that limit preparation still rejects captures older than 24 hours. Version 1.9.0's real-start, quota, key, operation and local readiness protections remain. Browser QA using simulated hardware verified an enabled 87% button with a 90-minute-old SOC and ten-minute-old API read, followed by local-Off limit preparation on one click, no checkbox/JavaScript errors, and no overflow at 800×1280. All **357 offline tests** pass, including **36 native-control/transport tests**.
 
 Current 1.9.0 validation also retains all 1.8.15/1.8.16 corrections and adds exact 87% success/rejection regressions, no automatic rounded retry, independent two-sample local charging-power proof, proof rejection for bad/stale/pre-start samples, explicit manual restoration versus API proof, local/session/CSRF and passwordless-home-network restoration protection. The final full offline suite passes **355 tests** (including 125 charging tests and 34 native-control/transport tests). The current official OpenAPI YAML was downloaded again on 23 October and is byte-for-byte identical to the inspected 22 October contract. Browser QA verified the native 87% flow at 800×1280: preparing local Off before confirmation, exact matching readback, M+ with simulated 7.30 kW, and a separate diagnostic start_confirmation_source of smartfox_power with a confirmation timestamp. There was no checkbox, scrolling or JavaScript error. The screenshot is explicitly labelled simulated; no real vehicle command was sent. No real device write is performed by these tests.
 

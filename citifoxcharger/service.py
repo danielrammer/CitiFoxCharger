@@ -340,7 +340,7 @@ class Service:
             return True
         return self.car.quota_reset_at <= now or remaining > (3 if after_start else 2)
 
-    def can_command(self, action, allow_stale=False):
+    def can_command(self, action, allow_stale=False, prepare_limit=False):
         current = self.cache.get("skoda", {})
         if self.stopping:
             return False
@@ -368,7 +368,9 @@ class Service:
                 if current.get("stale", True) or age is None or not -300 <= age <= self.config.value["skoda"]["stale_seconds"]:
                     return False
                 max_read_age = max(1200, 2 * self.config.value["skoda"]["poll_seconds"])
-            if time.monotonic() - self.last_success.get("skoda", 0) > max_read_age:
+            # A limit-only preflight cannot energize/start the car. Its new
+            # post-write readback must pass the ordinary command gates later.
+            if not prepare_limit and time.monotonic() - self.last_success.get("skoda", 0) > max_read_age:
                 return False
         if self.car.clock() < self.car.blocked_until:
             return False

@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.9.0
+# CitiFoxCharger for Windows · 1.9.1
 
 <img src="citifoxcharger/web/brand/logo.png" alt="CitiFoxCharger logo: smooth electric city car, red fox tail and charging plug" width="620">
 
@@ -10,13 +10,15 @@ Both light and dark appearance are available. The light palette uses darker labe
 
 The header displays the current date and time from the browser device, independently of vehicle telemetry. It refreshes on returning to the page and uses the selected interface language. The clock fits inside the existing header height.
 
-The Settings page identifies the running backend as **v1.9.0 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
+The Settings page identifies the running backend as **v1.9.1 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
 
 ## Architecture and communication
 
 See [COMMUNICATION.md](COMMUNICATION.md) for the system and start/stop diagrams, exact Modbus addresses and word counts, XML data fields, SMARTFOX CGI commands, Škoda API calls and browser-to-backend routes. Mermaid diagrams render directly on GitHub. Protocol evidence and compatibility limits are in [INTERFACES.md](INTERFACES.md).
 
 ## Vehicle-enforced charging target
+
+Version 1.9.1 fixes a disabled Start button when the vehicle report is aged and the last successful API read is more than five minutes old. Limit-only preparation may use the bounded known SOC without first requiring a newer API read. The actual vehicle Start still requires the new matching post-write limit capture and the ordinary access/readiness checks. This distinction cannot be used through the raw Start command route. Closed old monitoring is labelled as closed rather than as an active Off hold.
 
 Each new manual start first writes the exact selected target using the official `PUT /api/v1/vehicles/{vin}/charging/limit`. An accepted request is not enough: the same target must be read back from `charging.settings.targetStateOfChargeInPercent` in a newer vehicle capture after the write. Until then, the wallbox stays Off and no vehicle Start is sent. Some vehicles accept only 50–100% in steps of ten; the app permits an exact integer such as **87%** for testing, but never rounds or retries another target automatically. A rejected or unconfirmed value is an error, not claimed compatibility.
 
@@ -126,7 +128,7 @@ Stop first requests and reads back **Off** at the wallbox, then requests vehicle
 
 ### Older data and retrying a start
 
-Clicking **Force charge** or selecting M+ for a new manual session automatically permits the last reported battery level; there is no separate checkbox. For an aged report, SOC must be known and no older than 24 hours, a successful API/capability read must be at most five minutes old, and local readiness with no charging power must be at most 30 seconds old. The displayed timestamps and stale label remain unchanged. It does not override a missing key, unsupported operation, server cooldown or active stop.
+Clicking **Force charge** or selecting M+ for a new manual session automatically permits the last reported battery level; there is no separate checkbox. For limit-only preparation with an aged report, SOC must be known and no older than 24 hours, the cached access/operation checks must pass, and local readiness with no charging power must be at most 30 seconds old. The actual Start still requires a recent successful API read and the new matching limit confirmation. The displayed timestamps and stale label remain unchanged. It does not override a missing key, unsupported operation, server cooldown or active stop.
 
 **Retry start** requires fresh local readiness, no physical charging above 0.1 kW, available start/stop access and at least 30 seconds since the previous attempt. A newer non-charging report or ten minutes of unconfirmed outcome is also required. A new deliberate click sends one new start and preserves the existing target. Duplicate request IDs do not repeat commands. Starts are never automatically replayed, including after restart.
 

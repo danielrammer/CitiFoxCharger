@@ -341,6 +341,37 @@ class VehicleLimitTests(unittest.TestCase):
         self.assertFalse(state['can_force_native'])
         self.assertIn('existing cloud-monitored session',state['native_limit_reason'])
 
+    def test_closed_tablet_session_can_prepare_87_after_the_last_api_read_aged(self):
+        self.case.data['vehicle']['charging']['status']['battery']['stateOfChargeInPercent']=85
+        self.case.web.mode='OFF'
+        self.service.cache['smartfox']['charger']=self.case.web.read(self.case.config.value['smartfox'])
+        self.service.charging.save(status='closed',target_percent=90,stop_requested=True,stop_guard=True,
+                                  vin=self.case.config.value['skoda']['vin'])
+        self.case.stale_soc(minutes=70)
+        self.service.last_success['skoda']-=600
+        self.service.next_due['skoda']=time.monotonic()+600
+        before=self.service.cache['skoda']['read_at']
+        self.assertFalse(self.service.can_command('start',allow_stale=True))
+        state=self.service.charging.state()
+        self.assertFalse(state['can_force_with_stale'])
+        self.assertTrue(state['can_force_native_with_stale'])
+        self.service.force_charge_native(87,'native-aged-read-test-0001',allow_stale=True)
+        self.assertEqual(self.writes,[87])
+        self.assertNotIn('start',self.case.effects)
+        self.assertEqual(self.service.cache['skoda']['read_at'],before)
+        self.capture(87,85);self.service.charging.tick()
+        self.assertEqual(self.case.effects,['M+','start'])
+
+    def test_limit_preparation_does_not_relax_actual_start_or_old_capture_guards(self):
+        self.case.stale_soc(minutes=70)
+        self.service.last_success['skoda']-=600
+        self.assertTrue(self.service.can_command('start',allow_stale=True,prepare_limit=True))
+        with self.assertRaises(IntegrationError):
+            self.service.command('start','direct-old-api-start-0001',allow_stale=True)
+        self.assertNotIn('start',self.case.effects)
+        self.service.cache['skoda']['captured_at']='2000-01-01T00:00:00Z'
+        self.assertFalse(self.service.can_command('start',allow_stale=True,prepare_limit=True))
+
 
 class NativeTransportTests(unittest.TestCase):
     def test_put_has_json_body_and_exact_allowlisted_path(self):

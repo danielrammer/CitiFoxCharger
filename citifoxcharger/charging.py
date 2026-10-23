@@ -75,12 +75,19 @@ class ChargingSession:
         value["force_reason"] = web.get("control_reason")
         native = getattr(self.service, "vehicle_limit", None)
         native_eligible = not self.active or bool(native and native.protected)
-        value["can_force_native"] = bool(native_eligible and native and native.available() and native.budget() and value["can_force"] and not native.busy)
-        value["can_force_native_with_stale"] = bool(native_eligible and native and native.available() and native.budget() and value["can_force_with_stale"] and not native.busy)
+        native_ready = bool(native_eligible and native and native.available() and native.budget() and not native.busy
+                            and web.get("available") and web.get("control_available") and self.service.can_command("stop"))
+        value["can_force_native"] = bool(native_ready and (not self.active or retry)
+                                          and self.service.can_command("start", prepare_limit=not self.active))
+        car = self.service.cache.get("skoda", {})
+        captured = timestamp(car.get("captured_at"))
+        old_report = captured is not None and time.time()-captured > self.service.config.value["skoda"]["stale_seconds"]
+        value["can_force_native_with_stale"] = bool(native_ready and old_report and self.wallbox_ready()
+            and (not self.active or self.can_retry_start(allow_stale=True))
+            and self.service.can_command("start", allow_stale=True, prepare_limit=not self.active))
         value["native_limit_reason"] = ("End the existing cloud-monitored session before using a vehicle target." if self.active and not self.value.get("vehicle_limit") else
                                          "The vehicle does not advertise native charging-limit control." if native and not native.available() else
                                          "Not enough Škoda requests remain to verify and restore the vehicle limit. Wait for the quota reset." if native and not native.budget() else None)
-        car = self.service.cache.get("skoda", {})
         if not value["can_force"] and not value["force_reason"]:
             if self.active and self.value.get("stop_requested"):
                 value["force_reason"] = "A stop is awaiting confirmation."

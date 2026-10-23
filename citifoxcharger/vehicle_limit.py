@@ -112,7 +112,7 @@ class VehicleLimit:
             raise IntegrationError("limit_unsupported", "The vehicle does not advertise native charging-limit control. No charging start was sent.")
         if not self.budget():
             raise IntegrationError("limit_quota", "Not enough Škoda requests remain to verify and restore the vehicle limit. Wait for the quota reset.")
-        if (not self.service.can_command("start", allow_stale) or not self.service.can_command("stop")
+        if (not self.service.can_command("start", allow_stale, prepare_limit=True) or not self.service.can_command("stop")
                 or self.service.app_update_pending):
             raise IntegrationError("blocked", "Current vehicle access and start/stop permission are required.")
         car = self.service.cache["skoda"]
