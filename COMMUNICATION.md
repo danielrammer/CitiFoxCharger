@@ -1,6 +1,6 @@
 # Communication and data flow
 
-This describes the implementation shipped with **CitiFoxCharger 1.9.3**, checked against the source on **23 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
+This describes the implementation shipped with **CitiFoxCharger 2.0.0**, checked against the source on **23 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
 
 ## System overview
 
@@ -35,7 +35,7 @@ The diagram separates application connections from the existing charger/output w
 
 ## Unconfirmed native targets
 
-Native target preparation first requires an already readable `charging.settings.targetStateOfChargeInPercent`. Missing readback blocks the attempt before hardware writes. The Citigo's advertised operation alone is not compatibility proof. For an older aborted preparation with no vehicle Start, an explicitly confirmed `POST /api/charging/release-limit-guard` with `accept_unconfirmed_limit: true` may close target control and return to local A+ after fresh Off/zero-power proof. It sends no cloud request and does not assert the limit was restored. A+ may permit scheduled charging. The route has the same session, origin, CSRF and home-network access checks as other control routes.
+New sessions require a readable native limit and advertised write capability before any device change. Missing readback blocks preparation with a specific reason. There is no automatic app-SOC fallback. Existing older sessions keep their recovery controller until stopped/restored; an aborted old preparation without vehicle Start can still use its explicit A+ release. New sessions use [the state machine](citifoxcharger/native_charging/machine.py) and [I/O controller](citifoxcharger/native_charging/controller.py).
 
 ## Modbus reads
 
@@ -97,12 +97,12 @@ Source: [skoda.py](citifoxcharger/skoda.py). Fixed origin: **`https://public.api
 
 | Purpose | Request | Expected response / use |
 |---|---|---|
-| SOC, vehicle state and permitted operations | `GET /api/v1/vehicles/{vin}?include=charging,operations` | HTTP 200; validates returned VIN. Reads `vehicle.charging.status.battery.stateOfChargeInPercent`, charging/plug state, `vehicle.charging.carCapturedTimestamp` and `vehicle.operations[].name`. Also retains validated, read-only `vehicle.charging.settings` fields and known plug-lock state for diagnostics. |
+| SOC, vehicle state and permitted operations | `GET /api/v1/vehicles/{vin}?include=charging,operations,chargingProfiles` | HTTP 200; validates returned VIN. Reads `vehicle.charging.status.battery.stateOfChargeInPercent`, charging/plug state, `vehicle.charging.carCapturedTimestamp` and `vehicle.operations[].name`. Also retains validated, read-only `vehicle.charging.settings` fields and known plug-lock state for diagnostics. |
 | Set / restore vehicle limit | `PUT /api/v1/vehicles/{vin}/charging/limit` | JSON body `{"targetStateOfChargeInPercent":90}`; HTTP 202 is only acceptance. A newer post-write vehicle capture must read back the requested setting. |
 | Start charging | `POST /api/v1/vehicles/{vin}/charging/start` | Empty body; HTTP 202 means accepted, not confirmed charging. Requires discovered `startCharging` capability and the app's start guards. |
 | Stop charging | `POST /api/v1/vehicles/{vin}/charging/stop` | Empty body; HTTP 202 means accepted, not confirmed stopped. Later vehicle telemetry verifies the outcome. |
 
-The public adapter sends the four requests listed above. It does not call charge-mode, charging-profile, wake-up, air-conditioning or duration-estimate endpoints. With a readable/discovered native limit, starts and active target changes use verified native control. Otherwise manual Start uses M+ and Start with app SOC monitoring and no limit PUT; active target changes update the app target. Remaining time is estimated locally. Native support must be established by readback, rather than assumed from advertised operation names. See [INTERFACES.md](INTERFACES.md).
+The public adapter sends the four requests listed above. It does not call charge-mode, charging-profile, wake-up, air-conditioning or duration-estimate endpoints. New starts and active target changes use verified native control exclusively. Unsupported/unreadable limits block preparation before any device change. Migrated legacy sessions retain their original SOC monitoring until ended. Remaining time is estimated locally. Native support must be established by readback, rather than assumed from advertised operation names. See [INTERFACES.md](INTERFACES.md).
 
 ## Browser-to-backend API
 
@@ -114,9 +114,9 @@ The browser never sends the Škoda API key to SMARTFOX or contacts the cloud dir
 | `GET /health` | Application identity, instance ID and release metadata. |
 | `GET /api/status` | Shared cached telemetry, monitoring and control availability. |
 | `POST /api/refresh` | Request a permitted refresh; does not force the vehicle to measure anew. |
-| `POST /api/charging/start` | Select verified-native preparation when readable; otherwise M+ and guarded Start with app target monitoring. |
+| `POST /api/charging/start` | Start the native state machine; require a readable limit before changing devices. No app-SOC fallback. |
 | `POST /api/charging/stop` | Combined local-first charging stop. |
-| `POST /api/charging/target` | Pause and verify a new native limit; resume only a previously physically charging session. Legacy sessions retain local target adjustment. |
+| `POST /api/charging/target` | Pause and verify a new native limit for a confirmed charging session. Legacy sessions retain local target adjustment. |
 | `POST /api/charging/restore-limit` | Explicit retry of an unconfirmed native-limit restoration under guarded Off. |
 | `POST /api/smartfox/charger-mode` | Select Off / A+ / M+. |
 | `POST /api/smartfox/heater` | Select Off / Automatic / Manual for an authorized heating output. |
@@ -144,11 +144,12 @@ sequenceDiagram
         App->>SF: Hold Off during native-limit preflight
         App->>API: PUT /charging/limit {targetStateOfChargeInPercent: target}
         API-->>App: 202 Accepted (not confirmation)
-        App->>API: GET charging + operations (bounded verification)
+        App->>API: GET charging + operations + anonymous profile summary (bounded verification)
         API-->>App: Newer vehicle capture with matching target
         Note over App,API: No fallback after an uncertain native write
     else Native limit absent
-        Note over App: App monitors target from SOC reports; no limit PUT
+        App-->>UI: Unsupported/unreadable limit; no device change
+        Note over App: End request here; do not continue to M+ or Start
     end
     App->>SF: Select M+ if needed; read values.xml
     SF-->>App: Mode, readiness, current, phase-switch state
@@ -175,31 +176,33 @@ sequenceDiagram
     opt Native limit was used
         App->>API: PUT /charging/limit (previous value or selected 80% fallback)
         API-->>App: 202 Accepted
-        App->>API: GET charging + operations
+        App->>API: GET charging + operations + anonymous profile summary
         API-->>App: Newer vehicle capture confirming restored limit
     end
     App->>SF: Return to A+ after required confirmations
     App-->>UI: Stop completed
 ```
 
-This is the successful combined-control flow, not a promise that every operation succeeds. Start is withheld on failed readiness, authorization, phase-preparation timeout or unavailable capabilities. An uncertain start is not blindly repeated. If local Off is not confirmed, the app exposes that failure. A newer stopped vehicle report can complete the stop without another POST. An explicitly selected charger Off remains Off; A+ restoration above describes the normal combined stop. Native SMARTFOX and vehicle schedules may permit later charging in A+.
+This is the successful combined-control flow, not a promise that every operation succeeds. Start is withheld on failed readiness, authorization, phase-preparation timeout or unavailable capabilities. An uncertain start is not blindly repeated. If local Off is not confirmed, the app exposes that failure. New native sessions require stopped vehicle telemetry after Stop plus fresh local Off/zero power. Migrated legacy sessions retain their earlier late-confirmation recovery. An explicitly selected charger Off remains Off; A+ restoration above describes the normal combined stop. Native SMARTFOX and vehicle schedules may permit later charging in A+.
 
 ## Timing and freshness
 
 - Browser status refresh: every **10 seconds**; this reads the backend cache and does not create one cloud request per browser.
 - SMARTFOX configured polling default: **10 seconds**. Command readiness/readback can perform additional local reads.
 - Škoda configured polling default: **180 seconds**, adjusted by charging state, quota and cooldown. Idle fallback is at least **600 seconds**; active fallback without usable quota information is at least **180 seconds**. With a known quota window, spare reads are budgeted while retaining three calls for native stop/restoration (two for legacy sessions).
-- Manual vehicle refresh has a **60-second** minimum spacing and respects quota/cooldown. Near-target monitoring can bring forward at most two additional budgeted reads per session under stricter freshness and quota guards.
+- Manual vehicle refresh has a **60-second** minimum spacing and respects quota/cooldown. Only migrated legacy sessions use extra near-target/freshness probes. New native verification uses at most three spaced probes per operation with a 180-second deadline.
 - Cloud response time and `carCapturedTimestamp` are different. A successful GET can still return old SOC. No force-refresh/wake call is implemented, and a locally monitored SOC target can be overshot because of delayed vehicle reports.
 - Monitoring runs in the Python backend, not the browser. Closing the browser or switching the screen off does not itself stop monitoring; actual Windows sleep or backend termination can prevent execution.
 
-Source map: [server.py](citifoxcharger/server.py), [service.py](citifoxcharger/service.py), [charging.py](citifoxcharger/charging.py), [config.py](citifoxcharger/config.py), [app.js](citifoxcharger/web/app.js). For authentication, rate-limit evidence and detailed failure handling, see [INTERFACES.md](INTERFACES.md).
+New charging source: [machine.py](citifoxcharger/native_charging/machine.py) (pure transitions) and [controller.py](citifoxcharger/native_charging/controller.py) (persisted effects). Read [CHARGING-REFACTOR.md](CHARGING-REFACTOR.md) first.
+
+Legacy/infrastructure source map: [server.py](citifoxcharger/server.py), [service.py](citifoxcharger/service.py), [charging.py](citifoxcharger/charging.py), [config.py](citifoxcharger/config.py), [app.js](citifoxcharger/web/app.js). For authentication, rate-limit evidence and detailed failure handling, see [INTERFACES.md](INTERFACES.md).
 
 ### Legacy request-budget stop (sessions without verified native protection)
 
 Before routine session housekeeping, known inability to read vehicle SOC (two reserved calls left before reset, or a rate-limit cooldown) initiates the same local Off → vehicle stop sequence. The persisted cause is `request_quota`; a new non-charging vehicle report is needed to release guarded Off. A monitored start is blocked with a known budget below four calls. This does not measure SOC through Modbus or bypass Škoda limits.
 
-## Native vehicle target and restoration (1.9.0)
+## Native vehicle target and restoration
 
 New write: **PUT `/api/v1/vehicles/{vin}/charging/limit`**, `Content-Type: application/json`, body `{"targetStateOfChargeInPercent":90}` (the exact selected integer target; no automatic rounding). The same operation restores the known previous value, or the explicitly selected 80% fallback. No `/charging-profiles/...` or charge-mode writes are introduced. A 202 is never enough: `charging.settings.targetStateOfChargeInPercent` must match in a newer `carCapturedTimestamp` after the write. Preflight is persisted before writes, holds local Off and has at most three reads in 180 seconds. An uncertain PUT is observed without replay; restarting a pending preflight cancels its Start and begins restoration.
 
@@ -208,3 +211,5 @@ After confirmation, the vehicle enforces its limit even when SOC polling is stal
 Diagnostics add a sanitized `vehicle_limit` object with requested/restoration percentages, readback phase, source of the restoration value, write/verification times, probe count and request outcome. Captured SOC remains unchanged. Existing local SMARTFOX M+ time/energy settings remain in effect and can independently stop a charge. A successful live cycle on this Citigo is still unconfirmed; missing native readback blocks Start rather than simulating support.
 
 The app separately records a start confirmed from two fresh charger-specific power samples >=0.5 kW over >=3 seconds. This does not write SOC. If automatic restoration cannot be read back, Settings offers explicit user confirmation of the actual restored limit through `POST /api/charging/confirm-restored-limit`; it requires fresh local Off/zero-power proof and records a user confirmation, never API proof or a new Start.
+
+New native sessions require at least ten known available requests before preparation/retargeting. They do not stop merely because SOC is stale or quota is low after exact-limit verification. Phase readiness has a fixed 360-second deadline; accepted Start must yield two distinct power samples within 180 seconds. Zero power for 45 seconds requires attention unless a fresh target report explains completion. Settings diagnostics export the bounded transition log without identities or free-form errors.

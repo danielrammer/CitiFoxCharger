@@ -71,7 +71,7 @@ function updateHeaterControls(){
  const guarded=activeStates.has(latest?.charging?.status)&&latest.charging.stop_guard===true;
  $("station-mode").disabled=mutating||!live||!charger.control_available||guarded;
  $("station-mode").title=guarded?"Charger kept Off until the vehicle confirms the stop.":"Change mode";
- const active=activeStates.has(latest?.charging?.status),manual=active?!latest.charging.stop_requested&&latest.controls.start&&latest.controls.stop:Number($("target").value)>latest.skoda.soc&&(latest?.charging?.can_start_manual||latest?.charging?.can_start_manual_with_stale);
+ const active=activeStates.has(latest?.charging?.status),manual=active?(!latest.charging.native_fsm&&!latest.charging.stop_requested&&latest.controls.start&&latest.controls.stop):Number($("target").value)>latest.skoda.soc&&(latest?.charging?.can_start_manual||latest?.charging?.can_start_manual_with_stale);
  $("station-mode").querySelector('option[value="M+"]').disabled=!manual;
  $("station-mode").querySelector('option[value="A+"]').disabled=active&&latest.charging.stop_guard===true;
 }
@@ -115,7 +115,7 @@ function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=
  renderEnergy(charger);
  const limit=session?.vehicle_limit||{},reportedLimit=car.charging_settings?.target_percent;
  $("vehicle-limit-info").textContent=limit.phase?`Vehicle limit: ${limit.phase} · Target ${limit.target_percent} % · Restore ${limit.restore_percent} %`:`Reported vehicle limit: ${reportedLimit??"unknown"} · Default restore limit: 80 %`;
- $("restore-vehicle-limit").hidden=limit.phase!=="attention";$("restore-vehicle-limit").disabled=mutating||appUpdating;$("confirm-restored-limit").hidden=limit.phase!=="attention";$("confirm-restored-limit").disabled=mutating||appUpdating;
+ $("restore-vehicle-limit").hidden=limit.phase!=="attention";$("restore-vehicle-limit").disabled=mutating||appUpdating;$("confirm-restored-limit").hidden=limit.phase!=="attention"||session?.can_confirm_restored_limit===false;$("confirm-restored-limit").disabled=mutating||appUpdating;
  $("soc").textContent=car.soc??"—";$("soc-track").style.width=`${car.soc??0}%`;$("battery-fill").style.width=`${car.soc??0}%`;
  const powerAge=(Date.now()-Date.parse(charger.read_at))/1000,livePower=charger.available&&Number.isFinite(powerAge)&&powerAge>=-5&&powerAge<=30&&charger.telemetry_available!==false&&typeof charger.power_kw==="number";
  const switching=livePhaseSwitch(charger),isCharging=!switching&&(livePower?charger.power_kw>0.1:car.state==="CHARGING"&&!car.stale&&car.available);
@@ -132,7 +132,7 @@ function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=
  $("monitoring-note").textContent=active?(power?.warning||(!data.monitoring?.running?"Background monitoring is unconfirmed. Please check the app.":power?.requested&&power.on_ac_power===true?"Monitoring in background · screen may turn off.":"Monitoring active. Keep the tablet plugged in and prevent automatic sleep.")):"";
  $("quit-app").disabled=!localAdmin||!session?.can_shutdown||mutating;
  $("session-status").classList.toggle("session-quiet",session?.status==="monitoring"&&isCharging&&!session?.awaiting_fresh_soc&&!session?.stop_requested);
- $("normal-mode-note").textContent=session?.user_charger_mode==="OFF"?(charger.available&&charger.mode==="OFF"?"Charger explicitly switched Off.":"Off selected · change is unconfirmed."):session?.status==="closed"?"Previous monitoring is closed. Select a new target or A+.":session?.stop_guard?"Charger kept Off until the vehicle confirms the stop.":activeStates.has(session?.status)&&session.target_control==="app"?"Target monitored by the app · delayed vehicle reports can delay the stop.":"Normal mode A+ · schedules are preserved.";
+ $("normal-mode-note").textContent=session?.native_fsm&&active?(session.machine_state==="charging"?"Vehicle controls the verified charging target.":"Vehicle target control · verification and cleanup in progress."):session?.user_charger_mode==="OFF"?(charger.available&&charger.mode==="OFF"?"Charger explicitly switched Off.":"Off selected · change is unconfirmed."):session?.status==="closed"?"Previous monitoring is closed. Select a new target or A+.":session?.stop_guard?"Charger kept Off until the vehicle confirms the stop.":activeStates.has(session?.status)&&session.target_control==="app"?"Target monitored by the app · delayed vehicle reports can delay the stop.":"Normal mode A+ · schedules are preserved.";
  const showPhase=switching&&!session?.stop_requested;$("session-status").hidden=!showPhase&&!session?.message;$("session-status").textContent=showPhase?phaseMessage(charger):session?.message||"";$("session-status").classList.toggle("phase-wait",showPhase);$("session-status").classList.toggle("safety-stopped",session?.status==="error"&&["missing_soc","missing_initial_soc","phase_wait","request_quota","vehicle_limit_start","vehicle_limit_lost"].includes(session?.stop_cause));
  $("car-message").textContent=car.message||"";$("sf-notice").textContent=sf.notice||"";$("sf-control-reason").textContent=charger.control_reason||charger.message||"";
  $("sf-web-meta").textContent=`Charge mode: ${charger.mode||"unknown"} · Power: ${charger.power_kw??"—"} kW · Wallbox: ${charger.status_text||"unknown"} · Setpoint: ${charger.offered_current_a??"—"} A · Last read: ${date(charger.read_at||sf.read_at)}`;
