@@ -445,9 +445,11 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status,200)
         self.assertEqual(json.loads(body)['vehicle_limit']['phase'],'setting')
         self.assertEqual(fixture.effects,['OFF'])
+        fixture.service.charging.tick()  # Submit the persisted limit intent.
         fixture.data['vehicle']['charging']['settings']['targetStateOfChargeInPercent']=90
         fixture.data['vehicle']['charging']['carCapturedTimestamp']=datetime.now(timezone.utc).isoformat()
         fixture.service.next_due['skoda']=0;fixture.service.update('skoda');fixture.service.charging.tick()
+        fixture.service.charging.tick()  # Confirmed limit permits M+; no blocking wait.
         self.assertTrue(fixture.service.charging.value['phase_start_pending'])
         self.assertEqual(fixture.effects,['OFF','M+'])
         status,body,_=self.call('/api/status')

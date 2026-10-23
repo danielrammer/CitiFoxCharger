@@ -5,6 +5,8 @@ from . import __version__
 from .charging import ACTIVE
 from .modbus import utcnow
 from .skoda import timestamp,CHARGE_MODES
+from .native_charging.machine import State, Step
+from .native_charging.controller import MESSAGES
 
 def selected(data, numbers=(), flags=(), dates=(), enums=None):
     data = data if isinstance(data, dict) else {}
@@ -35,7 +37,25 @@ def report(status, live=False):
     settings = settings if isinstance(settings,dict) else {}
     modes = settings.get('available_modes')
     modes = [mode for mode in CHARGE_MODES if mode in modes] if isinstance(modes,list) else []
+    profiles = car.get('charging_profiles',{}) if isinstance(car,dict) else {}
+    profiles = profiles if isinstance(profiles,dict) else {}
+    entries = profiles.get('profiles')
+    profile_report = {**selected(profiles, numbers=('profile_count','current_target_percent'),
+                         flags=('available','advertises_update','current_profile_present'), dates=('captured_at',),
+                         enums={'code':('ok','not_returned','invalid','unsupported','disabled','unavailable')}),
+                      'profiles':[selected(item,numbers=('index','target_percent','minimum_percent','timer_count','enabled_timer_count'),
+                                           flags=('is_current','minimum_enabled')) for item in entries[:32]] if isinstance(entries,list) else []}
     version = status.get('backend_version')
+    machine = selected(session, enums={'machine_state':tuple(s.value for s in State),
+        'machine_step':tuple(s.value for s in Step), 'reason_code':tuple(MESSAGES), 'result_reason':tuple(MESSAGES),
+        'result':('','user_stopped','target_reached','failed','interrupted')})
+    history = session.get('transition_log')
+    machine['transitions'] = [selected(item, dates=('at',), enums={
+        'from':tuple(s.value for s in State), 'to':tuple(s.value for s in State),
+        'step':tuple(s.value for s in Step), 'reason':tuple(MESSAGES),
+        'event':('start_requested','tick','restart','stop','accepted','unknown','rejected','confirmed','retry_cleanup','manual_restore','retry_start','retarget'),
+        'effect':('off','set_limit','manual','start','stop','restore','normal','read_vehicle')})
+        for item in history[-60:]] if isinstance(history,list) else []
     return {'report_version': 1, 'program_version': __version__,
             'backend_version': version if isinstance(version, str) and re.fullmatch(r'\d+\.\d+\.\d+', version) else None,
             'generated_at': utcnow(),
@@ -50,6 +70,8 @@ def report(status, live=False):
                  flags=('advertises_start_charging','advertises_stop_charging','advertises_set_charge_mode','advertises_set_charging_limit'),
                  enums={'preferred_mode':CHARGE_MODES,'battery_care_mode':('ACTIVATED','DEACTIVATED')}),
                  'available_modes':modes},
+            'charging_profiles':profile_report,
+            'charging_machine':machine,
             'charger': selected(charger, numbers=('power_kw','status_code','info_code','offered_current_a','phase_count','phase_switch_seconds'), flags=('available','telemetry_available','ready_for_start','phase_switching'),
                                 dates=('read_at',), enums={'mode': ('OFF','A+','M+','A','M')}),
             'session': selected(session, numbers=('target_percent','last_start_epoch','fresh_soc_deadline',

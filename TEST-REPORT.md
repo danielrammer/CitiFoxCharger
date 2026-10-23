@@ -1,3 +1,19 @@
+# Native charging state machine — 2.0.0 development branch
+
+Validation on 23 October 2026: **415 offline tests passed in 51.435 seconds**, including **44 new state-machine/integration tests**. Command: `python -m unittest discover -s tests -v`. No real vehicle or SMARTFOX write was sent.
+
+Coverage includes exact 87% without rounding, newer limit readback before Start, fixed phase deadline, stable readiness, two distinct charging-power samples, accepted/unknown commands, Stop before cloud access, delayed local power decay, target change, second charge after cleanup, request reserve, old SOC without premature native stop, native-limit drift, local/vehicle failures, persisted intent before I/O, invalid saved proof, unknown session schema, restart without Start/Stop/restore replay, explicit retry, restoration and one-time A+ release. Existing server, authentication, home-network, update and legacy-session regression tests remain included.
+
+Browser QA used simulated devices only. The German charge/energy view fits **800 × 1280** in both light and dark themes: document scroll dimensions equal the viewport. The loaded page produced no console warnings/errors. Settings → Diagnostics displayed the native state/step and the transition-log field without the simulated VIN. Energy telemetry was unavailable in this fixture, so this is not a hardware-energy verification. Existing CSS geometry was retained.
+
+The current official API documentation and YAML contract were checked on 23 October 2026. `PUT /charging/limit` accepts an exact integer request; HTTP 202 is not proof of a vehicle-applied setting. The contract notes common ten-point target steps. No profile, timer, charge-mode or battery-care write was introduced. Optional profile summaries use one existing vehicle GET and exclude names, IDs, addresses and timer times.
+
+**Hardware acceptance remains open.** The supplied Citigo responses do not return the global charging limit. New native preparation blocks before device changes in this case. Exact setting, physical start, vehicle-controlled stop and restoration must be observed on the actual car before this branch can be presented as a working native-target solution. It is kept separate from the normal update branch.
+
+---
+
+## Previous validation history
+
 # Validation report · 1.9.3
 
 Date: **23 October 2026**. Environment: Windows, Python 3.14. Device and vehicle requests in automated tests are simulated. Tests do not send real charging or heating commands, open a real firewall rule or alter the Windows certificate trust store.

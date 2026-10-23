@@ -55,7 +55,7 @@ class SkodaTests(unittest.TestCase):
         result = self.read()
         self.assertEqual(result["soc"], 0)
         self.assertEqual(result["state"], "NEW_FUTURE_STATE")
-        self.assertEqual(self.calls[0][1], f"/api/v1/vehicles/{VIN}?include=charging,operations")
+        self.assertEqual(self.calls[0][1], f"/api/v1/vehicles/{VIN}?include=charging,operations,chargingProfiles")
         self.assertEqual(result["operations"], ["startCharging", "stopCharging"])
 
     def test_native_charging_settings_are_read_only_and_capabilities_are_advertised_per_vehicle(self):
@@ -181,6 +181,29 @@ class SkodaTests(unittest.TestCase):
         with self.assertRaises(IntegrationError) as caught: self.adapter.command("start", self.config, KEY)
         self.assertTrue(caught.exception.uncertain)
         self.assertEqual(len(self.calls), 1)
+
+    def test_optional_profile_errors_do_not_disable_charging_operations(self):
+        self.data['errors']=[{'type':'CHARGING_PROFILES_UNSUPPORTED'}]
+        result=self.read()
+        self.assertTrue(result['available'])
+        self.assertIn('startCharging',result['operations'])
+        self.assertEqual(result['charging_profiles']['code'],'unsupported')
+
+    def test_profile_diagnostics_are_read_only_and_exclude_identity_and_schedules(self):
+        self.data['vehicle']['chargingProfiles']={
+            'carCapturedTimestamp':datetime.now(timezone.utc).isoformat(),
+            'currentVehiclePositionProfile':{'id':17,'targetStateOfChargeInPercent':80},
+            'profiles':[{'id':17,'name':'PRIVATE HOME','position':{'address':'PRIVATE ADDRESS'},
+                         'settings':{'targetStateOfChargeInPercent':80,'minBatteryStateOfCharge':{
+                             'enabled':True,'minimumBatteryStateOfChargeInPercent':80}},
+                         'timers':[{'enabled':True,'time':'PRIVATE TIME'}]}]}
+        result=self.read()['charging_profiles']
+        self.assertEqual(result['profile_count'],1)
+        self.assertEqual(result['profiles'][0]['minimum_percent'],80)
+        self.assertTrue(result['profiles'][0]['is_current'])
+        self.assertNotIn('PRIVATE',json.dumps(result))
+        self.assertEqual(len(self.calls),1)
+        self.assertEqual(self.calls[0][0],'GET')
 
     def test_redirects_are_disabled(self):
         self.assertIsNone(NoRedirect().redirect_request(None, None, 302, "", {}, "https://other.example"))

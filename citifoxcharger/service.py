@@ -4,6 +4,7 @@ import json
 import hashlib
 import threading
 import time
+from dataclasses import replace
 from .config import validate, atomic_write
 from .modbus import SmartfoxAdapter, utcnow
 from .skoda import SkodaAdapter, IntegrationError, timestamp
@@ -11,6 +12,8 @@ from .smartfox_web import SmartfoxWeb, SmartfoxControlError
 from .charging import ChargingSession
 from .power import PowerGuard
 from .vehicle_limit import VehicleLimit
+from .native_charging import NativeCharging
+from .native_charging.controller import native_start_reason
 
 
 class Service:
@@ -38,6 +41,25 @@ class Service:
         self.restore_rate_state()
         self.restore_vehicle_cache()
         self.vehicle_limit = VehicleLimit(self)
+        # Version-1 sessions retain their recovery controller until explicitly ended.
+        # Every NEW GUI start uses the vehicle-controlled state machine below.
+        try:
+            saved = json.loads(self.charging.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeError):
+            saved = {"schema_version":"invalid"} if self.charging.path.exists() else None
+        if isinstance(saved, dict) and ("schema_version" in saved or saved.get("controller") == "native"):
+            try:
+                if saved.get("schema_version") != 2 or saved.get("controller") != "native":
+                    raise ValueError("Unsupported charging session schema.")
+                self.charging = NativeCharging(self, saved)
+            except (ValueError, TypeError, KeyError):
+                from .native_charging.machine import Session, State, Step
+                self.charging = NativeCharging(self)
+                self.charging.session = Session(state=State.ATTENTION, step=Step.WAIT_RESTORE,
+                    vin=self.config.value["skoda"]["vin"], reason="internal_error", limit_epoch=1,
+                    start_outcome="external")
+                self.charging.persist()
+            self.vehicle_limit = self.charging
 
     def restore_vehicle_cache(self):
         try:
@@ -138,6 +160,8 @@ class Service:
         Polling still reads the cloud cache; this does not wake the car. Keep the
         regular budget scheduler and never shorten a server cooldown.
         """
+        if getattr(self.charging, "native_fsm", False):
+            return
         session = self.charging.value
         car = self.cache.get("skoda", {})
         charger = self.cache.get("smartfox", {}).get("charger", {})
@@ -180,6 +204,8 @@ class Service:
         Persist the bound across restarts, respect server cooldowns and leave
         at least two calls available for commands.
         """
+        if getattr(self.charging, "native_fsm", False):
+            return
         session, car = self.charging.value, self.cache.get("skoda", {})
         now, clock = time.time(), time.monotonic()
         captured = timestamp(car.get("captured_at"))
@@ -218,7 +244,7 @@ class Service:
                 car["stale"] = True
             return {"skoda":car,
                     "smartfox":copy.deepcopy(self.cache.get("smartfox",{})),
-                    "charging":copy.deepcopy(self.charging.value),
+                    "charging":copy.deepcopy(self.charging.state() if getattr(self.charging, "native_fsm", False) else self.charging.value),
                     "last_command":copy.deepcopy(self.last_command),
                     "monitoring":{"running":self.worker is not None and self.worker.is_alive()},
                     "server_at":utcnow(),
@@ -418,24 +444,33 @@ class Service:
                     "controls": {a: self.can_command(a) for a in ("start", "stop")},
                     "last_command": copy.deepcopy(self.last_command), "events": copy.deepcopy(self.events),
                     "app_update_pending": self.app_update_pending,
-                    "charging": self.charging.state(),
+                    "charging": self.charging_view(),
                     "monitoring": {"running": self.worker is not None and self.worker.is_alive(),
                                    "power": self.power.state()},
                     "server_at": utcnow(), "next_skoda_seconds": max(0, int(self.next_due.get("skoda", 0) - time.monotonic()))}
 
     def start_manual_charging(self, target, request_id, allow_stale=False):
-        """Prefer verifiable vehicle limits; retain monitored Start for cars omitting them."""
+        """New sessions use only a verified vehicle target. No implicit SOC fallback."""
         with self.lock:
-            if self.vehicle_limit.busy:
-                raise IntegrationError("limit_pending", "Vehicle limit verification or restoration is pending.")
-            self.update("skoda")  # Reuse the due read before selecting the strategy.
-            native_session = self.charging.active and bool(self.charging.value.get("vehicle_limit"))
-            if native_session or (not self.charging.active and self.vehicle_limit.available() and self.vehicle_limit.readable()):
-                return self.force_charge_native(target, request_id, allow_stale)
-            if self.manual_start_refresh_available() and allow_stale:
-                self.next_due["skoda"] = 0
-                self.update("skoda")  # One budgeted cloud read, not a wake-up or limit write.
-            return self.force_charge(target, request_id, allow_stale)
+            if getattr(self.charging, "native_fsm", False):
+                return self.charging.start(target, request_id, allow_stale)
+            if self.charging.active or self.vehicle_limit.busy:
+                raise IntegrationError("session_active", "End the previous session and its pending restoration before using vehicle-controlled charging.")
+            self.update("skoda")
+            self.update("smartfox")
+            candidate = NativeCharging(self)
+            self.charging = self.vehicle_limit = candidate
+            return candidate.start(target, request_id, allow_stale)
+
+    def charging_view(self):
+        value = self.charging.state()
+        if getattr(self.charging, "native_fsm", False):
+            return value
+        reason = ("End the previous session and its pending restoration before using vehicle-controlled charging."
+                  if self.charging.active or self.vehicle_limit.busy else native_start_reason(self))
+        return {**value, "target_control":"vehicle", "can_start_manual":reason is None,
+                "can_start_manual_with_stale":reason is None, "manual_start_reason":reason,
+                "active":self.charging.active}
 
     def manual_start_refresh_available(self):
         if (self.charging.active or self.vehicle_limit.busy or self.can_command("start", True)
@@ -458,6 +493,8 @@ class Service:
 
     def force_charge_native(self, target, request_id, allow_stale=False):
         with self.lock:
+            if getattr(self.charging, "native_fsm", False):
+                return self.charging.start(target, request_id, allow_stale)
             if self.stopping or self.app_update_pending:
                 raise IntegrationError("blocked", "The app is restarting or updating.")
             self.power.update(True)
@@ -536,6 +573,20 @@ class Service:
                 raise ValueError("Only Off, A+ and M+ are supported here.")
             if self.stopping or self.web is None:
                 raise IntegrationError("blocked","Charger control is currently unavailable.")
+            if getattr(self.charging, "native_fsm", False):
+                if mode == "OFF":
+                    self.charging.session = replace(self.charging.session, normal_mode="OFF")
+                    self.charging.stop(request_id)
+                    return {"device":"charger", "mode":"OFF", "status":"confirmed" if self.cache.get("smartfox",{}).get("charger",{}).get("mode") == "OFF" else "unconfirmed", "message":self.charging.value["message"]}
+                if self.charging.active:
+                    raise IntegrationError("blocked", "Finish Stop and restoration before changing the charger mode.")
+                if mode == "M+":
+                    raise IntegrationError("blocked", "Use manual charging with a verified vehicle target.")
+                result = self.web.set_charger_mode(self.config.value["smartfox"], "A+")
+                self.charging.session = replace(self.charging.session, normal_mode="A+")
+                self.charging.persist()
+                self.cache.setdefault("smartfox",{})["charger"] = result
+                return {"device":"charger", "mode":"A+", "status":"confirmed", "message":"The charger is set to A+."}
             if mode != "OFF" and self.charging.value.get("stop_guard") and self.charging.active:
                 raise IntegrationError("blocked","Automatic stop is being checked. The charger stays Off until the vehicle confirms the stop.")
             if mode == "M+" and (not self.charging.active or self.charging.value.get("stop_requested")):

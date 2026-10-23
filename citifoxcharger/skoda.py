@@ -149,7 +149,7 @@ class SkodaAdapter:
                     "message": "Configure the VIN and API key. Citigo compatibility is not yet verified.",
                     "operations": [], "stale": True}
         vin = config["vin"]
-        data = self.call("GET", f"/api/v1/vehicles/{vin}?include=charging,operations", key,
+        data = self.call("GET", f"/api/v1/vehicles/{vin}?include=charging,operations,chargingProfiles", key,
                          allow_reserved=allow_reserved, reserved_calls=reserved_calls)
         vehicle = data.get("vehicle")
         if not isinstance(vehicle, dict) or vehicle.get("vin") != vin:
@@ -173,7 +173,7 @@ class SkodaAdapter:
         age = time.time() - captured_epoch if captured_epoch is not None else None
         stale = age is None or age > config["stale_seconds"] or age < -300
         supported = [o["name"] for o in operations if isinstance(o, dict) and o.get("name") in ("startCharging", "stopCharging")]
-        affected = any(c.startswith(("CHARGING_", "OPERATIONS_")) for c in codes)
+        affected = any(c.startswith(("CHARGING_", "OPERATIONS_")) and not c.startswith("CHARGING_PROFILES_") for c in codes)
         if affected or not charging:
             supported = []
         message = "Vehicle access confirmed; capabilities discovered for this VIN."
@@ -207,9 +207,11 @@ class SkodaAdapter:
             "advertises_set_charge_mode":"setChargeMode" in names,
             "advertises_set_charging_limit":"setChargingLimit" in names}
         state = status.get("state")
+        from .charging_profiles import summarize
         return {"available": bool(charging) and not affected, "code": "partial" if codes else "ok",
                 "message": message, "soc": soc, "state": state if isinstance(state, str) else None,
                 "charging_settings":native_settings,
+                "charging_profiles":summarize(vehicle.get("chargingProfiles"), codes, "updateChargingProfile" in names),
                 "plug_lock":status.get("plugLockState") if status.get("plugLockState") in ("LOCKED","UNLOCKED") else None,
                 "plug": status.get("plugConnectionState") if isinstance(status.get("plugConnectionState"), str) else None,
                 "captured_at": captured if captured_epoch is not None else None,
