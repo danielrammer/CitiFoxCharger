@@ -127,6 +127,9 @@ class Service:
                 except Exception:
                     # Never log credentials or declare monitoring successful after an internal error.
                     with self.lock:
+                        if self.charging.manual.selected and self.charging.active:
+                            self.charging.manual.secure_storage_failure(
+                                'Monitoring failed. Securing charger Off; target unconfirmed.')
                         if self.limit_trial.active:
                             try:self.limit_trial.stop("internal_error")
                             except (OSError, IntegrationError, SmartfoxControlError):pass
@@ -145,6 +148,8 @@ class Service:
         Polling still reads the cloud cache; this does not wake the car. Keep the
         regular budget scheduler and never shorten a server cooldown.
         """
+        if self.charging.manual.selected:
+            return  # Local energy accounting replaces speculative extra cloud probes.
         session = self.charging.value
         car = self.cache.get("skoda", {})
         charger = self.cache.get("smartfox", {}).get("charger", {})
@@ -187,6 +192,8 @@ class Service:
         Persist the bound across restarts, respect server cooldowns and leave
         at least two calls available for commands.
         """
+        if self.charging.manual.selected:
+            return
         session, car = self.charging.value, self.cache.get("skoda", {})
         now, clock = time.time(), time.monotonic()
         captured = timestamp(car.get("captured_at"))
@@ -336,7 +343,8 @@ class Service:
                                       "retry_seconds": error.retry_seconds}
             else:
                 self.cache[source] = {**previous, "available": False, "code": error.code,
-                                      "message": str(error), "stale": True, "operations": [],
+                                      "message": str(error), "stale": True,
+                                      "operations": previous.get('operations', []) if error.code in ('network', 'rate_limit', 'upstream') else [],
                                       "retry_seconds": error.retry_seconds}
             if error.retry_seconds:
                 self.next_due[source] = time.monotonic() + error.retry_seconds
@@ -395,6 +403,22 @@ class Service:
             return False
         return {"start": "startCharging", "stop": "stopCharging"}[action] in current.get("operations", [])
 
+    def manual_access_configured(self):
+        """Cached identity/capabilities may outlive cloud data freshness, not credentials."""
+        car = self.cache.get('skoda', {})
+        expiry = timestamp(self.car.key_expires_at)
+        return bool(self.secrets.key and self.config.value['skoda']['vin']
+                    and (expiry is None or expiry > time.time())
+                    and car.get('code') not in ('auth', 'forbidden', 'unsupported', 'not_configured')
+                    and 'startCharging' in car.get('operations', [])
+                    and 'stopCharging' in car.get('operations', []))
+
+    def can_manual_command(self):
+        if (self.stopping or self.app_update_pending or not self.manual_access_configured()
+                or self.car.clock() < self.car.blocked_until or time.monotonic() < self.command_after):
+            return False
+        return not (self.car.quota_remaining == '0' and self.car.clock() < self.car.quota_reset_at)
+
     def check_command_observation(self):
         command = self.last_command
         if not command or command["status"] not in ("accepted", "unknown"):
@@ -416,7 +440,10 @@ class Service:
         with self.lock:
             if not self.stopping:
                 if not self.vehicle_limit.busy:
-                    self.charging.stop_if_target_reached()
+                    if self.charging.manual.selected:
+                        self.charging.manual.check_target()
+                    else:
+                        self.charging.stop_if_target_reached()
                 self.update("smartfox")
                 self.prioritize_target_poll()
                 self.prioritize_freshness_poll()
@@ -468,7 +495,11 @@ class Service:
             if self.manual_start_refresh_available() and allow_stale:
                 self.next_due["skoda"] = 0
                 self.update("skoda")  # One budgeted cloud read, not a wake-up or limit write.
-            return self.force_charge(target, request_id, allow_stale)
+            self.power.update(True)
+            try:
+                return self.charging.manual.start(target, request_id)
+            finally:
+                self.power.update(self.charging.active and not self.worker_stop.is_set())
 
     def manual_start_refresh_available(self):
         if (self.charging.active or self.vehicle_limit.busy or self.can_command("start", True)
@@ -530,7 +561,12 @@ class Service:
             # The verified local Off/readback happens before any slow cloud read.
             if self.web is None:
                 raise IntegrationError("blocked", "Smartfox integration is not configured.")
-            return self.charging.stop(request_id)
+            try:
+                return self.charging.stop(request_id)
+            except OSError:
+                if self.charging.manual.selected:
+                    self.charging.manual.secure_storage_failure()
+                raise
 
     def change_target(self, target):
         with self.lock:
@@ -581,7 +617,7 @@ class Service:
                 raise IntegrationError("blocked","Automatic stop is being checked. The charger stays Off until the vehicle confirms the stop.")
             if mode == "M+" and (not self.charging.active or self.charging.value.get("stop_requested")):
                 raise IntegrationError("blocked","Use Force charge with an active percentage target to select M+.")
-            if mode == "M+" and (not self.can_command("start") or not self.can_command("stop")):
+            if mode == "M+" and not self.charging.manual.selected and (not self.can_command("start") or not self.can_command("stop")):
                 raise IntegrationError("blocked","M+ requires current vehicle data and start/stop access.")
             if request_id in self.heater_results:
                 result = self.heater_results[request_id]
@@ -593,6 +629,10 @@ class Service:
             if len(self.heater_results)>100:
                 del self.heater_results[next(iter(self.heater_results))]
             # Explicit OFF must survive the ordinary A+ normalization and a pending target stop.
+            if (self.charging.manual.selected and self.charging.active
+                    and not self.charging.value.get('stop_requested') and mode in ('A+', 'OFF')):
+                self.charging.save(status='closed', ended_by_user=True,
+                                   message='Manual charging ended by an explicit charger-mode selection.')
             if mode == "OFF" and self.vehicle_limit.record.get("phase") == "setting":
                 # Cancel a pending native start durably before any later readback.
                 self.charging.save(status="paused", stop_requested=True, stop_guard=True,
@@ -609,7 +649,7 @@ class Service:
             self.event(result["message"])
             return copy.deepcopy(result)
 
-    def command(self, action, request_id, allow_stale=False):
+    def command(self, action, request_id, allow_stale=False, manual=False):
         with self.lock:
             if action == "stop" and self.limit_trial.active:
                 return self.limit_trial.stop("manual")
@@ -619,7 +659,7 @@ class Service:
             if request_id in self.command_results:
                 return copy.deepcopy(self.command_results[request_id])
             self.update("skoda")
-            if not self.can_command(action, allow_stale):
+            if not (self.can_manual_command() if manual and action == 'start' else self.can_command(action, allow_stale)):
                 raise IntegrationError("blocked", "Command blocked: current vehicle data, a supported action and valid API access are required. Commands have a 30-second cooldown.")
             self.command_after = time.monotonic() + 30
             command = {"action": action, "requested_at": utcnow(), "requested_epoch": time.time(),
@@ -629,8 +669,10 @@ class Service:
             except IntegrationError as error:
                 command.update(status="unknown" if error.uncertain else "rejected", message=str(error))
                 # Rejection invalidates controls until fresh telemetry/capabilities can be retrieved.
-                self.cache["skoda"] = {**self.cache.get("skoda", {}), "available": False,
-                                       "message": str(error), "operations": [], "stale": True}
+                previous = self.cache.get('skoda', {})
+                self.cache["skoda"] = {**previous, "available": False, "code": error.code,
+                                       "message": str(error), 'stale': True,
+                                       'operations': previous.get('operations', []) if error.code in ('network', 'rate_limit', 'upstream') else []}
             self.last_command = command
             if command["status"] in ("accepted", "unknown"):
                 # One prompt read after an explicit command; later reads follow the quota budget.

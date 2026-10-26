@@ -1,6 +1,6 @@
 # Communication and data flow
 
-This describes the implementation shipped with **CitiFoxCharger 1.9.7**, checked against the source on **23 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included.
+This describes **CitiFoxCharger 1.10.0**, checked against source on **26 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included. New manual sessions without readable vehicle limits use the energy controller in [MANUAL-CHARGING.md](MANUAL-CHARGING.md), which also includes its state diagram and uncertainty policy.
 
 ## System overview
 
@@ -148,7 +148,7 @@ sequenceDiagram
         API-->>App: Newer vehicle capture with matching target
         Note over App,API: No fallback after an uncertain native write
     else Native limit absent
-        Note over App: App monitors target from SOC reports; no limit PUT
+        Note over App: Integrate SMARTFOX charge-point kW; correct with new SOC captures; no limit PUT
     end
     App->>SF: Select M+ if needed; read values.xml
     SF-->>App: Mode, readiness, current, phase-switch state
@@ -157,8 +157,13 @@ sequenceDiagram
         App->>SF: Read newer readiness after switching
         SF-->>App: Stable charging permission
     end
-    App->>API: POST /charging/start (full path in table)
-    API-->>App: 202 Accepted
+    alt Charge-point power already flowing in M+
+        Note over App,SF: Adopt existing surplus charging; no redundant Start
+    else Settled ready state with zero power
+        App->>API: POST /charging/start (full path in table)
+        API-->>App: Accepted / unknown / rejected; local power is checked
+        Note over App,API: At most three locally checked attempts, spaced >= 180 seconds
+    end
     loop Monitoring while backend runs
         App->>SF: GET /values.xml + selected Modbus reads on schedule
         App->>API: Vehicle GET when quota / polling rules permit
@@ -182,20 +187,20 @@ sequenceDiagram
     App-->>UI: Stop completed
 ```
 
-This is the successful combined-control flow, not a promise that every operation succeeds. Start is withheld on failed readiness, authorization, phase-preparation timeout or unavailable capabilities. An uncertain start is not blindly repeated. If local Off is not confirmed, the app exposes that failure. A newer stopped vehicle report can complete the stop without another POST. An explicitly selected charger Off remains Off; A+ restoration above describes the normal combined stop. Native SMARTFOX and vehicle schedules may permit later charging in A+.
+This is the successful combined-control flow, not a promise that every operation succeeds. Start is withheld on failed readiness, authorization, phase-preparation timeout or unavailable capabilities. An uncertain start is only repeated under the new controller's fresh local zero-power/readiness checks, bounded attempt count, spacing and API cooldowns. If local Off is not confirmed, the app exposes that failure. A newer stopped vehicle report can complete the stop without another POST. An explicitly selected charger Off remains Off; A+ restoration above describes the normal combined stop. Native SMARTFOX and vehicle schedules may permit later charging in A+.
 
 ## Timing and freshness
 
 - Browser status refresh: every **10 seconds**; this reads the backend cache and does not create one cloud request per browser.
 - SMARTFOX configured polling default: **10 seconds**. Command readiness/readback can perform additional local reads.
 - Škoda configured polling default: **180 seconds**, adjusted by charging state, quota and cooldown. Idle fallback is at least **600 seconds**; active fallback without usable quota information is at least **180 seconds**. With a known quota window, spare reads are budgeted while retaining three calls for native stop/restoration (two for legacy sessions).
-- Manual vehicle refresh has a **60-second** minimum spacing and respects quota/cooldown. Near-target monitoring can bring forward at most two additional budgeted reads per session under stricter freshness and quota guards.
+- Manual vehicle refresh has a **60-second** minimum spacing and respects quota/cooldown. Legacy cloud-only monitoring can bring forward bounded near-target/freshness reads; new energy-backed sessions disable these speculative extra probes and retain the normal shared polling schedule.
 - Cloud response time and `carCapturedTimestamp` are different. A successful GET can still return old SOC. No force-refresh/wake call is implemented, and a locally monitored SOC target can be overshot because of delayed vehicle reports.
 - Monitoring runs in the Python backend, not the browser. Closing the browser or switching the screen off does not itself stop monitoring; actual Windows sleep or backend termination can prevent execution.
 
 Source map: [server.py](citifoxcharger/server.py), [service.py](citifoxcharger/service.py), [charging.py](citifoxcharger/charging.py), [config.py](citifoxcharger/config.py), [app.js](citifoxcharger/web/app.js). For authentication, rate-limit evidence and detailed failure handling, see [INTERFACES.md](INTERFACES.md).
 
-### Legacy request-budget stop (sessions without verified native protection)
+### Legacy request-budget stop (saved cloud-only sessions, not new energy sessions)
 
 Before routine session housekeeping, known inability to read vehicle SOC (two reserved calls left before reset, or a rate-limit cooldown) initiates the same local Off → vehicle stop sequence. The persisted cause is `request_quota`; a new non-charging vehicle report is needed to release guarded Off. A monitored start is blocked with a known budget below four calls. This does not measure SOC through Modbus or bypass Škoda limits.
 

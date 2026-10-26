@@ -93,6 +93,42 @@ Object.assign(messages,{
  "Stop the supervised vehicle-stop trial before exiting.":"Vor Beenden der App den beaufsichtigten Fahrzeug-Stopp-Test stoppen.",
  "Stop the supervised vehicle-stop trial before restarting.":"Vor dem Neustart den beaufsichtigten Fahrzeug-Stopp-Test stoppen."
 });
+Object.assign(messages,{
+ "SMARTFOX measurements delayed. Manual charging continues with increased uncertainty.":"SMARTFOX-Messwerte verzögert. Manuelles Laden läuft mit größerer Unsicherheit weiter.",
+ "Possible charge level reached target plus 5 points. Charging stopped; actual SOC unconfirmed.":"Möglicher Ladestand erreicht Ziel plus 5 Prozentpunkte. Laden gestoppt; tatsächlicher Stand unbestätigt.",
+ "Possible SOC reached the target plus five percentage points; actual SOC is unconfirmed.":"Möglicher Ladestand erreicht Ziel plus fünf Prozentpunkte; tatsächlicher Stand unbestätigt.",
+ "Start attempted. Preparing M+; waiting for charging power.":"Start versucht. M+ wird vorbereitet; warte auf Ladeleistung.",
+ "With a readable vehicle limit, manual Start sets and verifies the target. Otherwise M+ charging is monitored using SMARTFOX energy and vehicle reports. The estimated SOC is marked *. Missing cloud data do not stop charging. Measurement gaps increase uncertainty, with a target +5 fallback. Old starting SOC, capacity and losses affect accuracy. Charging profiles are not edited.":"Bei auslesbarer Fahrzeuggrenze setzt und prüft die App das Ziel. Andernfalls überwacht sie M+ anhand der SMARTFOX-Energie und Fahrzeugmeldungen. Der geschätzte Stand trägt ein *. Fehlende Cloud-Daten stoppen die Ladung nicht. Messlücken vergrößern die Unsicherheit; bei möglichem Ziel +5 greift ein Stopp. Alter Startwert, Kapazität und Verluste beeinflussen die Genauigkeit. Ladeprofile bleiben unverändert.",
+ "* Estimated from SMARTFOX charging energy; not a live vehicle measurement":"* Aus SMARTFOX-Ladeenergie geschätzt; kein Live-Messwert des Fahrzeugs",
+ "The app is restarting or updating.":"Die App wird neu gestartet oder aktualisiert.",
+ "Finish the current session or pending stop first.":"Bitte die bisherige Sitzung oder den ausstehenden Stopp zuerst abschließen.",
+ "SMARTFOX must confirm a connected, ready or charging vehicle.":"SMARTFOX muss ein angestecktes, ladebereites oder ladendes Fahrzeug bestätigen.",
+ "Vehicle start access is missing or expired. Check Settings.":"Fahrzeug-Startzugriff fehlt oder ist abgelaufen. Bitte Einstellungen prüfen.",
+ "A vehicle charge level from the last 24 hours is required.":"Ein Fahrzeug-Ladestand aus den letzten 24 Stunden ist erforderlich.",
+ "SMARTFOX measurements are missing. Charging stopped; target unconfirmed.":"SMARTFOX-Messwerte fehlen. Laden gestoppt; Ziel nicht bestätigt erreicht.",
+ "SMARTFOX measurements have a gap. Charging stopped; target unconfirmed.":"SMARTFOX-Messwerte haben eine Lücke. Laden gestoppt; Ziel nicht bestätigt erreicht.",
+ "The charger was switched Off. Manual charging ended.":"Die Ladestation wurde ausgeschaltet. Manuelles Laden beendet.",
+ "M+ could not be confirmed. Manual charging ended.":"M+ konnte nicht bestätigt werden. Manuelles Laden beendet.",
+ "SMARTFOX reports disconnection, an error or missing authorization.":"SMARTFOX meldet Trennung, Fehler oder fehlende Freigabe.",
+ "Phase switching did not finish within ten minutes.":"Phasenumschaltung nicht innerhalb von zehn Minuten beendet.",
+ "No charging power confirmed. Manual charging needs attention.":"Keine Ladeleistung bestätigt. Manuelles Laden bitte prüfen.",
+ "No charging power after three start attempts. Please check MyŠkoda.":"Keine Ladeleistung nach drei Startversuchen. Bitte MyŠkoda prüfen.",
+ "Vehicle start is unavailable. Waiting for API access and local charging power.":"Fahrzeugstart nicht verfügbar. Warte auf API-Zugriff und lokale Ladeleistung.",
+ "Manual charging ended by an explicit charger-mode selection.":"Manuelles Laden durch ausdrückliche Moduswahl beendet.",
+ "SMARTFOX energy measurements are missing or have a gap.":"SMARTFOX-Energiemesswerte fehlen oder haben eine Lücke.",
+ "SMARTFOX charging permission was lost.":"SMARTFOX-Ladefreigabe verloren.",
+ "No charging power could be confirmed.":"Keine Ladeleistung bestätigt.",
+ "The vehicle rejected the start.":"Das Fahrzeug hat den Start abgelehnt.",
+ "Local storage failed. Securing charger Off; target unconfirmed.":"Lokales Speichern fehlgeschlagen. Ladestation wird ausgeschaltet; Ziel unbestätigt.",
+ "Monitoring failed. Securing charger Off; target unconfirmed.":"Ladeüberwachung fehlgeschlagen. Ladestation wird ausgeschaltet; Ziel unbestätigt.",
+ "Estimated charge level · * SMARTFOX energy":"Geschätzter Ladestand · * SMARTFOX-Energie"
+});
+rules.unshift(
+ [/^Estimate\* · (.*)$/, "Schätzung* · {0}"],
+ [/^Start attempted\. Waiting for charging power; next check in about (\d+) seconds\.$/,"Start versucht. Warte auf Ladeleistung; nächste Prüfung in ca. {0} Sekunden."],
+ [/^Manual charging to (\d+) %; measured energy is monitored\.$/,"Manuelles Laden bis {0} %; gemessene Ladeenergie wird überwacht."],
+ [/^Estimated target (\d+) % reached using measured charging energy\.$/,"Geschätztes Ziel {0} % anhand gemessener Ladeenergie erreicht."]
+);
 function german(value,depth=0){
  if(messages[value]!==undefined)return messages[value];
  if(depth<4){for(const [pattern,target]of rules){const match=pattern.exec(value);if(match)return target.replace(/\{(\d+)\}/g,(_,i)=>german(match[Number(i)+1]??"",depth+1));}

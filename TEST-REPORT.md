@@ -1,3 +1,13 @@
+# Manual charging with energy accounting — 1.10.0
+
+Validation on 26 October 2026: **452 offline tests passed in 98.787 seconds** (`python -m unittest discover -s tests -v`). JavaScript syntax and Git whitespace checks passed. The 21 new cases cover power integration, delayed SOC rebasing at capture time, duplicate reports, A+ surplus takeover, start progress/idempotency and bounded retries, phase pause/resume, stale cloud/quota continuity, both target-stop paths, explicit mode selection, short/missing local data, target +5 uncertainty tolerance, recovery after measurement gaps, persistence/restart, target changes, access/disconnection gates, sanitized diagnostics and storage/internal-monitor failures. Existing native-limit, isolated-trial, HTTP/LAN security, update and device-adapter tests remain passing; two manual-dispatch tests now assert queued readiness and energy tracking instead of the superseded cloud freshness deadline.
+
+Fake-adapter browser QA started manual charging while A+ supplied 1.37 kW with a seventy-minute-old vehicle report. The button was enabled, M+ takeover supplied 7.2 kW, the SOC estimate advanced with `*`, the age remained visible, the slider stayed editable and reload did not send another Start. Both light/dark overview screenshots are labelled simulated and kept outside Git. Layout measured no scroll at 800×1280, 640×1024 (125% tablet scaling) and 1280×800. A supplementary 640×800 portrait viewport required 36 px of vertical scrolling; its aspect ratio differs from the intended tablet, and no unrelated CSS/layout changes were made. Browser warnings/errors were empty. No real vehicle, SMARTFOX command or tablet deployment was performed by the agent.
+
+These are software regression results, not a physical accuracy guarantee. Repeated real charging tests must verify the initial SOC/energy assumptions and actual stopping behavior. The user explicitly preferred continued charging over early aborts, tolerating roughly five extra percentage points under uncertain measurements; the new modelled upper-bound fallback implements that preference without changing the selected target.
+
+## Previous release
+
 # Sixty-minute supervised vehicle-stop trial — 1.9.7
 
 Validation on 23 October 2026: **431 offline tests passed in 94.012 seconds**. Added cases verify an exact 3600-second runtime, continued proven charging after ten elapsed minutes, explicit inconclusive evaluation for a time fallback, honest historical ten-minute reports and preserved trial evidence after the normal 80% request. Exact-target SOC still does not trigger an app stop; the existing +2, device, phase and manual-stop guards remain.

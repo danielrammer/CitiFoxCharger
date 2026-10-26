@@ -1,6 +1,6 @@
 """Local EV charging dashboard. No external Python packages required."""
-__version__ = "1.9.7"
-__release_date__ = "2026-10-23"
+__version__ = "1.10.0"
+__release_date__ = "2026-10-26"
 
 
 def release_info(directory=None):

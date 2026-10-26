@@ -1,4 +1,4 @@
-# CitiFoxCharger for Windows · 1.9.7
+# CitiFoxCharger for Windows · 1.10.0
 
 <img src="citifoxcharger/web/brand/logo.png" alt="CitiFoxCharger logo: smooth electric city car, red fox tail and charging plug" width="620">
 
@@ -10,7 +10,7 @@ Both light and dark appearance are available. The light palette uses darker labe
 
 The header displays the current date and time from the browser device, independently of vehicle telemetry. It refreshes on returning to the page and uses the selected interface language. The clock fits inside the existing header height.
 
-The Settings page identifies the running backend as **v1.9.7 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
+The Settings page identifies the running backend as **v1.10.0 | first eight Git characters | commit date**. Git installations read the exact program repository at startup; release ZIPs include the same commit/date in `citifoxcharger/build-info.json`. If metadata are unavailable, the hash is shown as a dash rather than invented. The **Reload page** button (⟳) in the header reloads the current browser page without restarting the backend or sending a charging command. It works during charging and is temporarily disabled while a command or app update is in progress.
 
 ## Architecture and communication
 
@@ -53,9 +53,9 @@ The same protected endpoints and sanitized diagnostics work over the configured 
 
 ## Manual charging strategy
 
-**1.9.3 restores monitored manual Start for vehicles that omit the native limit.** With no readable/discovered native limit, one click selects SMARTFOX M+, waits for permission/phase switching, then sends one vehicle Start. It does **not** send a limit PUT or edit charging profiles. The app monitors the percentage target from vehicle reports and shows that the target is app-monitored. An accepted Start is distinct from the two-sample local charging-power proof. Target reports trigger local Off before vehicle Stop. Delayed SOC can overshoot the target, and the existing five-minute initial freshness, later data-loss and request-budget guards can stop early; those limitations remain unresolved rather than hidden. This release restores the earlier usable path, not a guarantee of exact SOC.
+**Since 1.10.0, new manual sessions without a readable native vehicle limit use measured SMARTFOX charging energy plus vehicle SOC reports.** Manual Start works while A+ surplus charging is already running. It selects M+, adopts existing energy flow, and sends a vehicle Start only if settled local readiness has no power. Phase switching is a pause, not a completed charge. Stale cloud SOC or exhausted read quota alone no longer stop these sessions. The app stops locally first when either its energy-based SOC estimate or a vehicle SOC report reaches the target. No vehicle-limit PUT or charging-profile change is made by this route.
 
-If the only older-data start blocker is the age of the last successful API read, the normal Start button can request one budgeted GET first, leaving at least four known requests before starting. Real command/access checks are not relaxed, the cloud response is not presented as a new vehicle capture, and failed reads cannot energize the charger. Older SOC remains automatically allowed within the existing bounds, without a checkbox.
+Older SOC up to 24 hours is used automatically as the initial estimate, with its original age visible. **This is not an exact battery limit:** the starting integer SOC may be old, usable capacity changes, and 90% charging efficiency is an assumption. The estimate is marked `*`. A newer vehicle capture corrects the anchor at its capture time, adding only measured energy since that time. Measurement gaps increase uncertainty and do not immediately stop charging: the requested tolerance is up to roughly five extra points, with a separate modelled `target +5` upper-bound fallback. Storage failure still secures Off. API cooldowns queue a start with a waiting indication. At most three vehicle Start attempts are allowed, with settled zero-power readiness and spacing of at least three minutes; no attempt is sent during phase switching or measured charging. See [MANUAL-CHARGING.md](MANUAL-CHARGING.md) for states, stop causes and calibration limits.
 
 When a native limit **is** readable and its operation is advertised, Start retains the native exact-target preflight below. Existing active native sessions keep their verification/restoration logic; an aborted pending native attempt must be explicitly released before switching strategy. There is no silent fallback after an uncertain native write. The normal route uses the common server-side strategy dispatcher, including over the home network.
 
@@ -162,9 +162,9 @@ The Python package is now **citifoxcharger**. Script names are **Stop.cmd**, **R
 
 ## Charging controls
 
-The main page shows the reported battery percentage, current local charging power, charging state, an editable target slider, **Force charge** and **Stop**. A moving energy stream, smiling car, striped battery and pulsing indicator show charging only when fresh local power exceeds 0.1 kW, or fresh vehicle CHARGING is available without a local measurement. HTTP 202 alone does not animate charging. The battery percentage is never artificially increased. Reduced-motion preferences disable movement.
+The main page shows vehicle SOC or the explicitly marked energy estimate (`*`), current local charging power, charging state, an editable target slider, **Manual charge** and **Stop**. A moving energy stream, smiling car, striped battery and pulsing indicator show charging only when fresh local power exceeds 0.1 kW, or fresh vehicle CHARGING is available without a local measurement. HTTP 202 alone does not animate charging. Reduced-motion preferences disable movement.
 
-### Force charge
+### Manual charge with a readable native vehicle limit
 
 1. Choose **50, 60, 70, 80, 90 or 100%**, above the reported SOC.
 2. The wallbox is held Off while the vehicle limit is set and verified. The interface shows this preparation; Stop and explicit wallbox Off cancel a pending start.

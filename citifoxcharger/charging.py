@@ -7,6 +7,7 @@ from .config import atomic_write
 from .modbus import utcnow
 from .skoda import IntegrationError, timestamp
 from .smartfox_web import SmartfoxControlError
+from .manual_charging import ManualCharging
 
 ACTIVE = {"starting", "monitoring", "stop_pending", "restore_pending", "paused", "interrupted"}
 
@@ -14,6 +15,7 @@ ACTIVE = {"starting", "monitoring", "stop_pending", "restore_pending", "paused",
 class ChargingSession:
     def __init__(self, service, web):
         self.service, self.web = service, web
+        self.manual = ManualCharging(self)
         self.path = service.config.directory / "charging-session.json"
         self.next_attempt = 0
         self.next_guard_attempt = 0
@@ -119,6 +121,8 @@ class ChargingSession:
                 value["force_reason"] = "Start access or request quota is not available yet."
             elif self.active and not self.value.get("stop_requested"):
                 value["force_reason"] = "The previous start is not confirmed or the wallbox has no fresh readiness report."
+        if (self.manual.selected or (not use_native and not pending_native)):
+            self.manual.state(value)
         return value
 
     def local_stop_allows_shutdown(self):
@@ -388,7 +392,7 @@ class ChargingSession:
 
     @property
     def safety_stopped(self):
-        return self.value.get("stop_cause") in ("missing_soc","missing_initial_soc","phase_wait","request_quota","vehicle_limit_start","vehicle_limit_lost")
+        return self.value.get("stop_cause") in ("missing_soc","missing_initial_soc","phase_wait","request_quota","vehicle_limit_start","vehicle_limit_lost", "energy_data_missing", "uncertainty_limit", "charger_unavailable", "start_timeout", "start_rejected")
 
     def safety_stop_message(self):
         reason = {"missing_soc":"The target cannot be monitored without current vehicle data.",
@@ -396,7 +400,12 @@ class ChargingSession:
                   "phase_wait":"Charging preparation failed before the target.",
                   "vehicle_limit_start":"Vehicle start failed after limit verification.",
                   "vehicle_limit_lost":"The vehicle charging limit changed unexpectedly.",
-                  "request_quota":"Škoda request limits prevent further charge-level monitoring."}.get(self.value.get("stop_cause"),"")
+                  "request_quota":"Škoda request limits prevent further charge-level monitoring.",
+                  "energy_data_missing":"SMARTFOX energy measurements are missing or have a gap.",
+                  "uncertainty_limit":"Possible SOC reached the target plus five percentage points; actual SOC is unconfirmed.",
+                  "charger_unavailable":"SMARTFOX charging permission was lost.",
+                  "start_timeout":"No charging power could be confirmed.",
+                  "start_rejected":"The vehicle rejected the start."}.get(self.value.get("stop_cause"),"")
         return f"Target {self.value['target_percent']} % was not confirmed reached. " + reason
 
     def finish_stop(self, message):
@@ -491,6 +500,9 @@ class ChargingSession:
             return
         # Stop evidence is independent of SOC freshness and cloud retry timers.
         if self.recover_guarded_stop():
+            return
+        if self.manual.selected and self.active and not self.value.get('stop_requested'):
+            self.manual.tick()
             return
         self.observe_start_power()
         # A newly received target report must not wait for the ten-second housekeeping tick.
