@@ -1,3 +1,11 @@
+# Battery polish and certificate download feedback — 1.10.4
+
+Validation on 26 October 2026: JavaScript syntax, Git whitespace and `node tests/test_certificate_download.js` passed. The real browser handler was tested in an inert DOM against successful binary downloads, rejected/missing certificates, non-JSON gateway errors, unexpected HTML responses and retries after failures. The existing certificate endpoint and charging/backend logic were not changed; the 462-test backend suite passed for 1.10.3.
+
+Fake-adapter browser QA checked the battery with 84% current / 85% target in both themes. The overview remained without scrolling at 800×1280, 800×1000, 640×1024 and 1280×800. The simulated Settings button handed its disposable public certificate to browser downloads and displayed the status without leaving the page. No successful download on the user's actual tablet is claimed: its exact URL and error are still needed. No trust-store changes or real device commands were made. Screenshots remain outside Git and are labelled simulated.
+
+## Previous release
+
 # Battery target display and public certificate download — 1.10.3
 
 Validation on 26 October 2026: **462 offline tests passed in 101.297 seconds**. New real-loopback HTTPS tests verify certificate content/type/download filename, fixed-path handling, password/session/origin requirements, passwordless-LAN access, missing certificates and rejection of private-key text, malformed DER, appended material and oversized files. Existing diagnostic downloads retain their filename. JavaScript syntax and Git whitespace checks passed. Charging logic was not changed.

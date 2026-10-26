@@ -256,6 +256,27 @@ $("stop").addEventListener("click",()=>mutation(async()=>{const result=await api
 $("config-form").addEventListener("submit",event=>{event.preventDefault();mutation(async()=>{const value={smartfox:{host:$("host").value.trim(),port:Number($("port").value),unit_id:Number($("unit").value),firmware:$("firmware").value,poll_seconds:Number($("sf-poll").value),timeout_seconds:Number($("sf-timeout").value),profile:$("profile").value,word_order:$("word-order").value,interpretation_confirmed:$("interpretation").checked},skoda:{vin:$("vin").value.trim(),poll_seconds:Number($("car-poll").value),stale_seconds:Number($("car-stale").value)}};const result=await api("/api/config",value);await loadConfig();toast(result.message);});});
 $("key-form").addEventListener("submit",event=>{event.preventDefault();mutation(async()=>{try{const result=await api("/api/key",{key:$("api-key").value,persist:$("persist").checked});await loadConfig();toast(result.message);}finally{$("api-key").value="";}});});
 $("clear-key").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/key/clear",{});await loadConfig();toast(result.message);}));
+let certificateDownloading=false;
+$("download-certificate").addEventListener("click",async event=>{
+ event.preventDefault();if(certificateDownloading)return;
+ const button=$("download-certificate"),status=$("certificate-download-status"),controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),15000);
+ certificateDownloading=true;button.setAttribute("aria-busy","true");
+ status.hidden=false;status.textContent="Preparing public certificate download …";
+ try{
+  const response=await fetch("/api/network/certificate",{credentials:"same-origin",cache:"no-store",signal:controller.signal});
+  if(!response.ok){
+   const problem=await response.json().catch(()=>({}));
+   throw new Error(problem.error||`Certificate download failed (HTTP ${response.status}).`);
+  }
+  if(response.headers.get("Content-Type")?.split(";")[0].trim()!=="application/pkix-cert")throw new Error("The server did not return a public certificate. Reload the app and try again.");
+  const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement("a");
+  link.href=url;link.download="CitiFoxCharger-Home-Network.cer";document.body.append(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+  status.textContent="Certificate sent to browser downloads. No private key is included.";
+ }catch(e){status.textContent=e.name==="AbortError"?"Certificate download timed out. Check the connection and try again.":e.message;}
+ finally{clearTimeout(timer);certificateDownloading=false;button.removeAttribute("aria-busy");}
+});
 let diagnosticsDownloading=false;
 $("download-diagnostics").addEventListener("click",async event=>{
  event.preventDefault();if(diagnosticsDownloading)return;

@@ -133,6 +133,14 @@ rules.unshift(
  [/^Manual charging to (\d+) %; measured energy is monitored\.$/,"Manuelles Laden bis {0} %; gemessene Ladeenergie wird überwacht."],
  [/^Estimated target (\d+) % reached using measured charging energy\.$/,"Geschätztes Ziel {0} % anhand gemessener Ladeenergie erreicht."]
 );
+Object.assign(messages,{
+ "Preparing public certificate download …":"Öffentliches Zertifikat wird zum Download vorbereitet …",
+ "Certificate sent to browser downloads. No private key is included.":"Zertifikat an die Browser-Downloads übergeben. Es enthält keinen privaten Schlüssel.",
+ "The server did not return a public certificate. Reload the app and try again.":"Der Server hat kein öffentliches Zertifikat geliefert. App neu laden und erneut versuchen.",
+ "Certificate download timed out. Check the connection and try again.":"Zeitüberschreitung beim Zertifikatsdownload. Verbindung prüfen und erneut versuchen.",
+ "Public certificate unavailable. Run Setup-Network.cmd on the tablet.":"Öffentliches Zertifikat nicht verfügbar. Setup-Network.cmd auf dem Tablet ausführen."
+});
+rules.unshift([/^Certificate download failed \(HTTP (\d+)\)\.$/,"Zertifikatsdownload fehlgeschlagen (HTTP {0})."]);
 function german(value,depth=0){
  if(messages[value]!==undefined)return messages[value];
  if(depth<4){for(const [pattern,target]of rules){const match=pattern.exec(value);if(match)return target.replace(/\{(\d+)\}/g,(_,i)=>german(match[Number(i)+1]??"",depth+1));}
