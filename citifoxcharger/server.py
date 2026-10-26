@@ -140,7 +140,13 @@ class Handler(BaseHTTPRequestHandler):
         if (origin and origin != f"{self.server.scheme}://{host}") or (mutation and origin != f"{self.server.scheme}://{host}"):
             self.reply(403, {"error": "The request did not originate from this dashboard."})
             return False
-        if self.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "none"):
+        # A link from another site may open the static landing page. It must
+        # not bootstrap a session, read an API, embed the app or send a command.
+        landing_navigation = (not mutation and self.command == 'GET'
+                              and urlsplit(self.path).path == '/' and not origin
+                              and self.headers.get('Sec-Fetch-Mode') == 'navigate'
+                              and self.headers.get('Sec-Fetch-Dest') == 'document')
+        if self.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "none") and not landing_navigation:
             self.reply(403, {"error": "Access from another website is not allowed."})
             return False
         if self.server.network_auth:

@@ -406,6 +406,22 @@ class ServerTests(unittest.TestCase):
         ]:
             with self.subTest(headers=headers): self.assertEqual(self.call(path,data,**headers)[0],expected)
 
+    def test_external_link_can_open_only_the_top_level_landing_page(self):
+        headers={'Origin':'','Cookie':'','Sec-Fetch-Site':'cross-site',
+                 'Sec-Fetch-Mode':'navigate','Sec-Fetch-Dest':'document'}
+        code,body,returned=self.call('/',**headers)
+        self.assertEqual(code,200)
+        self.assertIn(b'<html',body)
+        self.assertNotIn('Set-Cookie',returned)
+        for path in ('/api/session','/api/status','/api/diagnostics','/app.js','/health'):
+            with self.subTest(path=path):self.assertEqual(self.call(path,**headers)[0],403)
+        for dest in ('iframe','embed','object','image','empty'):
+            with self.subTest(dest=dest):
+                self.assertEqual(self.call('/',**{**headers,'Sec-Fetch-Dest':dest})[0],403)
+        self.assertEqual(self.call('/',**{**headers,'Sec-Fetch-Mode':'cors'})[0],403)
+        self.assertEqual(self.call('/',**{**headers,'Origin':'https://other.example'})[0],403)
+        self.assertEqual(self.call('/',{},**headers)[0],403)
+
     def test_key_write_only_config_redacted_and_removable(self):
         status, body, _ = self.call("/api/key", {"key":KEY,"persist":False})
         self.assertEqual(status, 200)

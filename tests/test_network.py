@@ -154,6 +154,18 @@ class NetworkHttpsTests(unittest.TestCase):
             self.assertIn('WWW-Authenticate',headers)
             self.assertNotIn('csrf',body.decode())
 
+    def test_external_link_navigation_preserves_https_auth_and_api_isolation(self):
+        headers={'Origin':'','Cookie':'','Sec-Fetch-Site':'cross-site',
+                 'Sec-Fetch-Mode':'navigate','Sec-Fetch-Dest':'document'}
+        self.assertEqual(self.call('/',**headers)[0],200)
+        self.assertEqual(self.call('/',Authorization='',**headers)[0],401)
+        config={**configuration(),'authentication':'none','salt':None,'password_hash':None,'iterations':0}
+        self.server.network_auth=NetworkAuth(validate_network(config))
+        self.assertEqual(self.call('/',Authorization='',**headers)[0],200)
+        for path in ('/api/session','/api/status','/api/diagnostics'):
+            self.assertEqual(self.call(path,Authorization='',**headers)[0],403)
+        self.assertEqual(self.call('/api/charging/start',{'target_percent':84},Authorization='',**headers)[0],403)
+
     def test_https_cookie_origin_and_csrf_are_required(self):
         status,body,headers=self.call('/api/session')
         self.assertEqual(status,200)

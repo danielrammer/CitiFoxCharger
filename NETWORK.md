@@ -46,6 +46,8 @@ All network clients share the same monitor and target. Language, theme and an in
 
 ## Disable or troubleshoot
 
+Since 1.10.2, opening the static landing page through an external link is allowed when the browser identifies a top-level GET navigation. Previously this could produce `Access from another website is not allowed`, particularly when opening a link on a phone. API reads, session bootstrap, embedded documents and all commands retain the existing origin/session/CSRF and authentication checks. This error is an application policy rejection, distinct from a TLS certificate warning or connection reset.
+
 Run `Setup-Network.cmd --disable` to disable the listener after a clean restart. Remove only the application firewall rule as administrator if no longer required:
 
 ```powershell
@@ -64,6 +66,10 @@ Setup-Firewall.cmd --data-dir "C:\MyDataFolder"
 Use the same profile already used by the backend. Setup windows remain open after success and failure. Certificate creation, strict TLS, both authentication modes and permission boundaries are tested on loopback. A successful physical second-device connection to this wall tablet still requires confirmation.
 
 For the communication diagram and exact device/cloud interfaces, see [COMMUNICATION.md](COMMUNICATION.md). Use **HTTPS**, not plain HTTP, on the network listener port 8766; HTTP sent to that TLS port can be reset before any application response.
+
+## Planned public reverse-proxy access
+
+Public access is not enabled by the current home-network setup. A separate gateway can provide a real domain, publicly trusted HTTPS and mandatory authentication while retaining passwordless private-LAN access. Such a gateway must verify the tablet's upstream TLS certificate and preserve the application's Host/origin/session/CSRF checks; a generic reverse proxy is not automatically compatible with the current IP-only allowlist. Do not disable these checks or forward the tablet's ports directly to the Internet. Public routes should exclude device/key administration, backend process control, updates and experimental vehicle-limit commands. Review the existing gateway before changing ports or services.
 
 
 ## Remote diagnostics and updates

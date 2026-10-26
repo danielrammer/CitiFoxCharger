@@ -1,3 +1,9 @@
+# External-link landing navigation — 1.10.2
+
+Validation on 26 October 2026: **459 offline tests passed in 105.303 seconds**. New local HTTP and real loopback HTTPS tests allow an external-link top-level GET only for the static landing page. Cross-site session bootstrap, status/diagnostic reads, resource fetches, embedded documents, POSTs and foreign Origin requests remain blocked. Network password authentication is still required when configured, including for navigation; passwordless LAN mode retains its existing permissions. Charging logic and GUI are unchanged. This is not a public-gateway deployment or proof that every phone trusts the private certificate.
+
+## Previous release
+
 # Charging resumption and retained diagnostics — 1.10.1
 
 Validation on 26 October 2026: **457 offline tests passed in 115.685 seconds**. Two new tests first reproduced premature stop after a pause following more than 65 minutes of successful power flow and failure to replenish an exhausted initial retry allowance after successful charging. They now pass with the initial deadline restricted to first startup and retry allowances reset only by stable measured power. Additional tests verify rejection of a single power spike, retained prior stop evidence after a new session/restart, bounded ten-session history and re-sanitization of nested/private input. Target calculations and the +5 uncertainty policy are unchanged.
