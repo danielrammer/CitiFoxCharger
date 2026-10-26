@@ -143,10 +143,19 @@ class Handler(BaseHTTPRequestHandler):
         host = self.headers.get("Host", "")
         gateway = self.server.public_gateway
         markers = self.headers.get_all(HEADER, [])
+        public_hosts = self.headers.get_all('X-CitiFox-Public-Host', [])
         if len(self.headers.get_all('Host', [])) != 1 or len(self.headers.get_all('Origin', [])) > 1:
             self.reply(403, {"error": "Ambiguous request authority."})
             return False
-        if markers or (gateway and host == gateway.host):
+        if markers or public_hosts or (gateway and host == gateway.host):
+            # Apache uses its upstream Host for TLS SNI/name verification. The
+            # public authority is accepted only alongside its authenticated
+            # assertion, exact TCP peer and this fixed transport authority.
+            if public_hosts:
+                if len(public_hosts) != 1 or host != f'citifoxcharger:{self.server.server_port}':
+                    self.reply(403, {"error": "Invalid public gateway authority."})
+                    return False
+                host = public_hosts[0]
             if not (gateway and len(markers) == 1 and gateway.accepts(self.client_address[0], host, markers[0])):
                 self.reply(403, {"error": "Public gateway authentication is required."})
                 return False

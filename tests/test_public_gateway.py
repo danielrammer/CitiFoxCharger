@@ -136,6 +136,19 @@ class GatewayHttpsTests(unittest.TestCase):
         self.assertEqual(self.call('/api/refresh', {})[0], 200)
         self.service.refresh_now.assert_called_once()
 
+    def test_apache_transport_authority_needs_assertion_peer_and_exact_public_host(self):
+        translated = {'Host': f'citifoxcharger:{self.server.server_port}',
+                      'X-CitiFox-Public-Host': 'citifox.example.test'}
+        self.assertEqual(self.call('/api/status', extra=translated)[0], 200)
+        self.assertEqual(self.call('/api/refresh', {}, extra=translated)[0], 200)
+        for change in ({'X-CitiFox-Gateway': ''}, {'X-CitiFox-Public-Host': 'evil.example'},
+                       {'Host': self.lan_host}, {'Host': 'citifoxcharger:1'},
+                       {'Origin': 'https://citifoxcharger'}, {'X-CSRF-Token': ''}):
+            with self.subTest(change=change):
+                self.assertEqual(self.call('/api/refresh', {}, extra={**translated, **change})[0], 403)
+        self.server.public_gateway.proxy_ip = '192.168.0.98'
+        self.assertEqual(self.call('/api/status', extra=translated)[0], 403)
+
     def test_origin_host_and_fetch_metadata_checks_survive_proxy(self):
         for origin in ('https://evil.example', 'https://' + self.lan_host, 'null', ''):
             self.assertEqual(self.call('/api/refresh', {}, extra={'Origin': origin})[0], 403)

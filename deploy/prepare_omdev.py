@@ -46,7 +46,7 @@ def check(password):
     def request(path, secret):
         with socket.create_connection(('127.0.0.1', 443), timeout=5) as raw:
             with tls.wrap_socket(raw, server_hostname=DOMAIN) as sock:
-                authorization = '' if secret is None else 'Authorization: Basic ' + base64.b64encode(('citifox:' + secret).encode()).decode() + '\r\n'
+                authorization = '' if secret is None else 'Authorization: Basic ' + base64.b64encode(('dnl:' + secret).encode()).decode() + '\r\n'
                 sock.sendall(('GET ' + path + ' HTTP/1.1\r\nHost: ' + DOMAIN + '\r\n' + authorization + 'Connection: close\r\n\r\n').encode())
                 response = http.client.HTTPResponse(sock)
                 response.begin()
@@ -63,7 +63,7 @@ def check(password):
 def main():
     if os.geteuid() != 0 or not os.isatty(0):
         raise SystemExit('Run locally in a visible terminal using sudo; never enter passwords in chat.')
-    if BASE.exists() or HTTP.exists() or HTTPS.exists():
+    if (BASE.exists() and any(BASE.iterdir())) or HTTP.exists() or HTTPS.exists():
         raise SystemExit('CitiFox preparation already exists. Inspect it before making further changes.')
     original = MAIN.read_text()
     if 'Include conf/extra/maya.conf' not in original:
@@ -74,7 +74,8 @@ def main():
     os.chmod(backup, 0o700)
     shutil.copy2(MAIN, backup/'httpd.conf')
     shutil.copy2('/etc/httpd/conf/extra/maya.conf', backup/'maya.conf')
-    BASE.mkdir(mode=0o750)
+    # An interrupted local password prompt may leave this directory empty.
+    BASE.mkdir(mode=0o750, exist_ok=True)
     http_gid = __import__('grp').getgrnam('http').gr_gid
     os.chown(BASE, 0, http_gid)
     print('Choose the PUBLIC CitiFox password (12 to 72 UTF-8 bytes). It stays on this PC.')
@@ -85,7 +86,7 @@ def main():
             break
         print('Passwords must match and contain 12 or more printable characters (at most 72 UTF-8 bytes).')
     del repeated
-    result = subprocess.run(['/usr/bin/htpasswd', '-i', '-B', '-C', '12', '-c', str(BASE/'users.htpasswd'), 'citifox'],
+    result = subprocess.run(['/usr/bin/htpasswd', '-i', '-B', '-C', '12', '-c', str(BASE/'users.htpasswd'), 'dnl'],
                             input=password + '\n', text=True, capture_output=True)
     if result.returncode:
         raise SystemExit('Password hashing failed; no website has been changed.')

@@ -79,7 +79,7 @@ From Settings, authenticated home-network sessions can view/download `GET /api/d
 ## Public gateway (explicit opt-in)
 
 The gateway and the tablet have separate responsibilities. Apache on omdev terminates
-public HTTPS and requires the local `citifox` Basic password on **every** public
+public HTTPS and requires the local `dnl` Basic password on **every** public
 resource, including static assets, session bootstrap, diagnostics and API routes.
 The existing tablet HTTPS listener continues to use its current LAN access policy.
 Only the tablet owns the Service, monitor, adapters, vehicle quota and charging state.
@@ -111,8 +111,15 @@ attests to the gateway's login decision; it never grants local administration.
 `Forwarded` and `X-Forwarded-*` do not grant permissions or change client identity.
 Reserve omdev's IP; do not expose the tablet ports through router forwarding.
 
-Public Host and Origin remain public all the way to the tablet. The tablet still
-checks exact HTTPS Origin, fetch metadata, browser session and CSRF. Public cookies
+The original public authority and Origin are preserved for the tablet checks. With
+Apache, `ProxyPreserveHost Off` makes TLS verify the tablet certificate CN instead
+of incorrectly expecting the public domain on the tablet certificate. The proxy
+sets `X-CitiFox-Public-Host` to the **fixed configured public hostname**, after
+rejecting any other incoming Host, and replaces any client-supplied header. The
+tablet accepts it only with the verified gateway assertion, exact TCP peer and
+exact transport Host `citifoxcharger:<actual listener port>`. Other forwarded
+headers remain irrelevant. The tablet still checks exact public HTTPS Origin,
+fetch metadata, browser session and CSRF. Public cookies
 use `lz_public_session` with Secure, HttpOnly and SameSite=Strict; public CSRF and
 session tokens are separate from LAN/local tokens. Public access allows status,
 sanitized diagnostics, refresh, normal charging start/stop/target and existing heater
@@ -146,7 +153,12 @@ both the gateway allowlist and tablet policy after activation.
 5. Copy **only** `CitiFoxCharger-Home-Network.cer` from the tablet. Compare its SHA-256
    fingerprint with the tablet's own displayed fingerprint over an independent
    trusted channel. Convert DER to PEM if needed. Verify the upstream chain, expiry
-   and IP SAN for `192.168.0.95` with this CA. Never use `-k`, `verify=False`,
+   and IP SAN for `192.168.0.95` with this CA. Apache 2.4 name checking uses DNS SANs
+   and CNs, so the template uses the existing certificate CN `CitiFoxCharger` as
+   its upstream name. Back up `/etc/hosts`, check for conflicts, and add the fixed
+   alias `192.168.0.95 citifoxcharger`. Use `ProxyPreserveHost Off` plus the
+   fixed authenticated public-authority header, as explained above. Confirm the live leaf
+   has that CN as well as the correct IP SAN before activation. Never use `-k`, `verify=False`,
    `SSLProxyVerify none`, or disable peer-name checks. Never copy tablet private keys.
 6. Install the application changes and the profile gateway digest on the tablet via
    its normal guarded update process. Prove the assertion works with Host/Origin
