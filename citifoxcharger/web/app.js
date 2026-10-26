@@ -32,6 +32,7 @@ function updateControls(){
  const staleOption=session?.can_start_manual_with_stale===true&&typeof soc==="number"&&target>soc;
  const retry=session?.can_retry_start===true||session?.can_retry_start_with_stale===true;
  $("target-value").textContent=`${target} %`;$("target").disabled=mutating||latest.limit_test?.active===true||(active&&!session?.can_adjust_target);
+ updateBattery();
  const release=session?.can_release_native_guard===true;
  const trialMode=latest.limit_test?.active===true,trialReady=trialMode&&latest.limit_trial?.can_start===true;
  $("target-label").textContent=trialMode?"Vehicle-stop test target":"Force charge to";
@@ -71,6 +72,14 @@ function updateEta(){
  $("charge-eta").textContent=text;$("charge-eta").dataset.estimate=String(text.startsWith("Estimated")||text.startsWith("Target"));
 }
 function shownEstimate(session){const meter=session?.energy_estimate;return meter?.valid===true&&activeStates.has(session.status)&&typeof meter.estimated_soc==="number"?meter.estimated_soc:null;}
+function updateBattery(){
+ const estimate=shownEstimate(latest.charging),current=estimate??latest.skoda.soc,target=Number($("target").value);
+ $("battery-current").textContent=(estimate!==null?number(estimate,1)+"*":current??"—")+" %";
+ $("battery-current").title=estimate===null?"Last vehicle report":"* Estimated from SMARTFOX charging energy; not a live vehicle measurement";
+ $("battery-target").textContent=`${target} %`;
+ $("battery-fill").style.width=`${current??0}%`;
+ $("battery-target-marker").style.left=target===100?"calc(100% - 1px)":`${target}%`;
+}
 const number=(value,digits=2)=>typeof value==="number"&&Number.isFinite(value)?value.toLocaleString(CitiFoxI18n.locale(),{minimumFractionDigits:digits,maximumFractionDigits:digits}):"—";
 function livePhaseSwitch(charger){const seconds=(Date.now()-Date.parse(charger.read_at))/1000;return charger.available&&charger.mode!=="OFF"&&charger.telemetry_available===true&&charger.phase_switching===true&&Number.isFinite(seconds)&&seconds>=-5&&seconds<=30;}
 function phaseMessage(charger){const seconds=charger.phase_switch_seconds;return Number.isInteger(seconds)&&seconds>=0&&seconds<=3600?`Phase switching in progress. Smartfox reports ${seconds} s. Waiting for charging permission.`:"Phase switching in progress. Waiting for charging permission.";}
@@ -195,6 +204,7 @@ function renderAccess(result){
  const network=result.network||{},link=$("network-url");
  $("network-status").textContent=network.message||"Home network access is disabled.";
  link.hidden=!network.enabled;link.textContent=network.url||"";if(network.url)link.href=network.url;
+ $("network-certificate-download").hidden=network.certificate_available!==true;
  if(!localAdmin){$("location-label").textContent="Home network access";$("key-form").hidden=true;document.querySelector(".app-control").hidden=true;$("config-form").querySelectorAll("input,select,button").forEach(element=>element.disabled=true);}
 }
 async function loadConfig(){const result=await api("/api/config");renderAccess(result);const sf=result.config.smartfox,car=result.config.skoda;for(const [id,value]of Object.entries({host:sf.host,port:sf.port,unit:sf.unit_id,firmware:sf.firmware,"sf-poll":sf.poll_seconds,"sf-timeout":sf.timeout_seconds,profile:sf.profile,"word-order":sf.word_order,vin:car.vin,"car-poll":car.poll_seconds,"car-stale":car.stale_seconds}))$(id).value=value;$("interpretation").checked=sf.interpretation_confirmed;$("persist").disabled=!result.key.persistence_available;$("persist").checked=result.key.persisted;$("clear-key").hidden=!result.key.configured;$("key-status").textContent=result.key.warning||(result.key.configured?(result.key.persisted?"Access saved with Windows encryption.":"Access saved until the app exits."):"No key configured.");$("sf-meta").textContent=`Pro 2 · ${sf.host} · ${sf.firmware}`;$("device-link").href=`http://${sf.host}/`;}

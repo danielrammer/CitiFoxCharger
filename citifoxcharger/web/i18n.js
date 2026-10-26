@@ -8,6 +8,10 @@ try{const saved=localStorage.getItem("citifox-language");language=["de","en"].in
 const escape=value=>value.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
 const rules=templates.map(([source,target])=>{let pattern="",last=0;for(const match of source.matchAll(/\{(\d+)\}/g)){pattern+=escape(source.slice(last,match.index))+"(.*?)";last=match.index+match[0].length;}return [new RegExp("^"+pattern+escape(source.slice(last))+"$"),target];});
 Object.assign(messages,{
+ "Current":"Aktuell", "Target":"Ziel", "Battery level and target":"Ladestand und Ladeziel",
+ "Download public certificate":"Öffentliches Zertifikat herunterladen",
+ "Public certificate only; no private key":"Nur öffentliches Zertifikat; kein privater Schlüssel",
+ "Public certificate unavailable. Run Setup-Network.cmd on the tablet.":"Öffentliches Zertifikat nicht verfügbar. Bitte Setup-Network.cmd auf dem Tablet ausführen.",
  "Vehicle-stop test target":"Fahrzeug-Stopp-Testziel",
  "Vehicle-stop trial: no app stop at target; maximum 60 minutes after Start. Manual stops and app fallbacks make the test inconclusive.":"Fahrzeug-Stopp-Test: kein App-Stopp am Ziel; maximal 60 Minuten ab Start. Manuelle Stopps und App-Abbrüche machen den Test nicht auswertbar.",
  "1 · Charger Off for test":"1 · Ladestation für Test ausschalten",

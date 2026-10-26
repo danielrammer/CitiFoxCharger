@@ -16,7 +16,7 @@ from .diagnostics import report as diagnostic_report
 from .skoda import IntegrationError
 from .instance import InstanceLock
 from .app_update import AppUpdater
-from .network import NetworkAuth,private_host,read_network,tls_context
+from .network import NetworkAuth,private_host,read_network,tls_context,read_public_certificate,PUBLIC_CERTIFICATE
 from . import __version__,release_info
 
 STATIC = Path(__file__).with_name("web")
@@ -115,7 +115,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         if attachment:
-            self.send_header("Content-Disposition", 'attachment; filename="CitiFoxCharger-Diagnostics.json"')
+            filename = PUBLIC_CERTIFICATE if attachment == PUBLIC_CERTIFICATE else 'CitiFoxCharger-Diagnostics.json'
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
@@ -202,7 +203,15 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/config":
             with service.lock:
                 self.reply(200, {"config": service.config.value, "key": service.secrets.status(),
-                                 "access":{"local_admin":self.server.network_auth is None,"can_update":True},"network":service.network})
+                                 "access":{"local_admin":self.server.network_auth is None,"can_update":True},
+                                 "network":{**service.network,'certificate_available':(service.config.directory/'network'/PUBLIC_CERTIFICATE).is_file()}})
+        elif path == '/api/network/certificate':
+            try:
+                certificate = read_public_certificate(service.config.directory)
+            except (OSError, ValueError):
+                self.reply(404, {'error':'Public certificate unavailable. Run Setup-Network.cmd on the tablet.'})
+                return
+            self.reply(200, certificate, 'application/pkix-cert', attachment=PUBLIC_CERTIFICATE)
         elif path in ("/api/diagnostics", "/api/diagnostics/download"):
             snapshot = service.diagnostic_snapshot()
             snapshot["backend_version"] = __version__
