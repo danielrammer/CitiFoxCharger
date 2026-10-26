@@ -102,7 +102,7 @@ class ManualCharging:
         session.save(replace=True, strategy=STRATEGY, status='starting', manual_phase='preparing',
                      vin=s.config.value['skoda']['vin'], target_percent=target, request_id=request_id,
                      started_at=utcnow(), last_start_epoch=now, energy_meter=meter,
-                     start_attempts=0, next_start_epoch=now, preparation_deadline=now+3900,
+                     start_attempts=0, power_cycle_attempts=0, next_start_epoch=now, preparation_deadline=now+3900,
                      message='Start attempted. Preparing M+; waiting for charging power.')
         self.tick()
         return session.state()
@@ -191,8 +191,14 @@ class ManualCharging:
                 self.stop('phase_wait', 'Phase switching did not finish within ten minutes.')
             return
         if c['power_kw'] > .1:
+            capture = timestamp(c['read_at'])
+            since = value.get('resume_power_since') if c['power_kw'] >= .5 else None
+            since = since if since is not None else capture
+            proven = c['power_kw'] >= .5 and capture-since >= 3
             session.save(status='monitoring', manual_phase='charging', last_power_epoch=now,
                          phase_since_epoch=None, ready_since_epoch=None, ready_delay_seconds=90,
+                         resume_power_since=since if c['power_kw'] >= .5 else None,
+                         power_cycle_attempts=0 if proven else value.get('power_cycle_attempts', 0),
                          message=f"Manual charging to {value['target_percent']} %; measured energy is monitored.")
             return
         # Only local, settled zero-power readiness permits a new command. Never
@@ -200,7 +206,7 @@ class ManualCharging:
         ready_since = value.get('ready_since_epoch') or now
         settle = value.get('ready_delay_seconds', 3)
         session.save(status='starting', manual_phase='waiting_power', ready_since_epoch=ready_since,
-                     phase_since_epoch=None)
+                     phase_since_epoch=None, resume_power_since=None)
         command_wait = s.command_after-time.monotonic()
         api_wait = s.car.blocked_until-s.car.clock()
         next_start = max(value.get('next_start_epoch', now),
@@ -210,12 +216,14 @@ class ManualCharging:
             next_start = max(next_start, now+s.car.quota_reset_at-s.car.clock())
         wait = max(0, int(max(next_start, ready_since+settle)-now))
         session.save(next_start_epoch=next_start, message=f'Start attempted. Waiting for charging power; next check in about {wait} seconds.')
-        if now > value['preparation_deadline'] or (value.get('last_power_epoch') and now-value['last_power_epoch'] > 600):
+        last_power = value.get('last_power_epoch')
+        if ((not last_power and now > value['preparation_deadline'])
+                or (last_power and now-last_power > 600)):
             self.stop('start_timeout', 'No charging power confirmed. Manual charging needs attention.')
             return
         if now < next_start or now-ready_since < settle or not c.get('ready_for_start'):
             return
-        attempts = value.get('start_attempts', 0)
+        attempts = value.get('power_cycle_attempts', 0 if last_power else value.get('start_attempts', 0))
         if attempts >= 3:
             if now >= next_start:
                 self.stop('start_timeout', 'No charging power after three start attempts. Please check MyŠkoda.')
@@ -223,9 +231,11 @@ class ManualCharging:
         if not s.can_manual_command():
             return
         # Persist each attempt BEFORE sending; restart never duplicates an attempt.
-        session.save(start_attempts=attempts+1, next_start_epoch=now+180, last_start_epoch=now)
+        total = value.get('start_attempts', 0)+1
+        session.save(start_attempts=total, power_cycle_attempts=attempts+1,
+                     next_start_epoch=now+180, last_start_epoch=now)
         try:
-            result = s.command('start', f"{value['request_id']}-attempt-{attempts+1}", manual=True)
+            result = s.command('start', f"{value['request_id']}-attempt-{total}", manual=True)
             if result['status'] == 'rejected':
                 self.stop('start_rejected', result['message'])
         except IntegrationError:

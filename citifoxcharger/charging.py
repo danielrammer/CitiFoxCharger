@@ -58,6 +58,14 @@ class ChargingSession:
 
     def save(self, replace=False, **changes):
         candidate = {**({} if replace else self.value), **changes}
+        if replace and self.value.get('started_at'):
+            # Retain the previous outcome when a new session replaces it. Use
+            # the same allowlist as downloads; never archive VIN or energy history.
+            from .diagnostics import report
+            previous = report({'charging': self.value})
+            history = previous['previous_sessions']
+            history.append({'session': previous['session'], 'energy_estimate': previous['energy_estimate']})
+            candidate['previous_sessions'] = history[-10:]
         atomic_write(self.path, json.dumps(candidate, ensure_ascii=False, indent=2).encode("utf-8"))
         self.value = candidate
 
@@ -418,7 +426,9 @@ class ChargingSession:
         self.restore_auto()
         self.save(status="error" if self.safety_stopped else "complete",
                   message=self.safety_stop_message() if self.safety_stopped else message + f" Smartfox is set to {self.normal_name}.",
-                  completed_at=utcnow(),vehicle_stop_confirmed=True)
+                  completed_at=utcnow(),vehicle_stop_confirmed=True,
+                  completed_vehicle_soc=self.service.cache.get('skoda', {}).get('soc'),
+                  completed_vehicle_capture=self.service.cache.get('skoda', {}).get('captured_at'))
 
     def observe_start_power(self):
         """Confirm energy flow at this charge point, independently of cloud SOC.

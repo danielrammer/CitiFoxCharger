@@ -124,6 +124,73 @@ class ManualTests(unittest.TestCase):
         self.assertEqual(self.s.charging.value['manual_phase'], 'charging')
         self.assertEqual(self.case.effects, ['M+'])
 
+    def test_pause_after_long_successful_charge_does_not_reuse_startup_deadline(self):
+        self.power=1.37
+        self.start(84)
+        for _ in range(400):self.tick()
+        self.power=0
+        self.tick()
+        self.assertFalse(self.s.charging.value.get('stop_requested'))
+        self.assertEqual(self.case.web.mode,'M+')
+        for _ in range(9):self.tick()
+        self.assertEqual(self.case.effects.count('start'),1)
+
+    def test_power_flow_resets_retry_budget_for_a_later_interruption(self):
+        self.start(84)
+        self.tick(4)
+        for _ in range(37):self.tick()
+        self.assertEqual(self.case.effects.count('start'),3)
+        self.power=7.2
+        self.tick()
+        self.tick()
+        self.power=0
+        for _ in range(20):self.tick()
+        self.assertFalse(self.s.charging.value.get('stop_requested'))
+        self.assertEqual(self.case.effects.count('start'),4)
+
+    def test_short_power_spike_does_not_replenish_three_attempt_budget(self):
+        self.start(84)
+        self.tick(4)
+        for _ in range(37):self.tick()
+        self.power=7.2
+        self.tick()
+        self.power=0
+        for _ in range(20):self.tick()
+        self.assertEqual(self.case.effects.count('start'),3)
+        self.assertEqual(self.s.charging.value['stop_cause'],'start_timeout')
+
+    def test_previous_failed_stop_survives_a_new_successful_session_and_restart(self):
+        self.power=7.2
+        self.start(84)
+        self.s.charging.save(status='complete', stop_cause='estimated_target', stop_trigger_soc=80,
+                             completed_vehicle_soc=80, vehicle_stop_confirmed=True)
+        self.s.charging.value['energy_meter']['estimated_soc']=84.01
+        self.s.start_manual_charging(84,'second-manual-attempt-002',True)
+        self.s.charging=ChargingSession(self.s,self.case.web)
+        result=report(self.s.diagnostic_snapshot(),True)
+        self.assertEqual(len(result['previous_sessions']),1)
+        previous=result['previous_sessions'][0]
+        self.assertEqual(previous['session']['target_percent'],84)
+        self.assertEqual(previous['session']['completed_vehicle_soc'],80)
+        self.assertEqual(previous['session']['stop_cause'],'estimated_target')
+        self.assertEqual(previous['energy_estimate']['estimated_soc'],84.01)
+        self.assertNotIn(self.case.config.value['skoda']['vin'],str(result))
+        self.assertNotIn('test-key-for-local-tests',str(result))
+
+    def test_session_history_is_bounded_and_resanitizes_nested_input(self):
+        self.power=7.2
+        self.start(84)
+        for i in range(12):
+            self.s.charging.save(status='complete')
+            self.s.start_manual_charging(84,f'next-manual-attempt-{i}',True)
+        self.assertEqual(len(self.s.charging.value['previous_sessions']),10)
+        self.s.charging.value['previous_sessions'][0]['session'].update(
+            vin='private-vin-marker',key='private-key-marker',previous_sessions=['private-history-marker'])
+        result=report(self.s.diagnostic_snapshot(),True)
+        self.assertEqual(len(result['previous_sessions']),10)
+        for private in ('private-vin-marker','private-key-marker','private-history-marker'):
+            self.assertNotIn(private,str(result))
+
     def test_stale_soc_and_exhausted_quota_do_not_end_power_proven_session(self):
         self.power = 7.2
         self.start(90)

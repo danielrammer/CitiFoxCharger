@@ -39,6 +39,9 @@ function updateControls(){
  $("force").disabled=mutating||appUpdating||(trialMode?!trialReady:(!release&&(!(session?.can_start_manual||staleOption)||typeof soc!=="number"||target<=soc)));
  $("open-limit-trial").textContent=latest.limit_trial?.active?"Vehicle-stop test ACTIVE · no app stop at target":trialMode?"Vehicle-stop test prepared · see Settings":"Prepare vehicle-stop test · 60 min";
  $("open-limit-trial").disabled=mutating||appUpdating||appStopped;
+ $("open-limit-trial").hidden=!(latest.limit_test?.active||latest.limit_trial?.active);
+ $("limit-test-panel").hidden=!(latest.limit_test?.active||latest.limit_trial?.active);
+ $("limit-test-panel").closest("section").hidden=!(latest.limit_test?.active||latest.limit_trial?.active||release||["setting","verified","restore_needed","restoring","attention"].includes(session?.vehicle_limit?.phase));
  $("release-limit-guard").hidden=!release;$("release-limit-guard").disabled=mutating||appUpdating;
  $("stop").disabled=mutating||!(session?.can_stop??(active||latest.controls.stop));
  let hint="";

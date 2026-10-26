@@ -1,3 +1,11 @@
+# Charging resumption and retained diagnostics — 1.10.1
+
+Validation on 26 October 2026: **457 offline tests passed in 115.685 seconds**. Two new tests first reproduced premature stop after a pause following more than 65 minutes of successful power flow and failure to replenish an exhausted initial retry allowance after successful charging. They now pass with the initial deadline restricted to first startup and retry allowances reset only by stable measured power. Additional tests verify rejection of a single power spike, retained prior stop evidence after a new session/restart, bounded ten-session history and re-sanitization of nested/private input. Target calculations and the +5 uncertainty policy are unchanged.
+
+Fake-adapter browser checks confirm the overview vehicle-test shortcut and inactive experimental Settings panel are hidden, Diagnostics remains reachable, and normal A+ manual-start controls remain available. Both themes were inspected at 800×1280 with no overview overflow and no JS warnings/errors. No real vehicle command or tablet update was performed. These reproduced software faults do not establish the cause of a historical 80% stop whose session was replaced before diagnostics were exported; the new history prevents that evidence loss for subsequent attempts.
+
+## Previous release
+
 # Manual charging with energy accounting — 1.10.0
 
 Validation on 26 October 2026: **452 offline tests passed in 98.787 seconds** (`python -m unittest discover -s tests -v`). JavaScript syntax and Git whitespace checks passed. The 21 new cases cover power integration, delayed SOC rebasing at capture time, duplicate reports, A+ surplus takeover, start progress/idempotency and bounded retries, phase pause/resume, stale cloud/quota continuity, both target-stop paths, explicit mode selection, short/missing local data, target +5 uncertainty tolerance, recovery after measurement gaps, persistence/restart, target changes, access/disconnection gates, sanitized diagnostics and storage/internal-monitor failures. Existing native-limit, isolated-trial, HTTP/LAN security, update and device-adapter tests remain passing; two manual-dispatch tests now assert queued readiness and energy tracking instead of the superseded cloud freshness deadline.

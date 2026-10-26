@@ -47,9 +47,19 @@ def report(status, live=False):
                      'code':('network','auth','forbidden','unsupported','not_found','rate_limit','quota_reserved','protocol','upstream'),
                      'problem_type':('api-key-expired','api-key-not-authorized','operation-not-authorized','operation-not-supported','operation-disabled','rate-limit-exceeded','vehicle-not-accepting-requests')})
         for item in attempts[-10:]] if isinstance(attempts,list) else []}
+    history = []
+    prior = session.get('previous_sessions', [])
+    for item in prior[-10:] if isinstance(prior, list) else []:
+        if not isinstance(item, dict) or not isinstance(item.get('session'), dict):
+            continue
+        # Strip nested histories before applying the normal allowlist again.
+        saved = {key: value for key, value in item['session'].items() if key != 'previous_sessions'}
+        saved['energy_meter'] = item.get('energy_estimate', {})
+        sanitized = report({'charging': saved})
+        history.append({'session':sanitized['session'], 'energy_estimate':sanitized['energy_estimate']})
     return {'report_version': 1, 'program_version': __version__,
             'backend_version': version if isinstance(version, str) and re.fullmatch(r'\d+\.\d+\.\d+', version) else None,
-            'generated_at': utcnow(),
+            'generated_at': utcnow(), 'previous_sessions':history,
             'source': 'running_backend' if live else 'saved_files_only',
             'limit_test':test_report,
             'limit_trial':selected(status.get('limit_trial',{}),
@@ -77,11 +87,11 @@ def report(status, live=False):
             'charger': selected(charger, numbers=('power_kw','status_code','info_code','offered_current_a','phase_count','phase_switch_seconds'), flags=('available','telemetry_available','ready_for_start','phase_switching'),
                                 dates=('read_at',), enums={'mode': ('OFF','A+','M+','A','M')}),
             'session': selected(session, numbers=('target_percent','last_start_epoch','fresh_soc_deadline',
-                        'start_attempts', 'next_start_epoch', 'start_eta_seconds',
+                        'start_attempts', 'power_cycle_attempts', 'next_start_epoch', 'start_eta_seconds','completed_vehicle_soc',
                         'data_missing_since','stop_intent_epoch','stop_requested_epoch','stop_failures','last_stop_failure_epoch','phase_start_deadline_epoch','phase_ready_since_epoch','stop_trigger_soc','target_probe_count','freshness_probe_count',
                         'stop_trigger_quota_remaining','stop_trigger_cooldown_seconds','stop_trigger_quota_reset_seconds'),
                         flags=('awaiting_fresh_soc','stop_requested','stop_guard','auto_restored','vehicle_stop_confirmed','phase_start_pending'),
-                        dates=('started_at','completed_at','stop_requested_at','stop_trigger_at','stop_trigger_captured_at','stop_trigger_read_at','target_probe_capture','target_probe_scheduled_at','freshness_probe_capture','freshness_probe_scheduled_at','start_confirmed_at'),
+                        dates=('started_at','completed_at','completed_vehicle_capture','stop_requested_at','stop_trigger_at','stop_trigger_captured_at','stop_trigger_read_at','target_probe_capture','target_probe_scheduled_at','freshness_probe_capture','freshness_probe_scheduled_at','start_confirmed_at'),
                         enums={'status': ACTIVE | {'idle','complete','closed','error'},
                                'strategy':('smartfox_energy',),
                                'manual_phase':('preparing','waiting_power','phase_switching','charging'),
