@@ -17,6 +17,7 @@ from .skoda import IntegrationError
 from .instance import InstanceLock
 from .app_update import AppUpdater
 from .network import NetworkAuth,private_host,read_network,tls_context
+from .public_gateway import HEADER, PUBLIC_READS, PUBLIC_ACTIONS, read_public_gateway
 from . import __version__,release_info
 
 STATIC = Path(__file__).with_name("web")
@@ -33,9 +34,12 @@ class LocalServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False
 
-    def __init__(self, port, service, *, address="127.0.0.1", network_auth=None, tls=None, updater=None):
+    def __init__(self, port, service, *, address="127.0.0.1", network_auth=None, tls=None, updater=None, public_gateway=None):
         if bool(network_auth) != bool(tls):
             raise ValueError("Network access requires HTTPS and a configured access policy.")
+        if public_gateway and not network_auth:
+            raise ValueError("A public gateway requires the protected HTTPS network listener.")
+        self.public_gateway = public_gateway
         if address != "127.0.0.1":
             private_host(address)
             if not network_auth:raise ValueError("Unprotected network access is not allowed.")
@@ -49,6 +53,8 @@ class LocalServer(ThreadingHTTPServer):
         self.update_state()
         self.session = secrets.token_urlsafe(32)
         self.csrf = secrets.token_urlsafe(32)
+        self.public_session = secrets.token_urlsafe(32)
+        self.public_csrf = secrets.token_urlsafe(32)
         self.instance_id = secrets.token_urlsafe(12)
         self.restart_requested = False
         self.hosts = {f"{address}:{self.server_port}"} if network_auth else {f"127.0.0.1:{self.server_port}", f"localhost:{self.server_port}"}
@@ -123,7 +129,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
         if cookie:
             secure = "; Secure" if self.server.tls else ""
-            self.send_header("Set-Cookie", f"lz_session={self.server.session}; HttpOnly; SameSite=Strict; Path=/{secure}")
+            name, session, _ = self.session_credentials()
+            self.send_header("Set-Cookie", f"{name}={session}; HttpOnly; SameSite=Strict; Path=/{secure}")
         if self.server.network_auth and self.server.network_auth.config.get('authentication','password') != 'none' and code == 401:
             self.send_header("WWW-Authenticate", 'Basic realm="CitiFoxCharger", charset="UTF-8"')
         if self.server.network_auth and code == 429:
@@ -132,8 +139,19 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def valid_request(self, mutation=False):
+        self.public_request = False
         host = self.headers.get("Host", "")
-        if host not in self.server.hosts:
+        gateway = self.server.public_gateway
+        markers = self.headers.get_all(HEADER, [])
+        if len(self.headers.get_all('Host', [])) != 1 or len(self.headers.get_all('Origin', [])) > 1:
+            self.reply(403, {"error": "Ambiguous request authority."})
+            return False
+        if markers or (gateway and host == gateway.host):
+            if not (gateway and len(markers) == 1 and gateway.accepts(self.client_address[0], host, markers[0])):
+                self.reply(403, {"error": "Public gateway authentication is required."})
+                return False
+            self.public_request = True
+        elif host not in self.server.hosts:
             self.reply(403, {"error": "Host is not allowed."})
             return False
         origin = self.headers.get("Origin")
@@ -149,7 +167,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "none") and not landing_navigation:
             self.reply(403, {"error": "Access from another website is not allowed."})
             return False
-        if self.server.network_auth:
+        if self.server.network_auth and not self.public_request:
             if self.client_address[0] != "127.0.0.1":
                 try:private_host(self.client_address[0])
                 except ValueError:
@@ -161,20 +179,26 @@ class Handler(BaseHTTPRequestHandler):
                 return False
         return True
 
+    def session_credentials(self):
+        if getattr(self, 'public_request', False):
+            return 'lz_public_session', self.server.public_session, self.server.public_csrf
+        return 'lz_session', self.server.session, self.server.csrf
+
     def authenticated(self, mutation=False):
+        name, session, csrf = self.session_credentials()
         cookie = SimpleCookie()
         try:
             cookie.load(self.headers.get("Cookie", ""))
-            entry = cookie.get("lz_session")
+            entry = cookie.get(name)
             token = entry.value if entry else ""
-            valid = hmac.compare_digest(token, self.server.session)
+            valid = hmac.compare_digest(token, session)
         except (ValueError, TypeError):
             valid = False
         if not valid:
             self.reply(401, {"error": "Local session expired. Reload the page."})
             return False
         try:
-            csrf_valid = hmac.compare_digest(self.headers.get("X-CSRF-Token", ""), self.server.csrf)
+            csrf_valid = hmac.compare_digest(self.headers.get("X-CSRF-Token", ""), csrf)
         except TypeError:
             csrf_valid = False
         if mutation and not csrf_valid:
@@ -191,18 +215,23 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, (STATIC / file).read_bytes(), kind)
             return
         if path == "/api/session":
-            self.reply(200, {"csrf": self.server.csrf}, cookie=True)
+            self.reply(200, {"csrf": self.session_credentials()[2]}, cookie=True)
             return
         if path == "/health":
             self.reply(200, {"app": "CitiFoxCharger", "status": "ok", "version": __version__, "instance_id": self.server.instance_id,"release":self.server.release})
             return
         if not self.authenticated():
             return
+        if self.public_request and path not in PUBLIC_READS:
+            self.reply(403, {"error": "This operation is not available through public access."})
+            return
         service = self.server.service
         if path == "/api/config":
             with service.lock:
                 self.reply(200, {"config": service.config.value, "key": service.secrets.status(),
-                                 "access":{"local_admin":self.server.network_auth is None,"can_update":True},"network":service.network})
+                                 "access":{"local_admin":self.server.network_auth is None,
+                                           "public_access":self.public_request,"can_update":not self.public_request,
+                                           "can_limit_test":not self.public_request},"network":service.network})
         elif path in ("/api/diagnostics", "/api/diagnostics/download"):
             snapshot = service.diagnostic_snapshot()
             snapshot["backend_version"] = __version__
@@ -220,6 +249,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not self.valid_request(mutation=True) or not self.authenticated(mutation=True):
+            return
+        if self.public_request and urlsplit(self.path).path not in PUBLIC_ACTIONS:
+            self.reply(403, {"error": "This operation is not available through public access."})
             return
         remote_actions = {"/api/app/update","/api/refresh","/api/charging/start","/api/charging/stop","/api/charging/target","/api/charging/restore-limit","/api/charging/confirm-restored-limit","/api/charging/release-limit-guard",
                           "/api/charging/limit-test/set","/api/charging/limit-test/end","/api/charging/limit-test/start-trial",
@@ -379,8 +411,12 @@ def make_server(port, data_dir):
         try:
             network = read_network(data_dir)
             if network:
+                # An invalid gateway configuration closes only public access; LAN monitoring remains available.
+                try:gateway = read_public_gateway(data_dir)
+                except (OSError, ValueError, TypeError, KeyError):gateway = None
                 remote = LocalServer(network["port"],server.service,address=network["host"],
-                                     network_auth=NetworkAuth(network),tls=tls_context(data_dir),updater=server.updater)
+                                     network_auth=NetworkAuth(network),tls=tls_context(data_dir),updater=server.updater,
+                                     public_gateway=gateway)
                 server.remote_server = remote
                 server.remote_thread = threading.Thread(target=remote.serve_forever,kwargs={"poll_interval":.25},daemon=True)
                 server.remote_thread.start()

@@ -2,6 +2,7 @@
 const $ = id => document.getElementById(id);
 let csrf="", refreshing=false, mutating=false, latest=null, targetInitialized=false, appStopped=false, refreshTimer=null, targetEditing=false, localAdmin=true;
 let appUpdating=false,updateAllowed=false,updateKeyReady=false,updateJob=null,updatePreviousJob=null,updateStarted=0;
+let publicAccess=false,limitTestAllowed=false;
 const activeStates=new Set(["starting","monitoring","stop_pending","restore_pending","paused","interrupted"]);
 const themeMedia=window.matchMedia("(prefers-color-scheme: dark)");
 let themeChoice="system";
@@ -43,6 +44,11 @@ function updateControls(){
  $("limit-test-panel").hidden=!(latest.limit_test?.active||latest.limit_trial?.active);
  $("limit-test-panel").closest("section").hidden=!(latest.limit_test?.active||latest.limit_trial?.active||release||["setting","verified","restore_needed","restoring","attention"].includes(session?.vehicle_limit?.phase));
  $("release-limit-guard").hidden=!release;$("release-limit-guard").disabled=mutating||appUpdating;
+ if(!limitTestAllowed){
+  $("open-limit-trial").hidden=true;
+  $("limit-test-panel").closest("section").hidden=true;
+  if(trialMode||release)$("force").disabled=true;
+ }
  $("stop").disabled=mutating||!(session?.can_stop??(active||latest.controls.stop));
  let hint="";
  if(!car.available)hint=car.code==="not_configured"?"Configure vehicle access in Settings.":"The vehicle is currently unreachable.";
@@ -190,12 +196,15 @@ function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=
 async function refresh(){if(refreshing||appStopped||appUpdating)return;refreshing=true;$("refresh").setAttribute("aria-busy","true");try{render(await api("/api/status"));$("global-error").hidden=true;}catch(e){$("force").disabled=true;$("stop").disabled=true;error(e.message||"The local app is unreachable.");}finally{refreshing=false;$("refresh").removeAttribute("aria-busy");}}
 function renderAccess(result){
  localAdmin=result.access?.local_admin!==false;
+ publicAccess=result.access?.public_access===true;
+ limitTestAllowed=result.access?.can_limit_test!==false;
  updateAllowed=result.access?.can_update===true||localAdmin;$("app-update-panel").hidden=!updateAllowed;
  updateKeyReady=!result.key?.configured||result.key?.persisted===true;
  const network=result.network||{},link=$("network-url");
  $("network-status").textContent=network.message||"Home network access is disabled.";
  link.hidden=!network.enabled;link.textContent=network.url||"";if(network.url)link.href=network.url;
  if(!localAdmin){$("location-label").textContent="Home network access";$("key-form").hidden=true;document.querySelector(".app-control").hidden=true;$("config-form").querySelectorAll("input,select,button").forEach(element=>element.disabled=true);}
+ if(publicAccess){$("location-label").textContent="Public access";$("config-form").hidden=true;$("device-link").hidden=true;link.hidden=true;}
 }
 async function loadConfig(){const result=await api("/api/config");renderAccess(result);const sf=result.config.smartfox,car=result.config.skoda;for(const [id,value]of Object.entries({host:sf.host,port:sf.port,unit:sf.unit_id,firmware:sf.firmware,"sf-poll":sf.poll_seconds,"sf-timeout":sf.timeout_seconds,profile:sf.profile,"word-order":sf.word_order,vin:car.vin,"car-poll":car.poll_seconds,"car-stale":car.stale_seconds}))$(id).value=value;$("interpretation").checked=sf.interpretation_confirmed;$("persist").disabled=!result.key.persistence_available;$("persist").checked=result.key.persisted;$("clear-key").hidden=!result.key.configured;$("key-status").textContent=result.key.warning||(result.key.configured?(result.key.persisted?"Access saved with Windows encryption.":"Access saved until the app exits."):"No key configured.");$("sf-meta").textContent=`Pro 2 · ${sf.host} · ${sf.firmware}`;$("device-link").href=`http://${sf.host}/`;}
 async function mutation(fn,allowDuringUpdate=false){if(mutating||(appUpdating&&!allowDuringUpdate))return;mutating=true;updateControls();let failure=null;try{await fn();}catch(e){failure=e.message;}finally{mutating=false;await refresh();if(failure)error(failure);}}
@@ -285,7 +294,7 @@ window.addEventListener("citifoxlanguagechange",()=>{updateHeaderClock();if(late
 
 $("restore-vehicle-limit").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/charging/restore-limit",{request_id:crypto.randomUUID()});if(result.message)toast(result.message);}));
 
-function releaseLimitGuard(){if(latest?.charging?.can_release_native_guard&&!mutating&&!appUpdating)$("release-guard-dialog").showModal();}
+function releaseLimitGuard(){if(limitTestAllowed&&latest?.charging?.can_release_native_guard&&!mutating&&!appUpdating)$("release-guard-dialog").showModal();}
 $("cancel-release-guard").addEventListener("click",()=>$("release-guard-dialog").close());
 $("confirm-release-guard").addEventListener("click",()=>{$("release-guard-dialog").close();if(!latest?.charging?.can_release_native_guard)return;mutation(async()=>{const result=await api("/api/charging/release-limit-guard",{request_id:crypto.randomUUID(),accept_unconfirmed_limit:true});if(result.message)toast(result.message);});});
 $("release-limit-guard").addEventListener("click",releaseLimitGuard);
@@ -303,7 +312,7 @@ $("restore-limit-test").addEventListener("click",()=>mutation(async()=>{
 }));
 let trialTarget=null;
 function openTrialDialog(){
- if(mutating||appUpdating||appStopped||latest?.limit_trial?.can_start!==true)return;
+ if(!limitTestAllowed||mutating||appUpdating||appStopped||latest?.limit_trial?.can_start!==true)return;
  const attempts=latest?.limit_test?.attempts||[];trialTarget=attempts.at(-1)?.target_percent;
  if(!Number.isInteger(trialTarget))return;
  const de=CitiFoxI18n.language()==="de";
