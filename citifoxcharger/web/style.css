@@ -196,6 +196,7 @@ button,a,input,select,summary{-webkit-tap-highlight-color:transparent}button,sum
 #settings>.diagnosis>summary{min-height:44px;padding:10px 0}
 
 /* Charging summary: power on the left, SOC in the battery, target on the bar. */
+#overview .metric{font-size:72px}
 #overview .battery{width:160px;height:72px;padding:5px;background:var(--paper);border-color:var(--line);box-shadow:none;flex-shrink:0}
 #overview .battery:after{background:var(--line);top:50%;transform:translateY(-50%)}
 #overview .battery .battery-fill{position:absolute;left:0;top:0;bottom:0;height:auto;border-radius:10px;opacity:.45}
@@ -203,14 +204,15 @@ button,a,input,select,summary{-webkit-tap-highlight-color:transparent}button,sum
 #overview .battery .battery-level small{font-size:16px;line-height:1;color:var(--muted)}
 .battery-level b{display:none;font-size:26px;font-weight:600;color:var(--green)}
 .is-charging .battery-level b{display:inline}
-#overview .battery #soc{font-size:28px;font-weight:650;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;margin:0}
+#overview .battery #soc{font-size:32px;font-weight:650;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;margin:0}
 .soc-progress{position:relative;padding-top:20px}
 .soc-target{position:absolute;inset:0;pointer-events:none;--target:80%}
 .soc-target:after{content:"";position:absolute;left:var(--target);top:17px;height:14px;border-left:2px solid var(--ink);transform:translateX(-50%)}
 .soc-target>span{position:absolute;left:clamp(24px,var(--target),calc(100% - 24px));top:0;transform:translateX(-50%);font-size:11px;line-height:16px;font-weight:650;white-space:nowrap;color:var(--ink)}
 @media(orientation:portrait) and (min-width:480px) and (max-height:1100px),(orientation:landscape) and (min-width:1000px) and (max-height:900px){
  #overview .battery{width:148px;height:58px}
- #overview .battery #soc{font-size:24px}
+ #overview .metric{font-size:60px}
+ #overview .battery #soc{font-size:28px}
  .battery-level b{font-size:25px}
  .soc-progress{padding-top:17px}.soc-target:after{top:14px}.soc-target>span{font-size:10px;line-height:14px}
 }
@@ -218,6 +220,9 @@ button,a,input,select,summary{-webkit-tap-highlight-color:transparent}button,sum
  #overview .soc-row{flex-wrap:wrap;row-gap:8px}
  #overview .power-group{flex-basis:100%;align-items:flex-end}
  #overview .battery{width:140px;height:58px}
- #overview .battery #soc{font-size:22px}
+ #overview .metric{font-size:56px}
+ #overview .battery #soc{font-size:26px}
  .battery-level b{font-size:22px}
 }
+
+@media(orientation:portrait) and (min-width:480px) and (max-height:900px),(orientation:landscape) and (min-width:1000px) and (max-height:800px){#overview .metric{font-size:50px}}

@@ -1,3 +1,11 @@
+# Charging font balance — 1.10.8
+
+Validation on 27 October 2026: JS syntax, Git whitespace and the three existing Node display/download/public-permission checks passed. The main charging-power value is slightly smaller and has one decimal place; the SOC inside the battery is larger. No charging, power measurement, estimation, gateway or other UI behavior changed.
+
+Simulated browser QA verified 7.2 kW and 81.4%* with the target marker and vehicle-report footer retained. The overview fits without scrolling at 800×1280, 800×1000, 640×1024 and 1280×800. Both themes were checked; no browser errors or warnings occurred. The screenshot is labelled simulated and stored outside Git. No real-device commands were sent during display testing.
+
+## Previous release
+
 # Power-first charging display — 1.10.7
 
 Validation on 27 October 2026: JavaScript syntax, whitespace checks and the three Node display/download/public-role checks passed. Only the charging summary was rearranged: measured Smartfox kW are prominent on the left; the larger battery shows the current vehicle/estimated percentage. The asterisk, last measured vehicle SOC/time and existing target marker remain distinct. The lightning icon still follows the existing recognized-charging state. Charging, stopping, energy estimation and gateway policy are unchanged.
