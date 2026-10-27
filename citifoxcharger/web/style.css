@@ -200,7 +200,8 @@ button,a,input,select,summary{-webkit-tap-highlight-color:transparent}button,sum
 #overview .battery:after{background:var(--line)}
 #overview .battery .battery-fill{position:absolute;left:0;top:0;bottom:0;height:auto;border-radius:10px;opacity:.45}
 #overview .battery .battery-power{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:6px;line-height:1;color:var(--ink);font-size:inherit}
-.battery-power b{font-size:26px;font-weight:600;color:var(--green)}
+.battery-power b{display:none;font-size:26px;font-weight:600;color:var(--green)}
+.is-charging .battery-power b{display:inline}
 #overview .battery #power-reading{font-size:18px;font-weight:650;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;margin:0}
 .soc-progress{position:relative;padding-top:20px}
 .soc-target{position:absolute;inset:0;pointer-events:none;--target:80%}
