@@ -195,28 +195,29 @@ button,a,input,select,summary{-webkit-tap-highlight-color:transparent}button,sum
 #settings .advanced{margin-top:12px;padding-top:10px}
 #settings>.diagnosis>summary{min-height:44px;padding:10px 0}
 
-/* Charging summary: power inside the battery, selected target on the SOC bar. */
-#overview .battery{width:132px;padding:5px;background:var(--paper);border-color:var(--line);box-shadow:none;flex-shrink:0}
-#overview .battery:after{background:var(--line)}
+/* Charging summary: power on the left, SOC in the battery, target on the bar. */
+#overview .battery{width:160px;height:72px;padding:5px;background:var(--paper);border-color:var(--line);box-shadow:none;flex-shrink:0}
+#overview .battery:after{background:var(--line);top:50%;transform:translateY(-50%)}
 #overview .battery .battery-fill{position:absolute;left:0;top:0;bottom:0;height:auto;border-radius:10px;opacity:.45}
-#overview .battery .battery-power{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:6px;line-height:1;color:var(--ink);font-size:inherit}
-.battery-power b{display:none;font-size:26px;font-weight:600;color:var(--green)}
-.is-charging .battery-power b{display:inline}
-#overview .battery #power-reading{font-size:18px;font-weight:650;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;margin:0}
+#overview .battery .battery-level{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:6px;line-height:1;color:var(--ink);font-size:inherit}
+#overview .battery .battery-level small{font-size:16px;line-height:1;color:var(--muted)}
+.battery-level b{display:none;font-size:26px;font-weight:600;color:var(--green)}
+.is-charging .battery-level b{display:inline}
+#overview .battery #soc{font-size:28px;font-weight:650;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;margin:0}
 .soc-progress{position:relative;padding-top:20px}
 .soc-target{position:absolute;inset:0;pointer-events:none;--target:80%}
 .soc-target:after{content:"";position:absolute;left:var(--target);top:17px;height:14px;border-left:2px solid var(--ink);transform:translateX(-50%)}
 .soc-target>span{position:absolute;left:clamp(24px,var(--target),calc(100% - 24px));top:0;transform:translateX(-50%);font-size:11px;line-height:16px;font-weight:650;white-space:nowrap;color:var(--ink)}
 @media(orientation:portrait) and (min-width:480px) and (max-height:1100px),(orientation:landscape) and (min-width:1000px) and (max-height:900px){
- #overview .battery{width:124px}
- #overview .battery #power-reading{font-size:16px}
- .battery-power b{font-size:23px}
+ #overview .battery{width:148px;height:58px}
+ #overview .battery #soc{font-size:24px}
+ .battery-level b{font-size:25px}
  .soc-progress{padding-top:17px}.soc-target:after{top:14px}.soc-target>span{font-size:10px;line-height:14px}
 }
 @media(max-width:479px){
  #overview .soc-row{flex-wrap:wrap;row-gap:8px}
  #overview .power-group{flex-basis:100%;align-items:flex-end}
- #overview .battery{width:112px}
- #overview .battery #power-reading{font-size:14px}
- .battery-power b{font-size:22px}
+ #overview .battery{width:140px;height:58px}
+ #overview .battery #soc{font-size:22px}
+ .battery-level b{font-size:22px}
 }

@@ -1,3 +1,11 @@
+# Power-first charging display — 1.10.7
+
+Validation on 27 October 2026: JavaScript syntax, whitespace checks and the three Node display/download/public-role checks passed. Only the charging summary was rearranged: measured Smartfox kW are prominent on the left; the larger battery shows the current vehicle/estimated percentage. The asterisk, last measured vehicle SOC/time and existing target marker remain distinct. The lightning icon still follows the existing recognized-charging state. Charging, stopping, energy estimation and gateway policy are unchanged.
+
+Simulated browser QA checked both themes with 7.20 kW, estimated 81.4%*, last vehicle report 80% and target 85%. The overview fits without scrolling at 800×1280, 800×1000, 640×1024 and 1280×800; a 390px phone has no horizontal overflow. No real-device switching commands were sent. Screenshots remain outside Git and are labelled simulated. The preceding gateway release completed 474 Windows tests successfully with three Linux/Apache-only skips.
+
+## Previous release
+
 # Public gateway Windows validation — 1.10.6 (PR #2)
 
 Validation on 27 October 2026: **474 offline tests ran in 65.229 seconds, successful with 3 Linux/Apache-only skips** on Windows. The gateway's 9 real loopback HTTPS/policy tests pass using disposable certificates from the existing Windows helper, without requiring the OpenSSL CLI or changing the trust store. The public-role UI test, charging-display test and certificate-download test also passed. JavaScript syntax and Git whitespace checks passed.

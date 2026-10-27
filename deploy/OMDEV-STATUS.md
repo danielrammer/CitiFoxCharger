@@ -96,3 +96,13 @@ current public CA with hostname validation enabled: the running release remains
 1.10.4, commit 5d24163b. No tablet update or public-server activation was performed.
 The existing protected gateway transfer file still needs to be copied to the active
 tablet profile; it is not included in this repository. Do not paste it into logs.
+
+## Tablet installation — 2026-10-27
+
+After user approval, PR #2 was merged to main as 9a814d18. The existing guarded
+LAN updater installed 1.10.6 successfully. The reviewer confirmed the live HTTPS
+health endpoint, completed update state, A+ mode, zero charging power and enabled
+LAN access using the tablet's current public CA with hostname checks enabled.
+No charging command or public-server activation was sent. The protected gateway
+profile configuration still needs transfer from omdev into the active tablet
+profile before the server agent enables forwarding and performs the public test.
