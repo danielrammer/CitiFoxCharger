@@ -1,3 +1,13 @@
+# Public gateway Windows validation — 1.10.6 (PR #2)
+
+Validation on 27 October 2026: **474 offline tests ran in 65.229 seconds, successful with 3 Linux/Apache-only skips** on Windows. The gateway's 9 real loopback HTTPS/policy tests pass using disposable certificates from the existing Windows helper, without requiring the OpenSSL CLI or changing the trust store. The public-role UI test, charging-display test and certificate-download test also passed. JavaScript syntax and Git whitespace checks passed.
+
+This PR includes the completed 1.10.5 charging display. Device/charging/energy/stopping modules are unchanged. Public access still requires explicit protected profile configuration and an authenticated omdev assertion; merely installing this release does not activate a public route. Local/LAN certificate downloads remain available; public downloads and administrative operations are hidden and denied. The three Apache integration tests require Linux and were not rerun here; see the server agent's separate Linux validation.
+
+Read-only production check: the tablet's /health validated with its current public CA and hostname checking enabled. It reports version 1.10.4, commit 5d24163b. A sanitized status check showed A+, zero charging power and shutdown allowed at that moment. No production update, restart, switching command, trust-store change or public-server activation was performed. The protected omdev gateway configuration is not present locally; SSH access failed closed because this Windows host has no verified omdev host key. Server deployment remains a separate step.
+
+## Previous release
+
 # Compact charging summary — 1.10.5
 
 Validation on 27 October 2026: JavaScript syntax, Git whitespace, `node tests/test_charging_display.js` and `node tests/test_certificate_download.js` passed. Rendering checks cover the target marker, HH:MM duration and expected arrival time, stale/zero power and phase-switching guards, and the distinction between an estimated SOC and the last timestamped vehicle report. No backend, charging, estimation or stopping logic changed; ETA still uses the existing 32.3 kWh / 90% / constant-power calculation rounded to five minutes.

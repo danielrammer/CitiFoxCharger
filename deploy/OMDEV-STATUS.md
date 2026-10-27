@@ -82,3 +82,17 @@ remain available on local/LAN access and are hidden/denied on public access.
 Production proxy forwarding must remain disabled until the latest gateway code and
 protected gateway configuration are installed on the tablet. Installing the CA into
 the system proxy configuration and activation will also require local root access.
+
+## Windows review follow-up — 2026-10-27
+
+PR #2 also includes the 1.10.5 charging display and is prepared as 1.10.6.
+The Windows OpenSSL CLI test dependency was removed by reusing the disposable
+native certificate helper; all 474 Windows offline tests completed successfully
+with the three Linux/Apache-only integration tests skipped. The three Node UI
+checks pass. These are simulated/loopback checks, not production switching tests.
+
+This reviewer independently verified the tablet's HTTPS health endpoint using its
+current public CA with hostname validation enabled: the running release remains
+1.10.4, commit 5d24163b. No tablet update or public-server activation was performed.
+The existing protected gateway transfer file still needs to be copied to the active
+tablet profile; it is not included in this repository. Do not paste it into logs.

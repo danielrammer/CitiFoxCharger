@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 function fixture(){
  const nodes=new Map();
- function node(id){if(!nodes.has(id)){const section={hidden:false};nodes.set(id,{id,hidden:false,disabled:false,value:'80',textContent:'',dataset:{},style:{},classList:{toggle(){}},addEventListener(){},setAttribute(){},removeAttribute(){},querySelectorAll(){return[];},closest(){return section;}});}return nodes.get(id);}
+ function node(id){if(!nodes.has(id)){const section={hidden:false};nodes.set(id,{id,hidden:false,disabled:false,value:'80',textContent:'',dataset:{},style:{setProperty(){}},classList:{toggle(){}},addEventListener(){},setAttribute(){},removeAttribute(){},querySelectorAll(){return[];},closest(){return section;}});}return nodes.get(id);}
  const document={getElementById:node,querySelector:node,querySelectorAll(){return[];},documentElement:node('root'),addEventListener(){}};
  const context=vm.createContext({document,window:{matchMedia(){return{matches:false,addEventListener(){}};},addEventListener(){}},localStorage:{getItem(){return null;},setItem(){}},CitiFoxI18n:{locale(){return'en';}},setTimeout(){},setInterval(){},Date,Number,Set,console});
  let source=fs.readFileSync('citifoxcharger/web/app.js','utf8');

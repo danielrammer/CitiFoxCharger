@@ -2,6 +2,7 @@
 import hashlib
 import http.client
 import json
+import os
 import ssl
 import subprocess
 import tempfile
@@ -50,7 +51,18 @@ class GatewayHttpsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.material = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.material.cleanup)
         root = Path(cls.material.name)
+        if os.name == 'nt':
+            # Use the same native, disposable certificate helper as the LAN tests.
+            # This never changes the Windows trust store and needs no OpenSSL CLI.
+            from setup_network import create_certificate
+            from citifoxcharger.network import tls_context, PUBLIC_CERTIFICATE
+            create_certificate(root, '127.0.0.1')
+            cls.tls = tls_context(root)
+            cls.client_tls = ssl.create_default_context(cadata=ssl.DER_cert_to_PEM_cert(
+                (root/'network'/PUBLIC_CERTIFICATE).read_bytes()))
+            return
         subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
                         '-keyout', str(root/'key.pem'), '-out', str(root/'cert.pem'),
                         '-days', '1', '-subj', '/CN=127.0.0.1',
@@ -59,10 +71,6 @@ class GatewayHttpsTests(unittest.TestCase):
         cls.tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         cls.tls.load_cert_chain(root/'cert.pem', root/'key.pem')
         cls.client_tls = ssl.create_default_context(cafile=str(root/'cert.pem'))
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.material.cleanup()
 
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
