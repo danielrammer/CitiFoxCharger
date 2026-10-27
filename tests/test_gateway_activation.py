@@ -33,6 +33,12 @@ class ActivationPreflightTests(unittest.TestCase):
     def call(self, path, headers=None, data=None):
         return self.tablet.call(path, data, extra=headers)
 
+    def test_shipped_holding_vhost_is_not_an_active_proxy(self):
+        holding = (Path(__file__).resolve().parents[1]/'deploy/citifox-tls-closed.conf').read_bytes()
+        self.assertFalse(activation.proxy_is_active(holding))
+        for directive in (b'    ProxyPass / https://tablet/\n', b'  proxypassmatch ^/ https://tablet/\n'):
+            self.assertTrue(activation.proxy_is_active(holding + directive))
+
     def test_preflight_accepts_restricted_policy_without_switching_any_devices(self):
         result = activation.validate_public(self.call, self.headers)
         self.assertTrue(result['Cookie'].startswith('lz_public_session='))

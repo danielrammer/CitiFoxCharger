@@ -9,6 +9,7 @@ import http.client
 import json
 import os
 import pwd
+import re
 import shlex
 import socket
 import ssl
@@ -36,6 +37,10 @@ ORIGIN = 'https://' + DOMAIN
 def ensure(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+def proxy_is_active(configuration):
+    return re.search(rb'^\s*ProxyPass(?:Match)?\s+', configuration, re.MULTILINE | re.IGNORECASE) is not None
 
 
 def command(*args):
@@ -140,7 +145,7 @@ def main():
             print('Public application access DISABLED. Tablet monitoring, LAN and Maya were not restarted.')
             return
         ensure(not VALIDATION.exists(), 'A validation vhost already exists; inspect before proceeding.')
-        ensure(b'ProxyPass ' not in before[VHOST][0], 'Public proxy is already active; inspect instead of overwriting it.')
+        ensure(not proxy_is_active(before[VHOST][0]), 'Public proxy is already active; inspect instead of overwriting it.')
         configuration = json.loads((TRANSFER/'public-gateway.json').read_text())
         gateway = PublicGateway(configuration)
         ensure(gateway.origin == ORIGIN and gateway.proxy_ip == '192.168.0.98', 'Unexpected gateway origin or proxy IP.')
