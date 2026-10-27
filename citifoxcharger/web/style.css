@@ -195,30 +195,27 @@ button,a,input,select,summary{-webkit-tap-highlight-color:transparent}button,sum
 #settings .advanced{margin-top:12px;padding-top:10px}
 #settings>.diagnosis>summary{min-height:44px;padding:10px 0}
 
-/* Wider battery shows the same SOC source and selected target, without extra height. */
-#overview .battery{width:180px;padding:0;background:var(--paper);border-color:var(--line);box-shadow:none}
+/* Charging summary: power inside the battery, selected target on the SOC bar. */
+#overview .battery{width:132px;padding:5px;background:var(--paper);border-color:var(--line);box-shadow:none;flex-shrink:0}
 #overview .battery:after{background:var(--line)}
-.battery-gauge{position:absolute;left:9px;right:9px;bottom:5px;width:auto;height:4px;background:var(--line);border-radius:3px}
-.power-values{display:contents}
-.battery-target-marker{position:absolute;top:auto;bottom:-2px;height:8px;border-left:2px solid var(--ink);pointer-events:none}
-#overview .battery .battery-readings{display:grid;grid-template-columns:1fr 1fr;align-items:center;gap:12px;inset:5px 11px 12px;line-height:1.1;font-size:inherit;color:var(--ink);animation:none}
-.battery-readings b{display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-width:0;font-weight:500;white-space:nowrap}
-.battery-readings b:last-child{align-items:flex-end}
-.battery-readings small{font-size:9px;line-height:1.1;font-weight:400;color:var(--muted)}
-.battery-readings strong{font-size:16px;line-height:1.1;font-weight:650;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
-.battery-readings b:first-child strong{color:var(--green)}
-.battery-readings:after{content:"→";position:absolute;left:50%;top:18px;transform:translateX(-50%);font-size:13px;line-height:1;color:var(--muted)}
+#overview .battery .battery-fill{position:absolute;left:0;top:0;bottom:0;height:auto;border-radius:10px;opacity:.45}
+#overview .battery .battery-power{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:6px;line-height:1;color:var(--ink);font-size:inherit}
+.battery-power b{font-size:26px;font-weight:600;color:var(--green)}
+#overview .battery #power-reading{font-size:18px;font-weight:650;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;margin:0}
+.soc-progress{position:relative;padding-top:20px}
+.soc-target{position:absolute;inset:0;pointer-events:none;--target:80%}
+.soc-target:after{content:"";position:absolute;left:var(--target);top:17px;height:14px;border-left:2px solid var(--ink);transform:translateX(-50%)}
+.soc-target>span{position:absolute;left:clamp(24px,var(--target),calc(100% - 24px));top:0;transform:translateX(-50%);font-size:11px;line-height:16px;font-weight:650;white-space:nowrap;color:var(--ink)}
 @media(orientation:portrait) and (min-width:480px) and (max-height:1100px),(orientation:landscape) and (min-width:1000px) and (max-height:900px){
- #overview .battery{width:150px}
- #overview .battery .battery-readings{inset:3px 10px 10px}
- .battery-readings small{font-size:8px;line-height:1}.battery-readings strong{font-size:13px;line-height:1}
- .battery-readings:after{top:11px;font-size:12px}
+ #overview .battery{width:124px}
+ #overview .battery #power-reading{font-size:16px}
+ .battery-power b{font-size:23px}
+ .soc-progress{padding-top:17px}.soc-target:after{top:14px}.soc-target>span{font-size:10px;line-height:14px}
 }
 @media(max-width:479px){
  #overview .soc-row{flex-wrap:wrap;row-gap:8px}
- #overview .power-group{flex-basis:100%;flex-direction:row;justify-content:space-between;margin-right:0}
- #overview .battery{width:160px;flex-shrink:0}
- .power-values{display:flex;flex-direction:column;align-items:center;gap:5px}
- #overview .battery .battery-readings{inset:5px 10px 12px;gap:8px}
- .battery-readings small{font-size:9px}.battery-readings strong{font-size:12px}
+ #overview .power-group{flex-basis:100%;align-items:flex-end}
+ #overview .battery{width:112px}
+ #overview .battery #power-reading{font-size:14px}
+ .battery-power b{font-size:22px}
 }
