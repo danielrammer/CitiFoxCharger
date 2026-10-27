@@ -1,3 +1,11 @@
+# Compact charging summary — 1.10.5
+
+Validation on 27 October 2026: JavaScript syntax, Git whitespace, `node tests/test_charging_display.js` and `node tests/test_certificate_download.js` passed. Rendering checks cover the target marker, HH:MM duration and expected arrival time, stale/zero power and phase-switching guards, and the distinction between an estimated SOC and the last timestamped vehicle report. No backend, charging, estimation or stopping logic changed; ETA still uses the existing 32.3 kWh / 90% / constant-power calculation rounded to five minutes.
+
+Fake-adapter browser QA checked both themes with 81.4%* estimated SOC, a last vehicle report of 80%, a target of 85% and 7.20 kW. Power appears inside the simple battery, the target marker follows the selected slider value, and the normal button reads Start charging / Laden starten. The overview fits without scrolling at 800×1280, 800×1000, 640×1024 and 1280×800. A 390px-wide phone has no horizontal overflow. No browser warnings/errors were recorded. Screenshots are labelled simulated and stored outside Git; no real charger or car commands were sent.
+
+## Previous release
+
 # Battery polish and certificate download feedback — 1.10.4
 
 Validation on 26 October 2026: JavaScript syntax, Git whitespace and `node tests/test_certificate_download.js` passed. The real browser handler was tested in an inert DOM against successful binary downloads, rejected/missing certificates, non-JSON gateway errors, unexpected HTML responses and retries after failures. The existing certificate endpoint and charging/backend logic were not changed; the 462-test backend suite passed for 1.10.3.

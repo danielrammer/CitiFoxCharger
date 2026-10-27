@@ -141,6 +141,16 @@ Object.assign(messages,{
  "Public certificate unavailable. Run Setup-Network.cmd on the tablet.":"Öffentliches Zertifikat nicht verfügbar. Setup-Network.cmd auf dem Tablet ausführen."
 });
 rules.unshift([/^Certificate download failed \(HTTP (\d+)\)\.$/,"Zertifikatsdownload fehlgeschlagen (HTTP {0})."]);
+Object.assign(messages,{
+ "Start charging":"Laden starten",
+ "Estimate*":"Schätzung*",
+ "Charging power from Smartfox":"Ladeleistung von Smartfox",
+ "Battery level unknown":"Ladestand unbekannt"
+});
+rules.unshift(
+ [/^Estimated: (.+) to target · Reached around (.+)$/,"Ca. {0} bis zum Ladeziel · Erreicht um {1}"],
+ [/^Last vehicle report: (.+) · (.+)$/,"Letzte Fahrzeugmeldung: {0} · {1}"]
+);
 function german(value,depth=0){
  if(messages[value]!==undefined)return messages[value];
  if(depth<4){for(const [pattern,target]of rules){const match=pattern.exec(value);if(match)return target.replace(/\{(\d+)\}/g,(_,i)=>german(match[Number(i)+1]??"",depth+1));}

@@ -36,7 +36,7 @@ function updateControls(){
  const release=session?.can_release_native_guard===true;
  const trialMode=latest.limit_test?.active===true,trialReady=trialMode&&latest.limit_trial?.can_start===true;
  $("target-label").textContent=trialMode?"Vehicle-stop test target":"Force charge to";
- $("force").textContent=release?"Release A+ normal mode":trialMode?(latest.limit_trial?.active?"Vehicle-stop test running":trialReady?"Start vehicle-stop test · 60 min":"Vehicle-stop test · see Settings"):retry?"↻ Retry start":session?.target_control==="vehicle"?"Manual charge · vehicle target":"Manual charge · app stops at target";
+ $("force").textContent=release?"Release A+ normal mode":trialMode?(latest.limit_trial?.active?"Vehicle-stop test running":trialReady?"Start vehicle-stop test · 60 min":"Vehicle-stop test · see Settings"):retry?"↻ Retry start":"Start charging";
  $("force").disabled=mutating||appUpdating||(trialMode?!trialReady:(!release&&(!(session?.can_start_manual||staleOption)||typeof soc!=="number"||target<=soc)));
  $("open-limit-trial").textContent=latest.limit_trial?.active?"Vehicle-stop test ACTIVE · no app stop at target":trialMode?"Vehicle-stop test prepared · see Settings":"Prepare vehicle-stop test · 60 min";
  $("open-limit-trial").disabled=mutating||appUpdating||appStopped;
@@ -61,25 +61,38 @@ function updateControls(){
 }
 function updateEta(){
  const car=latest.skoda,charger=latest.smartfox.charger||{},target=Number($("target").value),estimate=shownEstimate(latest.charging),soc=estimate??car.soc;
- const powerAge=(Date.now()-Date.parse(charger.read_at))/1000,power=charger.power_kw;
+ const now=Date.now(),powerAge=(now-Date.parse(charger.read_at))/1000,power=charger.power_kw;
  let text;
  if(typeof soc!=="number")text="Remaining time: vehicle data missing";
  else if(car.stale&&estimate===null)text="Remaining time: waiting for current vehicle data";
  else if(target<=soc)text="Target battery level reached";
  else if(livePhaseSwitch(charger))text="Remaining time: available after phase switching";
  else if(!charger.available||charger.telemetry_available!==true||!Number.isFinite(powerAge)||powerAge< -5||powerAge>30||typeof power!=="number"||power<=.1)text="Remaining time: available while charging";
- else{const minutes=Math.ceil((32.3*(target-soc)/100/(power*.9)*60)/5)*5,hours=Math.floor(minutes/60),rest=minutes%60,duration=[hours?hours+" h":null,rest?rest+" min":null].filter(Boolean).join(" ");text=`Estimated time: about ${duration} at ${number(power)} kW`;}
+ else{
+  const minutes=Math.ceil((32.3*(target-soc)/100/(power*.9)*60)/5)*5;
+  const duration=String(Math.floor(minutes/60)).padStart(2,"0")+":"+String(minutes%60).padStart(2,"0");
+  const finish=new Date(now+minutes*60000),today=new Date(now),clock=finish.toLocaleTimeString(CitiFoxI18n.locale(),{hour:"2-digit",minute:"2-digit",hour12:false});
+  const arrival=finish.toDateString()===today.toDateString()?clock:finish.toLocaleDateString(CitiFoxI18n.locale(),{day:"2-digit",month:"2-digit"})+" "+clock;
+  text=`Estimated: ${duration} to target · Reached around ${arrival}`;
+ }
  $("charge-eta").textContent=text;$("charge-eta").dataset.estimate=String(text.startsWith("Estimated")||text.startsWith("Target"));
 }
 function shownEstimate(session){const meter=session?.energy_estimate;return meter?.valid===true&&activeStates.has(session.status)&&typeof meter.estimated_soc==="number"?meter.estimated_soc:null;}
 function updateBattery(){
- const estimate=shownEstimate(latest.charging),current=estimate??latest.skoda.soc,target=Number($("target").value);
- $("battery-current").textContent=(estimate!==null?number(estimate,1)+"*":current??"—")+" %";
- $("battery-current").title=estimate===null?"Last vehicle report":"* Estimated from SMARTFOX charging energy; not a live vehicle measurement";
- $("battery-target").textContent=`${target} %`;
+ const current=shownEstimate(latest.charging)??latest.skoda.soc,target=Number($("target").value);
  $("battery-fill").style.width=`${current??0}%`;
- $("battery-target-marker").style.left=target===100?"calc(100% - 1px)":`${target}%`;
+ $("soc-progress").setAttribute("aria-valuenow",typeof current==="number"?String(current):"0");
+ $("soc-progress").setAttribute("aria-valuetext",typeof current==="number"?number(current,1)+" %":"Battery level unknown");
+ $("soc-target-label").textContent=`${target} %`;
+ $("soc-target").style.setProperty("--target",target===100?"calc(100% - 1px)":`${target}%`);
 }
+function renderVehicleReport(car,estimated){
+ const reported=typeof car.soc==="number"?`${car.soc} %`:"— %";
+ $("car-time").textContent=`Last vehicle report: ${reported} · ${date(car.captured_at)}`;
+ $("car-read").textContent=estimated?"* Estimated from SMARTFOX charging energy; not a live vehicle measurement":"";
+ $("car-read").hidden=!estimated;
+}
+
 const number=(value,digits=2)=>typeof value==="number"&&Number.isFinite(value)?value.toLocaleString(CitiFoxI18n.locale(),{minimumFractionDigits:digits,maximumFractionDigits:digits}):"—";
 function livePhaseSwitch(charger){const seconds=(Date.now()-Date.parse(charger.read_at))/1000;return charger.available&&charger.mode!=="OFF"&&charger.telemetry_available===true&&charger.phase_switching===true&&Number.isFinite(seconds)&&seconds>=-5&&seconds<=30;}
 function phaseMessage(charger){const seconds=charger.phase_switch_seconds;return Number.isInteger(seconds)&&seconds>=0&&seconds<=3600?`Phase switching in progress. Smartfox reports ${seconds} s. Waiting for charging permission.`:"Phase switching in progress. Waiting for charging permission.";}
@@ -176,8 +189,8 @@ function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=
  $("car-state").textContent=switching?"Phase switching":isCharging?"Charging":livePower&&charger.mode==="OFF"?"Charger Off":livePower&&charger.status_code===2?"Plugged in · ready":livePower&&(car.state==="CHARGING"||charger.status_code===3)?"No charging power":states[car.state]||"Status unknown";$("charging-dot").classList.toggle("charging",isCharging);$("charging-dot").classList.toggle("switching",switching);document.querySelector(".charging-card").classList.toggle("is-charging",isCharging);
  $("power-reading").textContent=livePower?charger.power_kw.toLocaleString(CitiFoxI18n.locale(),{minimumFractionDigits:2,maximumFractionDigits:2})+" kW":"— kW";
  const quotaBlocked=["quota_reserved","rate_limit"].includes(car.code);
- const carLabel=estimatedSoc!==null?"Estimate* · "+ageBrief(car.captured_at):quotaBlocked?"Škoda request limit":car.available?(car.stale?"Stale · "+ageBrief(car.captured_at):"Connected"):car.code==="not_configured"?"Not configured":"Unreachable";$("car-badge").textContent=carLabel;$("car-badge").className=`badge ${car.available&&!car.stale&&!quotaBlocked?"good":"warn"}`;
- $("car-time").textContent=`Last vehicle report: ${date(car.captured_at)}`;$("car-read").textContent=`Last successful query: ${date(car.read_at)}`;
+ const carLabel=estimatedSoc!==null?"Estimate*":quotaBlocked?"Škoda request limit":car.available?(car.stale?"Stale · "+ageBrief(car.captured_at):"Connected"):car.code==="not_configured"?"Not configured":"Unreachable";$("car-badge").textContent=carLabel;$("car-badge").className=`badge ${car.available&&!car.stale&&!quotaBlocked?"good":"warn"}`;
+ renderVehicleReport(car,estimatedSoc!==null);
  $("charger-mode").textContent=charger.available?(limit.phase==="verified"?`${charger.mode||"Mode unknown"} · Vehicle target ${limit.target_percent}% ✓`:`Smartfox · ${charger.mode||"Mode unknown"}`):"Smartfox · unreachable";
  $("connection-summary").textContent=`Škoda ${car.available?"connected":"unreachable"} · Smartfox ${sf.available?"connected":"unreachable"}`;
  if(data.limit_trial?.active){$("target").value=data.limit_trial.target_percent;targetInitialized=true;}
@@ -189,6 +202,7 @@ function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=
  $("quit-app").disabled=!localAdmin||!session?.can_shutdown||mutating;
  $("session-status").classList.toggle("session-quiet",session?.status==="monitoring"&&isCharging&&!session?.awaiting_fresh_soc&&!session?.stop_requested);
  $("normal-mode-note").textContent=data.limit_trial?.active?"Supervised trial · vehicle limit unconfirmed.":session?.user_charger_mode==="OFF"?(charger.available&&charger.mode==="OFF"?"Charger explicitly switched Off.":"Off selected · change is unconfirmed."):session?.status==="closed"?"Previous monitoring is closed. Select a new target or A+.":session?.stop_guard?"Charger kept Off until the vehicle confirms the stop.":activeStates.has(session?.status)&&session.target_control==="energy"?"* Estimated from SMARTFOX charging energy; not a live vehicle measurement":activeStates.has(session?.status)&&session.target_control==="app"?"Target monitored by the app · delayed vehicle reports can delay the stop.":"Normal mode A+ · schedules are preserved.";
+ $("normal-mode-note").hidden=estimatedSoc!==null&&$("normal-mode-note").textContent==="* Estimated from SMARTFOX charging energy; not a live vehicle measurement";
  const trialMessage=data.limit_test?.active?(data.limit_trial?.phase?trialDescription(data.limit_trial,CitiFoxI18n.language()==="de"):"Vehicle-stop test preparation. No trial Start has been sent."):"";
  const showPhase=switching&&!session?.stop_requested;$("session-status").hidden=!showPhase&&!session?.message&&!trialMessage;$("session-status").textContent=trialMessage||(showPhase?phaseMessage(charger):session?.message||"");$("session-status").classList.toggle("phase-wait",showPhase);$("session-status").classList.toggle("safety-stopped",session?.status==="error"&&["missing_soc","missing_initial_soc","phase_wait","request_quota","vehicle_limit_start","vehicle_limit_lost","energy_data_missing","charger_unavailable","start_timeout","start_rejected"].includes(session?.stop_cause));
  $("car-message").textContent=car.message||"";$("sf-notice").textContent=sf.notice||"";$("sf-control-reason").textContent=charger.control_reason||charger.message||"";
