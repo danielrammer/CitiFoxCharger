@@ -128,3 +128,31 @@ service when needed and retains a newly staged public CA to avoid removing an
 in-flight dependency. Failed isolated validation does not reload an unchanged
 production service. Production activation remains pending a successful rerun and
 external mobile-data validation.
+
+## Public proxy activated — 2026-10-27
+
+The user reran the corrected activation helper and confirmed working access. The
+ACTIVATED marker is present. Independent read-only checks from omdev confirm:
+
+- Public HTTPS validates using the normal system trust store. The active proxy
+  serves the CitiFox domain; `/`, `/app.js`, `/api/session`, `/api/status` and
+  `/api/diagnostics` all reject missing login with HTTP 401 and the CitiFox realm.
+- Apache's upstream policy has `SSLProxyVerify require`, peer-name checking and
+  expiry checking enabled. The private tablet CA is scoped to the CitiFox proxy.
+- Maya retains its original HTTP 401 and Maya Player realm. The tablet's strict
+  HTTPS health check returns HTTP 200, version 1.10.7. Apache and the existing
+  certificate-renewal timer remain active.
+- The activation marker is written only after correct-password public reads,
+  permission/origin/session/CSRF restrictions, missing/wrong login rejection,
+  unchanged passwordless tablet LAN and Maya checks pass.
+
+No production charging, target, heater or refresh command was issued by the
+activation helper. The application backend and device monitoring remain on the
+tablet. An external HTTPS test remains outstanding: use mobile data with Wi-Fi
+disabled and confirm login, valid certificate and ordinary dashboard reads.
+
+To disable only public application access and retain the tablet and Maya:
+
+```bash
+sudo python /home/dnl/Work/CitiFoxCharger/source/deploy/activate_omdev.py --disable
+```
