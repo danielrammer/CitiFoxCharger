@@ -1,3 +1,11 @@
+# Manual Start button and steady battery percentage — 1.10.10
+
+Validation on 27 October 2026: the three Node display/download/public-permission checks, JavaScript syntax and whitespace checks passed. Regression coverage verifies that an active manual session disables Start while target adjustment and Stop remain available; idle A+ takeover, completed-session Start and explicit legacy retries remain available. No backend charging or estimation logic changed.
+
+Fake-adapter browser QA confirmed Start disabled after starting, a live target change from 85% to 86% saved successfully, and Stop available afterwards. The percentage has no animation, scaling or opacity pulse. The unchanged overview fits a 1280×720 viewport without scrolling; no browser warnings/errors occurred. No real device commands or production restart were performed.
+
+## Previous validation
+
 # Documentation review — 27 October 2026
 
 README shortened to 41 lines with two compact Mermaid diagrams. Current Markdown links and code fences were checked; installation-specific address/domain/account/path references were replaced with placeholders. The deployment guide is generic rather than a public installation log. Current charging/UI/refresh/gateway guidance was cross-checked against 1.10.9 source. This is a documentation-only change: no runtime tests were rerun, no code or device configuration changed, and no backend restart was needed. This does not purge earlier Git commits or claim a new complete source/history secret audit.

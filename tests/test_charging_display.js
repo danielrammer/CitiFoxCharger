@@ -6,12 +6,13 @@ const nodes=new Map();
 function node(id){
  if(!nodes.has(id))nodes.set(id,{hidden:false,value:'85',dataset:{},textContent:'',attributes:{},
   style:{setProperty(key,value){this[key]=value;}},classList:{toggle(){}},
-  setAttribute(key,value){this.attributes[key]=value;},removeAttribute(){},addEventListener(){}});
+  setAttribute(key,value){this.attributes[key]=value;},removeAttribute(){},addEventListener(){},
+  closest(){return node(id+'-section');},querySelector(selector){return node(id+selector);}});
  return nodes.get(id);
 }
 const context=vm.createContext({document:{getElementById:node,querySelectorAll(){return[];},addEventListener(){},documentElement:node('root')},
  window:{matchMedia(){return{matches:false,addEventListener(){}};},addEventListener(){}},
- localStorage:{getItem(){return null;}},CitiFoxI18n:{locale(){return'en-GB';}},setTimeout(){},setInterval(){},Date:FixedDate,console});
+ localStorage:{getItem(){return null;}},CitiFoxI18n:{locale(){return'en-GB';},language(){return'en';}},setTimeout(){},setInterval(){},Date:FixedDate,console});
 vm.runInContext(fs.readFileSync('citifoxcharger/web/app.js','utf8').replace('\ninit();','\n'),context);
 const run=source=>vm.runInContext(source,context);
 run(`latest={skoda:{soc:80,stale:true},charging:{status:'monitoring',energy_estimate:{valid:true,estimated_soc:81.4}},
@@ -46,3 +47,35 @@ assert.equal(node('soc-target').style['--target'],'calc(100% - 1px)');
 node('target').value='1';run('updateBattery()');
 assert.equal(node('soc-target').style['--target'],'1%');
 console.log('PASS: target marker, duration/arrival estimate, power/data guards and last measured vehicle SOC remain distinct.');
+
+// A+ takeover is available, but a manual session must not offer a duplicate Start.
+node('target').value='85';
+run(`latest={skoda:{soc:80,available:true,stale:true},controls:{start:true,stop:true},
+ charging:{status:'idle',can_start_manual:true,can_start_manual_with_stale:true,can_stop:true},
+ smartfox:{charger:{mode:'A+',available:true,telemetry_available:true,power_kw:2,
+ read_at:new Date().toISOString()}}};updateControls();`);
+assert.equal(node('force').disabled,false,'A+ surplus charging can be taken over');
+assert.equal(node('force').textContent,'Start charging');
+for(const status of ['starting','monitoring','paused','interrupted']){
+ run(`latest.charging={status:${JSON.stringify(status)},strategy:'smartfox_energy',
+ can_start_manual:true,can_start_manual_with_stale:true,can_adjust_target:true,can_stop:true};
+ latest.smartfox.charger.mode='M+';updateControls();`);
+ assert.equal(node('force').disabled,true,`no duplicate Start while ${status}`);
+ assert.equal(node('target').disabled,false,`target remains adjustable while ${status}`);
+ assert.equal(node('stop').disabled,false,`Stop remains available while ${status}`);
+}
+node('target').value='87';run('updateControls()');
+assert.equal(node('force').disabled,true,'changing the target must not re-enable Start');
+assert.equal(node('target-value').textContent,'87 %');
+assert.equal(node('soc-target-label').textContent,'87 %');
+run(`latest.charging.status='stop_pending';latest.charging.stop_requested=true;
+ latest.charging.can_adjust_target=false;updateControls();`);
+assert.equal(node('force').disabled,true,'pending Stop must not offer Start');
+run(`latest.charging={status:'complete',can_start_manual:true,can_stop:true};updateControls();`);
+assert.equal(node('force').disabled,false,'a completed session allows a new Start');
+run(`latest.charging={status:'starting',can_start_manual:true,can_retry_start:true,can_stop:true};updateControls();`);
+assert.equal(node('force').disabled,false,'explicit backend-authorized legacy retry remains available');
+assert.equal(node('force').textContent,'↻ Retry start');
+run(`mutating=true;updateControls();`);
+assert.equal(node('force').disabled,true,'pending requests disable Start immediately');
+console.log('PASS: manual-session Start lock, live target adjustment, Stop, A+ takeover and explicit retry.');

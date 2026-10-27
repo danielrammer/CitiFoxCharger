@@ -38,7 +38,9 @@ function updateControls(){
  const trialMode=latest.limit_test?.active===true,trialReady=trialMode&&latest.limit_trial?.can_start===true;
  $("target-label").textContent=trialMode?"Vehicle-stop test target":"Force charge to";
  $("force").textContent=release?"Release A+ normal mode":trialMode?(latest.limit_trial?.active?"Vehicle-stop test running":trialReady?"Start vehicle-stop test · 60 min":"Vehicle-stop test · see Settings"):retry?"↻ Retry start":"Start charging";
- $("force").disabled=mutating||appUpdating||(trialMode?!trialReady:(!release&&(!(session?.can_start_manual||staleOption)||typeof soc!=="number"||target<=soc)));
+ // An active manual session owns starting/recovery; its slider adjusts the target.
+ // Idle A+ surplus charging can still be taken over, and explicit legacy retries remain available.
+ $("force").disabled=mutating||appUpdating||(trialMode?!trialReady:(!release&&((active&&!retry)||!(session?.can_start_manual||staleOption)||typeof soc!=="number"||target<=soc)));
  $("open-limit-trial").textContent=latest.limit_trial?.active?"Vehicle-stop test ACTIVE · no app stop at target":trialMode?"Vehicle-stop test prepared · see Settings":"Prepare vehicle-stop test · 60 min";
  $("open-limit-trial").disabled=mutating||appUpdating||appStopped;
  $("open-limit-trial").hidden=!(latest.limit_test?.active||latest.limit_trial?.active);
@@ -269,7 +271,7 @@ $("target").addEventListener("input",()=>{targetEditing=true;try{localStorage.se
 $("target").addEventListener("change",()=>{if(!activeStates.has(latest?.charging?.status)){targetEditing=false;return;}const target=Number($("target").value);mutation(async()=>{try{await api("/api/charging/target",{target_percent:target});toast(`Charge target ${target}% saved.`);}finally{targetEditing=false;}});});
 $("refresh").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/refresh",{});render(result.status);toast(result.message);}));
 $("quit-app").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/app/quit",{});appStopped=true;clearInterval(refreshTimer);toast(result.message);$("connection-summary").textContent="App stopped";updateControls();}));
- $("force").addEventListener("click",()=>{if(latest?.limit_test?.active){openTrialDialog();return;}if(latest?.charging?.can_release_native_guard){releaseLimitGuard();return;}mutation(async()=>{const body={target_percent:Number($("target").value),request_id:crypto.randomUUID(),allow_stale:true};targetEditing=false;toast("Preparing Smartfox. Vehicle start follows only after charging permission is confirmed.");const result=await api("/api/charging/start",body);if(result.message)toast(result.message);});});
+ $("force").addEventListener("click",()=>{if($("force").disabled)return;if(latest?.limit_test?.active){openTrialDialog();return;}if(latest?.charging?.can_release_native_guard){releaseLimitGuard();return;}mutation(async()=>{const body={target_percent:Number($("target").value),request_id:crypto.randomUUID(),allow_stale:true};targetEditing=false;toast("Preparing Smartfox. Vehicle start follows only after charging permission is confirmed.");const result=await api("/api/charging/start",body);if(result.message)toast(result.message);});});
 $("open-limit-trial").addEventListener("click",()=>{
  document.querySelector('[data-tab="settings"]').click();$("limit-test-panel").open=true;
  if(!latest?.limit_test?.active&&Number.isInteger(latest?.skoda?.soc))$("limit-test-target").value=Math.min(100,latest.skoda.soc+2);
