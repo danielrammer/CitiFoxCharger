@@ -17,9 +17,15 @@ Checks performed:
 - No tracked current or historical `.env`, saved device configuration, network configuration, vehicle cache, charging session, diagnostic JSON, DPAPI file, certificate, private key, log or ZIP archive was found.
 - GitHub had one branch, no tags, no pull requests/issues, no releases or release attachments, no Actions runs/artifacts, no wiki and no discussions for this repository. GitHub secret-scanning results were unavailable while it was private; that absence was not treated as a clean scan.
 
+## Documentation privacy update — 27 October 2026
+
+Current Markdown documentation uses generic host/address/account/path placeholders and a reserved example domain. Installation-specific IPs, domain names, proxy usernames/paths and deployment status records have been removed from the current documentation. The README is a short overview with diagrams; detailed setup remains in linked guides.
+
+This is a current-documentation cleanup, not a new full source/history secret audit. Application defaults, deployment helpers/templates and fixtures are outside this documentation-only change. Older Git commits still retain earlier text; ordinary file edits do not purge history. Keep real deployment settings in private runtime configuration and private operational notes.
+
 ## Intentionally visible information
 
-- The source and documentation contain private-LAN example/default addresses, ports, device names and the supported firmware identifier. Validation notes also describe integration observations such as SOC percentages and times without vehicle/account identifiers. RFC1918 addresses are not internet-routable credentials; public readers still need their own reachable devices, configuration and authorization.
+- The original review baseline included private-LAN example/default addresses. Current documentation now uses placeholders; this does not remove earlier Git history. Ports and the supported firmware identifier remain technical compatibility information.
 - Existing commits contain the author's name and email address, also present in the author's already-public portfolio repository. History was not rewritten to hide ordinary public authorship metadata.
 - Tests contain clearly synthetic vehicle identifiers, dummy keys and a fake-network password. These must never be reused as real credentials.
 - The selected artwork uses the application's original car/fox/charging design in manufacturer-inspired colors. It does not contain official manufacturer emblems or imply manufacturer sponsorship.

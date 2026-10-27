@@ -2,13 +2,13 @@
 
 One Windows tablet runs the backend and monitor. Other devices open the same dashboard and can operate the charge target, start/stop and permitted outputs. Closing any browser does not stop the tablet monitor or create extra Škoda polling loops.
 
-Home network access starts **disabled**. Local administration remains **http://127.0.0.1:8765/**. The optional listener uses **HTTPS**, normally port **8766**, bound to a specific private tablet IPv4 address. There is no wildcard bind or unencrypted network listener.
+Home network access starts **disabled**. Local administration remains **http://localhost:8765/**. The optional listener uses **HTTPS**, normally port **8766**, bound to a specific private tablet IPv4 address. There is no wildcard bind or unencrypted network listener.
 
 ## 1. Configure on the tablet
 
 Run **Setup-Network.cmd** under the Windows user that runs CitiFoxCharger. Python 3.11+ and Windows/.NET Framework 4.7.2+ are required. Save the MyŠkoda key with Windows encryption before a backend restart. Encrypted keys from another PC cannot simply be copied.
 
-Confirm the suggested tablet IPv4 address. The suggestion uses the route to Smartfox without sending a UDP packet. It must be the address of this tablet, for example **192.168.0.95** if that is its current assigned address.
+Confirm the suggested tablet IPv4 address. The suggestion uses the route to Smartfox without sending a UDP packet. It must be the address of this tablet, for example **TABLET_IP** if that is its current assigned address.
 
 Choose one access mode at the password prompt:
 
@@ -42,7 +42,7 @@ The application does not install trust automatically or bypass browser certifica
 
 ## 4. Open the dashboard
 
-Use the exact HTTPS URL shown by setup, for example **https://192.168.0.95:8766/** only if that is the configured tablet address. Password mode prompts for **citifox** and your network password. Passwordless mode opens directly after certificate trust.
+Use the exact HTTPS URL shown by setup, for example **https://TABLET_IP:8766/** only if that is the configured tablet address. Password mode prompts for **citifox** and your network password. Passwordless mode opens directly after certificate trust.
 
 All network clients share the same monitor and target. Language, theme and an inactive preferred target are browser preferences; an active target is shared backend state. API keys, device configuration, generic vehicle commands and backend exit/restart remain local-only in both access modes. The vehicle key never goes to another browser.
 
@@ -65,36 +65,49 @@ Setup-Network.cmd --data-dir "C:\MyDataFolder" --backend-port 8765 --port 8766
 Setup-Firewall.cmd --data-dir "C:\MyDataFolder"
 ```
 
-Use the same profile already used by the backend. Setup windows remain open after success and failure. Certificate creation, strict TLS, both authentication modes and permission boundaries are tested on loopback. A successful physical second-device connection to this wall tablet still requires confirmation.
+Use the same profile already used by the backend. Setup windows remain open after success and failure. Certificate creation, strict TLS, both authentication modes and permission boundaries are tested on loopback. Test each actual client connection separately; loopback tests alone do not establish physical network reachability.
 
 For the communication diagram and exact device/cloud interfaces, see [COMMUNICATION.md](COMMUNICATION.md). Use **HTTPS**, not plain HTTP, on the network listener port 8766; HTTP sent to that TLS port can be reset before any application response.
 
-## Planned public reverse-proxy access
+## Access modes
 
-Public access is not enabled by the current home-network setup. A separate gateway can provide a real domain, publicly trusted HTTPS and mandatory authentication while retaining passwordless private-LAN access. Such a gateway must verify the tablet's upstream TLS certificate and preserve the application's Host/origin/session/CSRF checks; a generic reverse proxy is not automatically compatible with the current IP-only allowlist. Do not disable these checks or forward the tablet's ports directly to the Internet. Public routes should exclude device/key administration, backend process control, updates and experimental vehicle-limit commands. Review the existing gateway before changing ports or services.
+| Connection | Login | Permitted operations |
+|---|---|---|
+| Tablet loopback, normally `http://localhost:8765/` | Local session | Setup, normal controls, diagnostics, updates and guarded process control |
+| Private LAN HTTPS, normally port 8766 | Configured password or explicit passwordless mode | Normal charging/consumer controls, diagnostics, certificate download and guarded updates; device/key modification and standalone process control stay local |
+| Public HTTPS domain through the proxy server | Mandatory gateway password | Normal charging/consumer controls and sanitized diagnostics; updates, device/key changes, process control, certificate download and experiments are blocked |
 
+The public gateway is implemented as an explicit opt-in; it does not start automatically with LAN setup. It terminates the domain's publicly trusted HTTPS and separately verifies the tablet's private HTTPS certificate. Public clients use the domain certificate; they do not need the tablet CA installed merely to use the public domain. Direct LAN clients still need to trust the tablet's CA. Do not expose the tablet ports directly through the router.
+
+See the public-gateway setup below and [deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md) for dated deployment evidence. A successful LAN/NAT-loopback check is not proof of mobile-data reachability.
 
 ## Remote diagnostics and updates
 
-From Settings, authenticated home-network sessions can view/download `GET /api/diagnostics`, start `POST /api/app/update` and follow `GET /api/app/update/status`. This is also enabled in explicitly configured passwordless mode: every reachable home-network device can trigger an update. Update confirmation appears before submitting; existing charging guards, encrypted-key requirement, expected-repository/fast-forward checks, private-host/origin/session/CSRF checks and backend restart verification remain. Standalone backend restart/exit and key/device configuration stay local-only. Diagnostics use cached allowlisted data and never trigger a vehicle request or charging command. The first upgrade to 1.8.11 must still be launched on the tablet because earlier backends reject remote updates.
+From Settings, authenticated home-network sessions can view/download `GET /api/diagnostics`, start `POST /api/app/update` and follow `GET /api/app/update/status`. This is also enabled in explicitly configured passwordless mode: every reachable home-network device can trigger an update. Update confirmation appears before submitting; existing charging guards, encrypted-key requirement, expected-repository/fast-forward checks, private-host/origin/session/CSRF checks and backend restart verification remain. Standalone backend restart/exit and key/device configuration stay local-only. Diagnostics use cached allowlisted data and never trigger a vehicle request or charging command. Historical backends older than 1.8.11 require their first remote-update-capable upgrade to be launched on the tablet.
 
 Since 1.10.4, the download stays on the Settings page, uses the existing browser session and reports failed requests below the button. A successful response is handed to browser downloads as a CER file; this is not a certificate-trust installation or proof that the browser saved the file. If the download fails, report the displayed message and the exact app address. Certificate downloads remain available through local/LAN access. The restricted public gateway below excludes this certificate-download endpoint and hides its button.
 
 ## Public gateway (explicit opt-in)
 
-The gateway and the tablet have separate responsibilities. Apache on omdev terminates
-public HTTPS and requires the local `dnl` Basic password on **every** public
+All host/IP symbols, the example domain, gateway account and transfer directory below are placeholders. Substitute your private installation values locally; do not commit them.
+
+The gateway and the tablet have separate responsibilities. Apache on the proxy server terminates
+public HTTPS and requires the configured gateway account password on **every** public
 resource, including static assets, session bootstrap, diagnostics and API routes.
 The existing tablet HTTPS listener continues to use its current LAN access policy.
 Only the tablet owns the Service, monitor, adapters, vehicle quota and charging state.
-Never launch `run.py` or a production backend on omdev.
+Never launch `run.py` or a production backend on the proxy server.
 
 The tablet additionally reads `public-gateway.json` from its **active data profile**:
 
+Place it beside the existing `config.json` and `network.json`. Existing installations can retain the historical **Ladezentrale** profile. New profiles normally use `%LOCALAPPDATA%\CitiFoxCharger`; an existing `%LOCALAPPDATA%\Ladezentrale` takes priority, and `--data-dir` can override both. Win+R → `%LOCALAPPDATA%` opens the current user's Local AppData folder. If it contains neither profile, inspect the running backend's `--data-dir` and Windows user rather than creating another profile.
+
+The prepared proxy transfer file is outside Git at `TRANSFER_DIR/public-gateway.json`. Copy that file, without pasting its contents into chat/logs, into the tablet profile. The app **does not read gateway configuration beside Start.cmd**. Re-read requires a guarded backend restart/update when monitoring permits. This is separate from the public CER export that may be copied into the program folder.
+
 ```json
 {
-  "origin": "https://citifox.ancora.cyou",
-  "proxy_ip": "192.168.0.98",
+  "origin": "https://charger.example.com",
+  "proxy_ip": "PROXY_PRIVATE_IP",
   "token_sha256": "<SHA-256 of a randomly generated 32-byte hexadecimal assertion>"
 }
 ```
@@ -113,7 +126,7 @@ hostname, and `X-CitiFox-Gateway` must match the assertion digest. Apache replac
 client-supplied assertion after checking the password. This narrowly scoped assertion
 attests to the gateway's login decision; it never grants local administration.
 `Forwarded` and `X-Forwarded-*` do not grant permissions or change client identity.
-Reserve omdev's IP; do not expose the tablet ports through router forwarding.
+Reserve the proxy server's private IP; do not expose the tablet ports through router forwarding.
 
 The original public authority and Origin are preserved for the tablet checks. With
 Apache, `ProxyPreserveHost Off` makes TLS verify the tablet certificate CN instead
@@ -131,12 +144,12 @@ and charger modes. Updates (including update status), backend quit/restart, devi
 configuration, arbitrary commands and all experimental limit-test/guard overrides
 are denied. The UI hides unavailable controls. LAN permissions are unchanged.
 
-### Apache deployment on omdev
+### Apache deployment
 
 Reuse the existing Apache and Certbot installation; do not add a competing listener
 on ports 80/443. Back up the main config and every changed vhost with root-only
-permissions. Include CitiFox **after** the existing Maya vhost so the existing default
-host and Maya certificate are preserved. The checked-in templates under `deploy/`
+permissions. Include CitiFox **after** the existing the existing website vhost so the existing default
+host and the existing website certificate are preserved. The checked-in templates under `deploy/`
 contain no credentials. `citifox-closed.conf` serves only ACME HTTP challenges and a
 fixed redirect. `citifox-tls-closed.conf` provides a password-protected holding page
 without any upstream connection. Unknown public application routes remain denied by
@@ -144,10 +157,10 @@ both the gateway allowlist and tablet policy after activation.
 
 1. Check authoritative and recursive A/AAAA DNS. A must resolve to the router's WAN
    address; remove or correctly route a stale AAAA. Verify the router forwards only
-   80/443 to omdev, never 8765/8766 to the tablet. A LAN request to the WAN address
+   80/443 to the proxy server, never 8765/8766 to the tablet. A LAN request to the WAN address
    proves only NAT loopback, not external reachability.
 2. Install the HTTP-only vhost and challenge directory. Run `httpd -t` before a
-   graceful reload. Obtain the certificate using Certbot webroot; this preserves Maya.
+   graceful reload. Obtain the certificate using Certbot webroot; this preserves the existing website.
 3. Set the gateway password locally in a visible terminal. Store only a bcrypt
    password hash in `/etc/httpd/citifox/users.htpasswd` (root:http, mode 0640).
    Do not put a password in an argument, environment variable, chat or log.
@@ -157,10 +170,10 @@ both the gateway allowlist and tablet policy after activation.
 5. Copy **only** `CitiFoxCharger-Home-Network.cer` from the tablet. Compare its SHA-256
    fingerprint with the tablet's own displayed fingerprint over an independent
    trusted channel. Convert DER to PEM if needed. Verify the upstream chain, expiry
-   and IP SAN for `192.168.0.95` with this CA. Apache 2.4 name checking uses DNS SANs
+   and IP SAN for `TABLET_IP` with this CA. Apache 2.4 name checking uses DNS SANs
    and CNs, so the template uses the existing certificate CN `CitiFoxCharger` as
    its upstream name. Back up `/etc/hosts`, check for conflicts, and add the fixed
-   alias `192.168.0.95 citifoxcharger`. Use `ProxyPreserveHost Off` plus the
+   alias `TABLET_IP citifoxcharger`. Use `ProxyPreserveHost Off` plus the
    fixed authenticated public-authority header, as explained above. Confirm the live leaf
    has that CN as well as the correct IP SAN before activation. Never use `-k`, `verify=False`,
    `SSLProxyVerify none`, or disable peer-name checks. Never copy tablet private keys.
@@ -189,8 +202,8 @@ The ACME HTTP challenge is a public static token, not an application/API bypass.
 Restore `/etc/httpd/conf/extra/citifox-tls-closed.conf` to the authenticated holding
 vhost (remove the ProxyPass and gateway include), validate with `httpd -t`, then
 `systemctl reload httpd`. Keep the CitiFox HTTP challenge vhost for renewal and keep
-Maya's vhost untouched. This disconnects public access without contacting or restarting
+the existing website's vhost untouched. This disconnects public access without contacting or restarting
 the tablet; its LAN dashboard and monitoring continue. Deleting the tablet's
 `public-gateway.json` during a later safe restart also removes gateway trust, but is
 not required for immediate shutdown of public access. Do not stop Apache because
-that would also interrupt Maya.
+that would also interrupt the existing website.

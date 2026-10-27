@@ -1,12 +1,18 @@
 # Verified interfaces
 
-Evidence reviewed on **16–22 October 2026**; application version **1.9.0**. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
+Manufacturer/API evidence was reviewed on **16–22 October 2026**; current implementation cross-checked for **1.10.9 on 27 October 2026**. This is not a new live compatibility test. Model descriptions and the earlier conversation are not treated as proof of a working endpoint.
 
 For an implementation-level overview with diagrams and request/register tables, see [COMMUNICATION.md](COMMUNICATION.md).
 
+## Current behavior and historical notes
+
+For this Citigo, a readable native charging limit is still unconfirmed. New normal manual sessions therefore use measured SMARTFOX energy plus timestamped vehicle SOC, not a mandatory native-limit readback. Their stop conditions, retries and uncertainty are in [MANUAL-CHARGING.md](MANUAL-CHARGING.md). Stale cloud data/read quota alone do not stop these energy-backed sessions. The versioned 1.8.x/1.9.x sections below preserve historical compatibility/recovery evidence; their former five/fifteen-minute freshness stops are not the current normal charging strategy.
+
+The current dashboard shows one-decimal kW, vehicle/estimated SOC in the battery, a target marker, a local ETA and the last vehicle SOC/capture time. Refresh Car queries available cloud data under existing rate limits. Current LAN/public gateway permissions are documented in [NETWORK.md](NETWORK.md); private-LAN updates are permitted, while public-domain updates and administration are denied.
+
 ## SMARTFOX Pro 2 and Charger Pro 1
 
-The user confirmed Pro 2, Charger Pro at point 1 and firmware **EM3 00.01.16.08**. The firmware was also read from the local device display at **192.168.0.81**.
+The verified hardware profile is Pro 2, Charger Pro at point 1 and firmware **EM3 00.01.16.08**. The firmware was also read from the local device display; the installation address is intentionally omitted.
 
 Primary sources:
 
@@ -88,7 +94,7 @@ Reviewed contract SHA-256: `FB0514BF3E289E4BFB634F13DD5B7DFD24EB06CBAB829CCF6A6F
 
 The adapter uses the fixed official HTTPS origin with certificate validation, no redirects and no environment proxy. There is no embedded account password or S-PIN. Keys stay in RAM or optional Windows per-user DPAPI and are never returned to the frontend or logged.
 
-Capabilities are discovered per VIN. The specific Citigo returned SOC and start/stop operations, and the user confirmed real charging after a start. This is evidence for that vehicle/account, not general compatibility for every Citigo or every remote operation. Equipment and mobile connectivity can affect availability. HTTP 202 confirms acceptance, not physical completion. Only newer matching vehicle telemetry confirms the outcome. Missing or unknown derived states are not interpreted as disconnection.
+Capabilities are discovered per VIN. The specific Citigo returned SOC and start/stop operations, and the user confirmed real charging after a start. This is evidence for that vehicle/account, not general compatibility for every Citigo or every remote operation. Equipment and mobile connectivity can affect availability. HTTP 202 confirms acceptance, not physical completion. Newer matching vehicle telemetry can confirm the vehicle operation; the manual controller separately confirms physical charging from fresh SMARTFOX charge-point power. Missing or unknown derived states are not interpreted as disconnection.
 
 ### Rate limits and freshness
 
@@ -98,13 +104,13 @@ No verified public wake-up or force-refresh endpoint was found. The [community M
 
 The public contract contains `setChargingLimit`, but support and permitted steps for this Citigo are unconfirmed. Typical documented steps of ten percent do not prove that a native 82% limit can be programmed. Version 1.9.0 sends an exact requested value but withholds Start until a matching newer vehicle readback; actual Citigo support remains unconfirmed.
 
-### Legacy local target monitoring (sessions without a verified vehicle limit)
+### Historical cloud-only target monitoring (before 1.10.0)
 
 `POST /api/charging/target` changes only the local target, never repeats a start and does not alter the native vehicle limit. A valid old SOC already at/above target authorizes a conservative stop, not a start. Both manual and automatic stopping request verified local OFF before any vehicle read or cloud request, even when cloud access is blocked. The temporary Off hold survives restart and is released only after newer stopped vehicle telemetry. Future reports beyond the allowed five-second release tolerance cannot release it. A+ is not treated as a power-off guarantee. `charging.can_stop` exposes local stop availability independently of cloud-only `controls.stop`.
 
 The explicit older-SOC start exception requires a known capture time ≤24 hours old, a successful API read ≤five minutes old and wallbox readiness/no power ≤30 seconds old. It does not falsify freshness. A persistent five-minute post-start deadline requires a new SOC; later loss of data also has bounded recovery and a maximum 15-minute report age. Uncertain starts are never replayed. Stops require newer charging telemetry for bounded retries; a newer stopped report can complete without another command.
 
-Estimated minutes are `ceil((32.3 * (target - SOC) / 100 / (wallbox_kW * 0.9) * 60) / 5) * 5`. The [32.3 kWh usable capacity](https://www.skoda-storyboard.com/en/press-kits/skoda-citigo%E1%B5%89-iv-skoda-superb-iv-press-kit/skoda-citigo%E1%B5%89-iv-zero-emission-range-of-up-to-260-km/) is a manufacturer figure; 90% efficiency is an assumption. Fresh SOC and power ≤30 seconds old are required. Estimates do not control charging or modify displayed SOC.
+Estimated minutes are `ceil((32.3 * (target - SOC) / 100 / (wallbox_kW * 0.9) * 60) / 5) * 5`. The [32.3 kWh usable capacity](https://www.skoda-storyboard.com/en/press-kits/skoda-citigo%E1%B5%89-iv-skoda-superb-iv-press-kit/skoda-citigo%E1%B5%89-iv-zero-emission-range-of-up-to-260-km/) is a manufacturer figure; 90% efficiency is an assumption. Fresh SOC and power ≤30 seconds old are required. For these historical cloud-only sessions, the duration forecast did not control charging or modify displayed SOC. Current energy-backed sessions use their own SOC estimate for display and target stopping, separately from the duration forecast.
 
 ## Process control and Windows background operation
 

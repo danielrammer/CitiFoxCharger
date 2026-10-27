@@ -1,4 +1,6 @@
-# Manual charging in 1.10.1
+# Manual charging
+
+Current application: **1.10.9**, checked **27 October 2026**. The energy-controller behavior described here was last changed in 1.10.1; subsequent charging-dashboard changes are presentation only.
 
 New sessions for this Citigo use `manual_charging.py`. `charge_energy.py` is a pure energy calculation with no network or device effects. `charging.py` retains persistence, target-report stops, local-first Stop and recovery of existing sessions. Previously saved cloud-only sessions and the isolated vehicle-limit experiment are not silently converted.
 
@@ -47,3 +49,11 @@ Stop first sets and reads back SMARTFOX Off, then requests vehicle Stop when acc
 Settings → Diagnostics exposes strategy, preparation phase, total/per-wait attempts, waiting time, estimated SOC, accumulated kWh, anchor timestamp, initial report age and stop cause. Starting a new session retains up to ten previous session summaries in the same private state file. JSON exports include these as `previous_sessions`, allowing a failed attempt to be inspected after a retry. Completed stops also record the confirming vehicle SOC and its capture timestamp. The history is sanitized again on export; no credentials, VIN, request IDs or raw energy history are exported. Cloud polling remains budgeted; speculative extra freshness/near-target reads are disabled for energy-backed sessions.
 
 Experimental vehicle-limit controls are hidden during normal use. Existing active tests and native-limit recovery retain only their necessary completion/restoration controls, so hiding experiments cannot strand an old isolation state.
+
+## Dashboard and refresh
+
+The normal action is **Start charging / Laden starten**. Recovery/test actions keep their specific labels when applicable. The target slider remains adjustable during supported active sessions. The main kW reading has one decimal place; the battery shows the displayed SOC, with `*` for an active energy estimate. The long SOC bar carries the selected target marker. On phones, kW and battery share a row; charging animation has its own row only while charging.
+
+**Last vehicle report** always includes the actual reported integer SOC and original capture timestamp, separately from the displayed estimate. Settings diagnostics also retain API retrieval time; a new response can contain the same older vehicle report. **Refresh Car / Auto aktualisieren** invokes the existing budgeted vehicle refresh, with at least 60 seconds spacing and applicable cooldown/reserve checks. It is not a wake command or a guarantee of fresh in-car data. The header's Reload page only reloads the website.
+
+Remaining duration uses the displayed active estimate (or a non-stale vehicle SOC), the existing 32.3 kWh/90% assumptions and fresh measured charging power. It is rounded up to five minutes and shown as HH:MM plus an approximate arrival clock time. No ETA is invented for zero/stale power, phase switching or missing usable SOC. This display forecast does not introduce another stop rule.

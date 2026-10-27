@@ -1,3 +1,9 @@
+# Documentation review — 27 October 2026
+
+README shortened to 41 lines with two compact Mermaid diagrams. Current Markdown links and code fences were checked; installation-specific address/domain/account/path references were replaced with placeholders. The deployment guide is generic rather than a public installation log. Current charging/UI/refresh/gateway guidance was cross-checked against 1.10.9 source. This is a documentation-only change: no runtime tests were rerun, no code or device configuration changed, and no backend restart was needed. This does not purge earlier Git commits or claim a new complete source/history secret audit.
+
+## Previous validation
+
 # Vehicle refresh label and phone summary — 1.10.9
 
 Validation on 27 October 2026: JS syntax, whitespace and the existing three Node display/download/public-permission checks passed. The vehicle-data request button now has a visible Refresh Car / Auto aktualisieren label and a tooltip explaining that it fetches available Škoda data without guaranteeing a newer vehicle timestamp. The request handler and backend refresh/cooldown/quota behavior are unchanged.
@@ -26,9 +32,9 @@ Simulated browser QA checked both themes with 7.20 kW, estimated 81.4%*, last ve
 
 Validation on 27 October 2026: **474 offline tests ran in 65.229 seconds, successful with 3 Linux/Apache-only skips** on Windows. The gateway's 9 real loopback HTTPS/policy tests pass using disposable certificates from the existing Windows helper, without requiring the OpenSSL CLI or changing the trust store. The public-role UI test, charging-display test and certificate-download test also passed. JavaScript syntax and Git whitespace checks passed.
 
-This PR includes the completed 1.10.5 charging display. Device/charging/energy/stopping modules are unchanged. Public access still requires explicit protected profile configuration and an authenticated omdev assertion; merely installing this release does not activate a public route. Local/LAN certificate downloads remain available; public downloads and administrative operations are hidden and denied. The three Apache integration tests require Linux and were not rerun here; see the server agent's separate Linux validation.
+This PR includes the completed 1.10.5 charging display. Device/charging/energy/stopping modules are unchanged. Public access still requires explicit protected profile configuration and an authenticated the proxy server assertion; merely installing this release does not activate a public route. Local/LAN certificate downloads remain available; public downloads and administrative operations are hidden and denied. The three Apache integration tests require Linux and were not rerun here; see the server agent's separate Linux validation.
 
-Read-only production check: the tablet's /health validated with its current public CA and hostname checking enabled. It reports version 1.10.4, commit 5d24163b. A sanitized status check showed A+, zero charging power and shutdown allowed at that moment. No production update, restart, switching command, trust-store change or public-server activation was performed. The protected omdev gateway configuration is not present locally; SSH access failed closed because this Windows host has no verified omdev host key. Server deployment remains a separate step.
+Read-only production check: the tablet's /health validated with its current public CA and hostname checking enabled. It reports version 1.10.4, commit 5d24163b. A sanitized status check showed A+, zero charging power and shutdown allowed at that moment. No production update, restart, switching command, trust-store change or public-server activation was performed. The protected gateway configuration stays outside Git. Production deployment requires separate verification and is not established by the offline suite.
 
 ## Previous release
 

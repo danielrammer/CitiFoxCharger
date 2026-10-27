@@ -1,24 +1,29 @@
 # Communication and data flow
 
-This describes **CitiFoxCharger 1.10.0**, checked against source on **26 October 2026**. The addresses below are installation examples; the configured device address and active register profile are authoritative. No VIN or API key is included. New manual sessions without readable vehicle limits use the energy controller in [MANUAL-CHARGING.md](MANUAL-CHARGING.md), which also includes its state diagram and uncertainty policy.
+This describes **CitiFoxCharger 1.10.9**, checked against source on **27 October 2026**. Host/address symbols below are generic placeholders, not installation values; the configured device address and active register profile are authoritative. No VIN or API key is included. New manual sessions without readable vehicle limits use the energy controller in [MANUAL-CHARGING.md](MANUAL-CHARGING.md), which also includes its state diagram and uncertainty policy.
 
 ## System overview
 
 ```mermaid
 flowchart TB
     Local["Tablet browser / Brave fullscreen"]
-    Remote["Phone or laptop browser"]
+    Remote["Phone or laptop · private LAN"]
+    Public["Public browser"]
+    Gateway["Proxy · Apache<br/>Mandatory login and public HTTPS"]
     Backend["CitiFoxCharger Python backend on Windows tablet\nShared cache, charging monitor, target and command verification"]
-    Modbus["SMARTFOX Pro 2\n192.168.0.81:502\nModbus TCP, Unit 1, function 03"]
-    Web["SMARTFOX Pro 2\nhttp://192.168.0.81:80\nLocal vendor web interface"]
+    Modbus["SMARTFOX Pro 2\nSMARTFOX_IP:502\nModbus TCP, Unit 1, function 03"]
+    Web["SMARTFOX Pro 2\nhttp://SMARTFOX_IP:80\nLocal vendor web interface"]
     Charger["SMARTFOX Charger Pro\nCharging point 1"]
     Outputs["Analogue heater 1\nRelay 1: heater 2\nRelay 2: hot water"]
     Cloud["MyŠkoda Public API\nhttps://public.api.connect.skoda-auto.cz:443"]
     Car["Škoda Citigo e iV"]
     Store["Windows user profile\nConfiguration, monitoring state, optional DPAPI-encrypted key"]
 
-    Local <-->|"HTTP 127.0.0.1:8765\nApp JSON API and static frontend"| Backend
-    Remote <-->|"HTTPS 192.168.0.95:8766\nOptional home-network listener"| Backend
+    Local <-->|"HTTP localhost:8765\nApp JSON API and static frontend"| Backend
+    Remote <-->|"HTTPS TABLET_IP:8766\nOptional home-network listener"| Backend
+    Public <-->|"Publicly trusted HTTPS + password"| Gateway
+    Gateway <-->|"Verified tablet TLS + fixed gateway assertion
+Restricted public role; no updates/admin"| Backend
     Backend -->|"Read holding registers only\nSelected profile; no Modbus writes"| Modbus
     Backend <-->|"GET /values.xml\nGET vendor CGI commands + readback"| Web
     Web <-->|"Existing SMARTFOX installation\nDevice protocol outside this app"| Charger
@@ -31,7 +36,7 @@ flowchart TB
 
 The diagram separates application connections from the existing charger/output wiring and manufacturer vehicle connection. CitiFoxCharger does **not** obtain SOC through the charging cable or SMARTFOX. It does not implement the protocol between SMARTFOX and its charger, or between the vehicle and the manufacturer's cloud.
 
-**Port 8766 requires `https://`.** Plain `http://` on this port can result in a reset connection. Each remote client needs to trust the tablet's public network certificate. The tablet's local browser instead uses `http://127.0.0.1:8765/`. See [NETWORK.md](NETWORK.md) for certificate and firewall setup.
+**Port 8766 requires `https://`.** Plain `http://` on this port can result in a reset connection. Each remote client needs to trust the tablet's public network certificate. The tablet's local browser instead uses `http://localhost:8765/`. See [NETWORK.md](NETWORK.md) for certificate and firewall setup.
 
 ## Unconfirmed native targets
 
@@ -39,7 +44,7 @@ Native target preparation first requires an already readable `charging.settings.
 
 ## Modbus reads
 
-Source: [modbus.py](citifoxcharger/modbus.py). Target: configured SMARTFOX address, default **192.168.0.81**, TCP **502**, Unit ID **1**, function **03 / Read Holding Registers**. The app issues one read per row of the **selected** profile; it does not read both profiles together. Addresses below are the exact, zero-based **PDU addresses passed on the wire**, with no further subtraction. A word is 16 bits.
+Source: [modbus.py](citifoxcharger/modbus.py). Target: configured SMARTFOX address, default **SMARTFOX_IP**, TCP **502**, Unit ID **1**, function **03 / Read Holding Registers**. The app issues one read per row of the **selected** profile; it does not read both profiles together. Addresses below are the exact, zero-based **PDU addresses passed on the wire**, with no further subtraction. A word is 16 bits.
 
 | Profile | Key | PDU start address | Words | Inclusive range | Interpretation in this app |
 |---|---|---:|---:|---|---|
@@ -54,7 +59,7 @@ Word order is configurable. Only the optional manufacturer profile with `interpr
 
 ## SMARTFOX local web reads
 
-Sources: [smartfox_web.py](citifoxcharger/smartfox_web.py), [smartfox_energy.py](citifoxcharger/smartfox_energy.py). All values are obtained in one **`GET http://192.168.0.81/values.xml`** response. XML field names are not Modbus register addresses.
+Sources: [smartfox_web.py](citifoxcharger/smartfox_web.py), [smartfox_energy.py](citifoxcharger/smartfox_energy.py). All values are obtained in one **`GET http://SMARTFOX_IP/values.xml`** response. XML field names are not Modbus register addresses.
 
 | Display / check | XML fields used | Meaning / handling |
 |---|---|---|
@@ -75,7 +80,7 @@ Heater 1 reports **Automatic · surplus** only for automatic status 0 with a pos
 
 These are **HTTP GET requests with side effects**, matching the installed manufacturer's JavaScript. They are not a publicly specified, general-purpose SMARTFOX API. They require the existing explicit control opt-in and firmware/output checks. Every change is followed by `GET /values.xml` and a matching readback; a successful CGI response alone is insufficient. An already selected mode can return after a read without sending a redundant command.
 
-Base URL: **`http://192.168.0.81`** (configurable private device address).
+Base URL: **`http://SMARTFOX_IP`** (configurable private device address).
 
 | Device / action | Method and path |
 |---|---|
@@ -113,23 +118,23 @@ The browser never sends the Škoda API key to SMARTFOX or contacts the cloud dir
 | `GET /api/session` | Browser session / CSRF bootstrap. |
 | `GET /health` | Application identity, instance ID and release metadata. |
 | `GET /api/status` | Shared cached telemetry, monitoring and control availability. |
-| `POST /api/refresh` | Request a permitted refresh; does not force the vehicle to measure anew. |
+| `POST /api/refresh` | Refresh Car / Auto aktualisieren: request available Škoda data subject to quota/cooldown; does not wake the vehicle or force a newer capture. |
 | `POST /api/charging/start` | Select verified-native preparation when readable; otherwise M+ and guarded Start with app target monitoring. |
 | `POST /api/charging/stop` | Combined local-first charging stop. |
-| `POST /api/charging/target` | Pause and verify a new native limit; resume only a previously physically charging session. Legacy sessions retain local target adjustment. |
+| `POST /api/charging/target` | Energy-backed sessions update the local target; verified-native sessions use the guarded limit-change flow. It does not repeat Start just because the slider changed. |
 | `POST /api/charging/restore-limit` | Explicit retry of an unconfirmed native-limit restoration under guarded Off. |
 | `POST /api/smartfox/charger-mode` | Select Off / A+ / M+. |
 | `POST /api/smartfox/heater` | Select Off / Automatic / Manual for an authorized heating output. |
 | `GET /api/config`, `POST /api/config` | Configuration and key-storage status view / local-only modification. The API-key value is not returned. |
 | `POST /api/key`, `POST /api/key/clear` | Local-only API-key setup / removal. |
-| `POST /api/skoda/command` | Local-only legacy route. Raw Start is rejected; use the native combined start. |
+| `POST /api/skoda/command` | Local-only legacy route. Raw Start is rejected; use the combined charging-start route. |
 | `POST /api/smartfox/command` | Legacy local route; Modbus writes remain blocked. |
-| `GET /api/diagnostics`, `GET /api/diagnostics/download` | Authenticated local/home-network cached diagnostics; allowlisted fields, no device calls. |
-| `GET /api/network/certificate` | Authenticated download of the active profile's validated public CER certificate; no private keys or certificate installation. |
+| `GET /api/diagnostics`, `GET /api/diagnostics/download` | Authenticated local/LAN/public cached diagnostics; allowlisted fields, no device calls. |
+| `GET /api/network/certificate` | Local/LAN download of the active profile's validated public CER certificate; no private keys or installation; denied over the public gateway. |
 | `POST /api/app/update`, `GET /api/app/update/status` | Local/home-network update job and status, with the existing update guards. |
 | `POST /api/app/restart`, `POST /api/app/quit` | Local-only backend process control. |
 
-Mutations require the session/CSRF and origin checks. Remote access permits refresh, combined charging start/stop/target, the requested SMARTFOX output controls, sanitized diagnostics and confirmed Git updates. The page-reload button reloads the browser document; it does not invoke restart or send a charging command.
+Mutations require session/CSRF and origin checks. Private-LAN access permits refresh, combined charging start/stop/target, configured output controls, sanitized diagnostics and guarded Git updates. Public-domain requests additionally require the pinned proxy and gateway assertion; public users cannot update, control the backend process, configure devices/keys, download the LAN certificate or invoke experiments. Public and LAN sessions/CSRF tokens are separate. The header reload button only reloads the browser document. See [NETWORK.md](NETWORK.md) for exact gateway setup and permissions.
 
 ## Manual start and target stop
 
@@ -140,7 +145,7 @@ sequenceDiagram
     participant SF as SMARTFOX local web
     participant API as Škoda Public API
     UI->>App: POST /api/charging/start (target)
-    App->>App: Validate data, capabilities, quota and session
+    App->>App: Validate local telemetry, vehicle access, SOC age and session
     alt Native limit already readable and operation advertised
         App->>SF: Hold Off during native-limit preflight
         App->>API: PUT /charging/limit {targetStateOfChargeInPercent: target}
@@ -196,7 +201,7 @@ This is the successful combined-control flow, not a promise that every operation
 - SMARTFOX configured polling default: **10 seconds**. Command readiness/readback can perform additional local reads.
 - Škoda configured polling default: **180 seconds**, adjusted by charging state, quota and cooldown. Idle fallback is at least **600 seconds**; active fallback without usable quota information is at least **180 seconds**. With a known quota window, spare reads are budgeted while retaining three calls for native stop/restoration (two for legacy sessions).
 - Manual vehicle refresh has a **60-second** minimum spacing and respects quota/cooldown. Legacy cloud-only monitoring can bring forward bounded near-target/freshness reads; new energy-backed sessions disable these speculative extra probes and retain the normal shared polling schedule.
-- Cloud response time and `carCapturedTimestamp` are different. A successful GET can still return old SOC. No force-refresh/wake call is implemented, and a locally monitored SOC target can be overshot because of delayed vehicle reports.
+- Cloud response time and `carCapturedTimestamp` are different. A successful GET can still return old SOC. No force-refresh/wake call is implemented, and a local SOC target can be missed because of delayed/old reports and energy-model uncertainty.
 - Monitoring runs in the Python backend, not the browser. Closing the browser or switching the screen off does not itself stop monitoring; actual Windows sleep or backend termination can prevent execution.
 
 Source map: [server.py](citifoxcharger/server.py), [service.py](citifoxcharger/service.py), [charging.py](citifoxcharger/charging.py), [config.py](citifoxcharger/config.py), [app.js](citifoxcharger/web/app.js). For authentication, rate-limit evidence and detailed failure handling, see [INTERFACES.md](INTERFACES.md).
@@ -236,3 +241,7 @@ Target SOC itself does **not** trigger an app stop during the trial. Two ≥0.5 
 The main Stop route `/api/charging/stop` also stops the trial, independently of cloud access. End-isolation, limit changes, normal Starts/mode changes, backend restart/shutdown and updates are blocked until it stops. Unexpected restart cancels a deferred Start and enters `stopping`. The trial state machine is isolated in `limit_trial.py`; persistence shares the private test record. Sanitized diagnostics include HTTP outcomes, physical-power timestamps and the exact stop cause. Session, CSRF, origin and configured HTTPS home-network authentication apply, including passwordless mode.
 
 **Late phase switching (introduced in 1.9.6):** verified local `phase_switching` during observation enters `waiting_resume`, clears pending low-power completion evidence and keeps M+. Its own six-minute bound and the persisted overall trial deadline both apply. After the switching flag clears, new ≥0.5 kW readings at least three seconds apart are required within three minutes. They return to `observing` without another Start POST. Otherwise `phase_resume_failed` records an app fallback. Diagnostics include `phase_started_at`, `phase_ended_at` and `power_resumed_at`. The +2 SOC guard and manual Stop remain active during switching; no deadline or limit is extended. No phase flag means the original zero-power stop detection still applies.
+
+## Current charging display
+
+SMARTFOX charge-point kW appears prominently on the left with one decimal place. The battery displays vehicle SOC or the active energy-based estimate marked `*`; the lightning symbol appears only when charging is recognized. The long bar shows the selected target. The footer retains the actual last vehicle SOC and capture timestamp, and explains `*` separately. Approximate HH:MM remaining time and arrival time use the same existing energy/power assumptions; they are not cloud-provided forecasts. UI polling, Refresh Car and header page reload are separate actions; none is a verified vehicle wake-up operation.
