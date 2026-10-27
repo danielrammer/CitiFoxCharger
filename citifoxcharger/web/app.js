@@ -33,6 +33,7 @@ function updateControls(){
  const staleOption=session?.can_start_manual_with_stale===true&&typeof soc==="number"&&target>soc;
  const retry=session?.can_retry_start===true||session?.can_retry_start_with_stale===true;
  $("target-value").textContent=`${target} %`;$("target").disabled=mutating||latest.limit_test?.active===true||(active&&!session?.can_adjust_target);
+ updateBattery();
  const release=session?.can_release_native_guard===true;
  const trialMode=latest.limit_test?.active===true,trialReady=trialMode&&latest.limit_trial?.can_start===true;
  $("target-label").textContent=trialMode?"Vehicle-stop test target":"Force charge to";
@@ -77,6 +78,14 @@ function updateEta(){
  $("charge-eta").textContent=text;$("charge-eta").dataset.estimate=String(text.startsWith("Estimated")||text.startsWith("Target"));
 }
 function shownEstimate(session){const meter=session?.energy_estimate;return meter?.valid===true&&activeStates.has(session.status)&&typeof meter.estimated_soc==="number"?meter.estimated_soc:null;}
+function updateBattery(){
+ const estimate=shownEstimate(latest.charging),current=estimate??latest.skoda.soc,target=Number($("target").value);
+ $("battery-current").textContent=(estimate!==null?number(estimate,1)+"*":current??"—")+" %";
+ $("battery-current").title=estimate===null?"Last vehicle report":"* Estimated from SMARTFOX charging energy; not a live vehicle measurement";
+ $("battery-target").textContent=`${target} %`;
+ $("battery-fill").style.width=`${current??0}%`;
+ $("battery-target-marker").style.left=target===100?"calc(100% - 1px)":`${target}%`;
+}
 const number=(value,digits=2)=>typeof value==="number"&&Number.isFinite(value)?value.toLocaleString(CitiFoxI18n.locale(),{minimumFractionDigits:digits,maximumFractionDigits:digits}):"—";
 function livePhaseSwitch(charger){const seconds=(Date.now()-Date.parse(charger.read_at))/1000;return charger.available&&charger.mode!=="OFF"&&charger.telemetry_available===true&&charger.phase_switching===true&&Number.isFinite(seconds)&&seconds>=-5&&seconds<=30;}
 function phaseMessage(charger){const seconds=charger.phase_switch_seconds;return Number.isInteger(seconds)&&seconds>=0&&seconds<=3600?`Phase switching in progress. Smartfox reports ${seconds} s. Waiting for charging permission.`:"Phase switching in progress. Waiting for charging permission.";}
@@ -203,6 +212,7 @@ function renderAccess(result){
  const network=result.network||{},link=$("network-url");
  $("network-status").textContent=network.message||"Home network access is disabled.";
  link.hidden=!network.enabled;link.textContent=network.url||"";if(network.url)link.href=network.url;
+ $("network-certificate-download").hidden=network.certificate_available!==true;
  if(!localAdmin){$("location-label").textContent="Home network access";$("key-form").hidden=true;document.querySelector(".app-control").hidden=true;$("config-form").querySelectorAll("input,select,button").forEach(element=>element.disabled=true);}
  if(publicAccess){$("location-label").textContent="Public access";$("config-form").hidden=true;$("device-link").hidden=true;link.hidden=true;}
 }
@@ -255,6 +265,27 @@ $("stop").addEventListener("click",()=>mutation(async()=>{const result=await api
 $("config-form").addEventListener("submit",event=>{event.preventDefault();mutation(async()=>{const value={smartfox:{host:$("host").value.trim(),port:Number($("port").value),unit_id:Number($("unit").value),firmware:$("firmware").value,poll_seconds:Number($("sf-poll").value),timeout_seconds:Number($("sf-timeout").value),profile:$("profile").value,word_order:$("word-order").value,interpretation_confirmed:$("interpretation").checked},skoda:{vin:$("vin").value.trim(),poll_seconds:Number($("car-poll").value),stale_seconds:Number($("car-stale").value)}};const result=await api("/api/config",value);await loadConfig();toast(result.message);});});
 $("key-form").addEventListener("submit",event=>{event.preventDefault();mutation(async()=>{try{const result=await api("/api/key",{key:$("api-key").value,persist:$("persist").checked});await loadConfig();toast(result.message);}finally{$("api-key").value="";}});});
 $("clear-key").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/key/clear",{});await loadConfig();toast(result.message);}));
+let certificateDownloading=false;
+$("download-certificate").addEventListener("click",async event=>{
+ event.preventDefault();if(certificateDownloading)return;
+ const button=$("download-certificate"),status=$("certificate-download-status"),controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),15000);
+ certificateDownloading=true;button.setAttribute("aria-busy","true");
+ status.hidden=false;status.textContent="Preparing public certificate download …";
+ try{
+  const response=await fetch("/api/network/certificate",{credentials:"same-origin",cache:"no-store",signal:controller.signal});
+  if(!response.ok){
+   const problem=await response.json().catch(()=>({}));
+   throw new Error(problem.error||`Certificate download failed (HTTP ${response.status}).`);
+  }
+  if(response.headers.get("Content-Type")?.split(";")[0].trim()!=="application/pkix-cert")throw new Error("The server did not return a public certificate. Reload the app and try again.");
+  const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement("a");
+  link.href=url;link.download="CitiFoxCharger-Home-Network.cer";document.body.append(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+  status.textContent="Certificate sent to browser downloads. No private key is included.";
+ }catch(e){status.textContent=e.name==="AbortError"?"Certificate download timed out. Check the connection and try again.":e.message;}
+ finally{clearTimeout(timer);certificateDownloading=false;button.removeAttribute("aria-busy");}
+});
 let diagnosticsDownloading=false;
 $("download-diagnostics").addEventListener("click",async event=>{
  event.preventDefault();if(diagnosticsDownloading)return;

@@ -66,3 +66,19 @@ holding vhost, validate with `httpd -t` and reload `httpd.service`. Keep the HTT
 challenge vhost for renewal. This disconnects public application access while
 preserving Maya and the tablet's LAN dashboard and monitoring. The current
 installed configuration is already in this disconnected state.
+
+## Follow-up — 2026-10-27
+
+The user supplied the current public CA. Strict curl and OpenSSL verification now
+succeeds against the live tablet, including its certificate chain and IP SAN
+192.168.0.95. The supplied root is valid until 2028-10-19; the live server leaf is
+valid until 2028-10-18. A PEM copy is staged outside Git at
+`/home/dnl/Work/CitiFoxCharger/gateway-transfer/tablet-current-ca.pem`.
+
+The live tablet reports 1.10.4, commit 5d24163b. That main commit adds certificate
+downloads and battery UI improvements but does not yet contain the public gateway
+implementation. PR #2 is synchronized with this main version; certificate downloads
+remain available on local/LAN access and are hidden/denied on public access.
+Production proxy forwarding must remain disabled until the latest gateway code and
+protected gateway configuration are installed on the tablet. Installing the CA into
+the system proxy configuration and activation will also require local root access.

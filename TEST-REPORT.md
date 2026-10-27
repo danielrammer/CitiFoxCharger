@@ -1,3 +1,19 @@
+# Battery polish and certificate download feedback — 1.10.4
+
+Validation on 26 October 2026: JavaScript syntax, Git whitespace and `node tests/test_certificate_download.js` passed. The real browser handler was tested in an inert DOM against successful binary downloads, rejected/missing certificates, non-JSON gateway errors, unexpected HTML responses and retries after failures. The existing certificate endpoint and charging/backend logic were not changed; the 462-test backend suite passed for 1.10.3.
+
+Fake-adapter browser QA checked the battery with 84% current / 85% target in both themes. The overview remained without scrolling at 800×1280, 800×1000, 640×1024 and 1280×800. The simulated Settings button handed its disposable public certificate to browser downloads and displayed the status without leaving the page. No successful download on the user's actual tablet is claimed: its exact URL and error are still needed. No trust-store changes or real device commands were made. Screenshots remain outside Git and are labelled simulated.
+
+## Previous release
+
+# Battery target display and public certificate download — 1.10.3
+
+Validation on 26 October 2026: **462 offline tests passed in 101.297 seconds**. New real-loopback HTTPS tests verify certificate content/type/download filename, fixed-path handling, password/session/origin requirements, passwordless-LAN access, missing certificates and rejection of private-key text, malformed DER, appended material and oversized files. Existing diagnostic downloads retain their filename. JavaScript syntax and Git whitespace checks passed. Charging logic was not changed.
+
+Fake-adapter browser QA verified a wider battery with separate Current/Target values, the estimate asterisk and live slider changes through 100%. Both themes and DE/EN labels were checked. Overview dimensions remained 800×1280, 640×1024 and 1280×800 without scrolling; narrow 360/390 px phones have no horizontal overflow and use a second row for battery/power. The Settings download completed with a disposable generated certificate; the test file was removed and the user's existing certificate remained unchanged. No certificate was installed into device trust stores. Screenshots are labelled simulated and stored outside Git. No browser warnings/errors and no real-device commands were recorded.
+
+## Previous release
+
 # External-link landing navigation — 1.10.2
 
 Validation on 26 October 2026: **459 offline tests passed in 105.303 seconds**. New local HTTP and real loopback HTTPS tests allow an external-link top-level GET only for the static landing page. Cross-site session bootstrap, status/diagnostic reads, resource fetches, embedded documents, POSTs and foreign Origin requests remain blocked. Network password authentication is still required when configured, including for navigation; passwordless LAN mode retains its existing permissions. Charging logic and GUI are unchanged. This is not a public-gateway deployment or proof that every phone trusts the private certificate.

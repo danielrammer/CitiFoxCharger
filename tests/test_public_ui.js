@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 function fixture(){
  const nodes=new Map();
- function node(id){if(!nodes.has(id)){const section={hidden:false};nodes.set(id,{id,hidden:false,disabled:false,value:'80',textContent:'',dataset:{},classList:{toggle(){}},addEventListener(){},setAttribute(){},removeAttribute(){},querySelectorAll(){return[];},closest(){return section;}});}return nodes.get(id);}
+ function node(id){if(!nodes.has(id)){const section={hidden:false};nodes.set(id,{id,hidden:false,disabled:false,value:'80',textContent:'',dataset:{},style:{},classList:{toggle(){}},addEventListener(){},setAttribute(){},removeAttribute(){},querySelectorAll(){return[];},closest(){return section;}});}return nodes.get(id);}
  const document={getElementById:node,querySelector:node,querySelectorAll(){return[];},documentElement:node('root'),addEventListener(){}};
  const context=vm.createContext({document,window:{matchMedia(){return{matches:false,addEventListener(){}};},addEventListener(){}},localStorage:{getItem(){return null;},setItem(){}},CitiFoxI18n:{locale(){return'en';}},setTimeout(){},setInterval(){},Date,Number,Set,console});
  let source=fs.readFileSync('citifoxcharger/web/app.js','utf8');
@@ -16,7 +16,7 @@ function fixture(){
 }
 const publicUi=fixture();
 publicUi.run('renderAccess({access:{local_admin:false,public_access:true,can_update:false,can_limit_test:false},key:{},network:{enabled:true,url:"https://192.168.0.95:8766/"}})');
-for(const id of ['app-update-panel','key-form','config-form','device-link','network-url'])assert.equal(publicUi.node(id).hidden,true,id);
+for(const id of ['app-update-panel','key-form','config-form','device-link','network-url','network-certificate-download'])assert.equal(publicUi.node(id).hidden,true,id);
 assert.equal(publicUi.node('location-label').textContent,'Public access');
 publicUi.run('latest={charging:{can_release_native_guard:true,can_start_manual:true,can_shutdown:true,can_stop:true},skoda:{soc:50,available:true},limit_test:{active:false}};updateControls()');
 assert.equal(publicUi.node('force').disabled,true);

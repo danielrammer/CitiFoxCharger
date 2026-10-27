@@ -14,6 +14,28 @@ from .secrets_store import dpapi
 
 ITERATIONS = 600000
 PRIVATE = tuple(ipaddress.ip_network(n) for n in ('10.0.0.0/8','172.16.0.0/12','192.168.0.0/16'))
+PUBLIC_CERTIFICATE = 'CitiFoxCharger-Home-Network.cer'
+
+
+def read_public_certificate(directory):
+    """Serve only one bounded, complete DER X.509 certificate, never key material."""
+    with (Path(directory)/'network'/PUBLIC_CERTIFICATE).open('rb') as stream:
+        data = stream.read(65537)
+    if not 4 <= len(data) <= 65536 or data[0] != 0x30:
+        raise ValueError('Invalid public certificate.')
+    size = data[1]
+    offset = 2
+    if size & 0x80:
+        count = size & 0x7f
+        if not 1 <= count <= 3 or len(data) < 2+count:
+            raise ValueError('Invalid public certificate.')
+        size = int.from_bytes(data[2:2+count], 'big')
+        offset += count
+    if offset+size != len(data):
+        raise ValueError('Certificate must not contain trailing material.')
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.load_verify_locations(cadata=ssl.DER_cert_to_PEM_cert(data))
+    return data
 
 
 def private_host(value):

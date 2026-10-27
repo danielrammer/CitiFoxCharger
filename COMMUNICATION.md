@@ -125,6 +125,7 @@ The browser never sends the Škoda API key to SMARTFOX or contacts the cloud dir
 | `POST /api/skoda/command` | Local-only legacy route. Raw Start is rejected; use the native combined start. |
 | `POST /api/smartfox/command` | Legacy local route; Modbus writes remain blocked. |
 | `GET /api/diagnostics`, `GET /api/diagnostics/download` | Authenticated local/home-network cached diagnostics; allowlisted fields, no device calls. |
+| `GET /api/network/certificate` | Authenticated download of the active profile's validated public CER certificate; no private keys or certificate installation. |
 | `POST /api/app/update`, `GET /api/app/update/status` | Local/home-network update job and status, with the existing update guards. |
 | `POST /api/app/restart`, `POST /api/app/quit` | Local-only backend process control. |
 

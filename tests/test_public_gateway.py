@@ -170,6 +170,8 @@ class GatewayHttpsTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.call(path, {})[0], 403)
         self.assertEqual(self.call('/api/app/update/status')[0], 403)
+        self.assertEqual(self.call('/api/network/certificate')[0], 403)
+        self.assertFalse(json.loads(self.call('/api/config')[1])['network']['certificate_available'])
         self.updater.launch.assert_not_called()
 
     def test_public_operations_use_existing_tablet_service_simulated_only(self):

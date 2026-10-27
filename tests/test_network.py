@@ -129,6 +129,46 @@ class NetworkHttpsTests(unittest.TestCase):
         self.assertFalse(list(Path(self.material.name).rglob('*.key.tmp')))
         self.assertNotIn(b'PRIVATE KEY',Path(self.material.name,'network/server-key.dpapi').read_bytes())
 
+    def certificate_file(self):
+        target=self.service.config.directory/'network'/'CitiFoxCharger-Home-Network.cer'
+        target.parent.mkdir(parents=True,exist_ok=True)
+        target.write_bytes(Path(self.material.name,'network/CitiFoxCharger-Home-Network.cer').read_bytes())
+        return target
+
+    def test_only_public_certificate_downloads_with_explicit_filename(self):
+        target=self.certificate_file()
+        code,body,headers=self.call('/api/network/certificate')
+        self.assertEqual(code,200)
+        self.assertEqual(body,target.read_bytes())
+        self.assertEqual(headers['Content-Type'],'application/pkix-cert')
+        self.assertEqual(headers['Content-Disposition'],'attachment; filename="CitiFoxCharger-Home-Network.cer"')
+        self.assertEqual(self.call('/api/network/certificate?file=server-key.dpapi')[1],body)
+        self.assertTrue(json.loads(self.call('/api/config')[1])['network']['certificate_available'])
+
+    def test_certificate_download_requires_auth_session_and_same_origin(self):
+        self.certificate_file()
+        path='/api/network/certificate'
+        self.assertEqual(self.call(path,Authorization='')[0],401)
+        self.assertEqual(self.call(path,Cookie='')[0],401)
+        self.assertEqual(self.call(path,Origin='https://other.example')[0],403)
+        self.assertEqual(self.call(path,**{'Sec-Fetch-Site':'cross-site'})[0],403)
+        config={**configuration(),'authentication':'none','salt':None,'password_hash':None,'iterations':0}
+        self.server.network_auth=NetworkAuth(validate_network(config))
+        self.assertEqual(self.call(path,Authorization='')[0],200)
+        self.assertEqual(self.call('/network/server-key.dpapi',Authorization='')[0],404)
+
+    def test_missing_malformed_or_appended_certificate_is_not_served(self):
+        path='/api/network/certificate'
+        self.assertEqual(self.call(path)[0],404)
+        target=self.certificate_file()
+        good=target.read_bytes()
+        for bad in (b'-----BEGIN PRIVATE KEY-----\nprivate-marker',good+b'private-marker',b'\x30\x03\x02\x01\x03',b'X'*65537):
+            with self.subTest(length=len(bad)):
+                target.write_bytes(bad)
+                code,body,_=self.call(path)
+                self.assertEqual(code,404)
+                self.assertNotIn(b'private-marker',body)
+
     def test_passwordless_https_retains_remote_permissions_session_origin_and_csrf(self):
         config={**configuration(),'authentication':'none','salt':None,'password_hash':None,'iterations':0}
         self.server.network_auth=NetworkAuth(validate_network(config))
