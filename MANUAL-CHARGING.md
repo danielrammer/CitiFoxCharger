@@ -1,14 +1,14 @@
 # Manual charging
 
-Current application: **1.10.9**, checked **27 October 2026**. The energy-controller behavior described here was last changed in 1.10.1; subsequent charging-dashboard changes are presentation only.
+Current application: **1.11.0**, checked **27 October 2026**. Energy estimation and target-stop thresholds are unchanged; the initial start now prepares phase selection before the vehicle Start and M+.
 
 New sessions for this Citigo use `manual_charging.py`. `charge_energy.py` is a pure energy calculation with no network or device effects. `charging.py` retains persistence, target-report stops, local-first Stop and recovery of existing sessions. Previously saved cloud-only sessions and the isolated vehicle-limit experiment are not silently converted.
 
 ```mermaid
 stateDiagram-v2
     [*] --> Preparing: user requests manual target
-    Preparing --> Charging: SMARTFOX power already flowing in M+
-    Preparing --> WaitingPower: M+ confirmed
+    Preparing --> VehicleStart: phase policy prepared; switch observed if possible
+    VehicleStart --> WaitingPower: Start accepted, then M+ confirmed
     WaitingPower --> PhaseSwitching: info 6
     Charging --> PhaseSwitching: info 6
     PhaseSwitching --> WaitingPower: switching finished
@@ -26,7 +26,9 @@ stateDiagram-v2
 
 The button accepts a request with fresh local telemetry for a connected vehicle (states 2, 3, 5 or 6), verified local control, usable API credentials/capabilities and a known SOC from the last 24 hours. A target must be above the last reported SOC. Disconnection, authorization/error state, pending Stop, update/restart and isolated experiments still block conflicting commands. A+ surplus charging is a valid entry, including 0 kW during a pause. Start/read request quota alone does not disable an otherwise valid request.
 
-The intent is saved before selecting M+. Existing positive charge-point power is adopted without a redundant vehicle command. Otherwise the backend waits for verified readiness and three seconds of settling. A phase switch may take up to ten minutes; after it ends the car gets fifteen seconds to resume itself. An unflagged pause after power flow gets ninety seconds. Only confirmed zero-power readiness permits a vehicle Start; at most three commands are sent per continuous waiting period, at least three minutes apart, respecting API cooldowns. Two fresh samples at least three seconds apart with at least 0.5 kW replenish that retry allowance for a later interruption; a single spike does not. Total attempt numbers remain monotonic so request IDs are never reused. Accepted/unknown responses do not establish power flow. Initial queued preparation is bounded by 65 minutes, only until power first flows; this initial deadline never ends a later pause. Loss of power after charging is bounded by ten minutes. Failure is reported, not labelled target success.
+New manual requests save the original A/A+ and M/M+ phase policies, then select three phases through the verified vendor web form. An actual reported phase switch is awaited with its manufacturer countdown, followed by a short stability check. **A confirmed configuration is not proof of a physical switch:** the hardware test retained a single-phase indication at idle A+ despite the three-phase selection. That deferred case does not deadlock manual Start. The backend sends the vehicle Start before releasing M+, then restores the previous A/A+ selection; any overridden M/M+ selection is restored on exit. Positive A+ power no longer substitutes for the initial explicit vehicle Start on this prepared path. An unavailable settings form falls back to the existing mode/Start path rather than removing manual charging.
+
+The existing zero-power recovery remains bounded: no vehicle retries during switching or while power flows, at most three starts per continuous wait, at least three minutes apart, respecting API cooldowns. A flagged phase pause allows up to ten minutes; a normal zero-power pause waits ninety seconds. Two fresh samples at least three seconds apart with at least 0.5 kW replenish the retry budget. Initial queued access is bounded by 65 minutes; later power loss is bounded separately. Restart does not replay an unfinished prepared vehicle Start. Uncertain M+ release retains target monitoring.
 
 M+ is held through SMARTFOX schedule changes back to A/A+. Explicit A+ or Off in CitiFox ends the manual controller. External Off, disconnection or charger error cancels the attempt. Selecting A+ deliberately returns control to normal vehicle/SMARTFOX schedules.
 
@@ -44,7 +46,7 @@ The user prioritizes continued charging over an unnecessary early stop and accep
 
 ## Stop and diagnosis
 
-Stop first sets and reads back SMARTFOX Off, then requests vehicle Stop when access permits. Off stays held until newer vehicle evidence confirms stopped; only then is normal A+ restored. A target report uses `target`; the calculated threshold uses `estimated_target`. Measurement, device and startup failures have separate unsuccessful causes. Stale SOC/read quota is not a stop reason for new energy-backed sessions. Existing vehicle charging schedules are unchanged and can charge again after A+ is restored.
+Stop first sets and reads back SMARTFOX Off, then requests vehicle Stop when access permits. Off stays held until newer vehicle evidence confirms stopped; only then is normal A+ restored once. Inactive sessions do not continually override later external mode selections. A target report uses `target`; the calculated threshold uses `estimated_target`. Measurement, device and startup failures have separate unsuccessful causes. Stale SOC/read quota is not a stop reason for new energy-backed sessions. Existing vehicle charging schedules are unchanged and can charge again after A+ is restored.
 
 Settings → Diagnostics exposes strategy, preparation phase, total/per-wait attempts, waiting time, estimated SOC, accumulated kWh, anchor timestamp, initial report age and stop cause. Starting a new session retains up to ten previous session summaries in the same private state file. JSON exports include these as `previous_sessions`, allowing a failed attempt to be inspected after a retry. Completed stops also record the confirming vehicle SOC and its capture timestamp. The history is sanitized again on export; no credentials, VIN, request IDs or raw energy history are exported. Cloud polling remains budgeted; speculative extra freshness/near-target reads are disabled for energy-backed sessions.
 
@@ -57,3 +59,9 @@ The normal action is **Start charging / Laden starten**. Recovery/test actions k
 **Last vehicle report** always includes the actual reported integer SOC and original capture timestamp, separately from the displayed estimate. Settings diagnostics also retain API retrieval time; a new response can contain the same older vehicle report. **Refresh Car / Auto aktualisieren** invokes the existing budgeted vehicle refresh, with at least 60 seconds spacing and applicable cooldown/reserve checks. It is not a wake command or a guarantee of fresh in-car data. The header's Reload page only reloads the website.
 
 Remaining duration uses the displayed active estimate (or a non-stale vehicle SOC), the existing 32.3 kWh/90% assumptions and fresh measured charging power. It is rounded up to five minutes and shown as HH:MM plus an approximate arrival clock time. No ETA is invented for zero/stale power, phase switching or missing usable SOC. This display forecast does not introduce another stop rule.
+
+## Automatic solar preparation
+
+With a local solar location configured, sunrise and sunset are calculated offline using the NOAA fractional-year equations. There is no forecast dependency or configurable night-time window. At idle A+ after sunset, the backend selects three phases once and records the original policy. It restores that exact policy after sunrise when idle, and restores before a clean shutdown. Active manual sessions, explicit Off/M+ and isolated tests are left alone. External phase changes suppress the night override until the next solar day.
+
+Settings show the calculated sunrise/sunset and whether a night policy is selected. This does not promise a completed physical switch or instant charging. Daytime manual charging remains available; a click performs preparation as needed. Device countdowns and preparation messages use the existing status area; no start time is invented when SMARTFOX has not supplied one. The private location/restoration record stays in `solar-preparation.json` in the active data profile and is never returned in public status or diagnostics.

@@ -302,6 +302,18 @@ class ServerTests(unittest.TestCase):
         connection.close()
         return status, body, returned
 
+    def test_local_solar_location_is_scoped_csrf_protected_and_not_in_status(self):
+        location = {'latitude': 40.0, 'longitude': 15.0}
+        self.assertEqual(self.call('/api/solar/location', location, **{'X-CSRF-Token': 'wrong'})[0], 403)
+        self.assertEqual(self.call('/api/solar/location', {**location, 'night_start': '18:00'})[0], 400)
+        code, body, _ = self.call('/api/solar/location', location)
+        self.assertEqual(code, 200)
+        result = json.loads(body)
+        self.assertTrue(result['configured'])
+        self.assertNotIn('latitude', result)
+        self.assertNotIn('longitude', result)
+        self.assertTrue(self.service.solar.path.is_file())
+
     def test_isolated_limit_test_http_never_starts_or_changes_mode(self):
         from test_limit_test import LimitTestTests
         fixture=LimitTestTests();fixture.setUp();self.addCleanup(fixture.doCleanups)

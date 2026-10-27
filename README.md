@@ -1,4 +1,4 @@
-# CitiFoxCharger · 1.10.10
+# CitiFoxCharger · 1.11.0
 
 A Windows tablet dashboard for a **Škoda Citigo e iV** and **SMARTFOX Pro 2 / Charger Pro**. Charging targets, home energy and heating controls in one German/English interface.
 
@@ -18,8 +18,8 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    Start["Start + target %"] --> M["SMARTFOX M+"]
-    M --> Monitor["Track energy + vehicle SOC"]
+    Start["Start + target %"] --> Prepare["Phase preparation → vehicle Start → M+"]
+    Prepare --> Monitor["Track energy + vehicle SOC"]
     Monitor -->|"Target / Stop"| Off["SMARTFOX Off → vehicle Stop"]
     Off -->|"Stop confirmed"| Auto["Return to A+"]
 ```

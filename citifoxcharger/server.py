@@ -273,7 +273,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         remote_actions = {"/api/app/update","/api/refresh","/api/charging/start","/api/charging/stop","/api/charging/target","/api/charging/restore-limit","/api/charging/confirm-restored-limit","/api/charging/release-limit-guard",
                           "/api/charging/limit-test/set","/api/charging/limit-test/end","/api/charging/limit-test/start-trial",
-                          "/api/smartfox/heater","/api/smartfox/charger-mode"}
+                          "/api/smartfox/heater","/api/smartfox/charger-mode","/api/solar/location"}
         if self.server.network_auth and urlsplit(self.path).path not in remote_actions:
             self.reply(403,{"error":"Configure device access and the backend directly on the tablet."})
             return
@@ -329,6 +329,10 @@ class Handler(BaseHTTPRequestHandler):
                 if data:
                     raise ValueError("No parameters are required.")
                 result = service.refresh_now()
+            elif path == '/api/solar/location':
+                with service.lock:
+                    service.solar.configure(data)
+                    result = service.solar.state()
             elif path == "/api/skoda/command":
                 if set(data) != {"action", "request_id"} or data["action"] not in ("start", "stop"):
                     raise ValueError("Invalid vehicle command.")

@@ -13,6 +13,7 @@ from .power import PowerGuard
 from .vehicle_limit import VehicleLimit
 from .limit_test import LimitTest
 from .limit_trial import LimitTrial
+from .solar_preparation import SolarPreparation
 
 
 class Service:
@@ -42,6 +43,7 @@ class Service:
         self.vehicle_limit = VehicleLimit(self)
         self.limit_test = LimitTest(self)
         self.limit_trial = LimitTrial(self)
+        self.solar = SolarPreparation(self)
 
     def restore_vehicle_cache(self):
         try:
@@ -264,6 +266,13 @@ class Service:
                     raise ValueError("The stop is being checked. Exit is allowed once Smartfox confirms A+ or Off with no charging power. Please wait.")
                 self.charging.save(status="closed",ended_by_user=True,vehicle_stop_confirmed=False,
                                    message="Monitoring explicitly closed: Smartfox reports no charging power. Vehicle stop confirmation is still pending.",closed_at=utcnow())
+            self.charging.manual.phases.cleanup(final=True)
+            if self.charging.manual.phases.pending_restore:
+                raise ValueError('Wait for the original SMARTFOX phase settings to be restored before exiting.')
+            try:
+                self.solar.restore()
+            except SmartfoxControlError:
+                raise ValueError('Restore the original SMARTFOX solar phase policy before exiting.') from None
             self.save_rate_state()
             self.stopping = True
 
@@ -457,6 +466,7 @@ class Service:
             if not self.stopping:
                 self.charging.tick()
                 self.limit_trial.tick()
+                self.solar.tick()
             self.power.update((self.charging.active or self.limit_trial.active) and not self.worker_stop.is_set() and not self.stopping)
             charging = self.charging.state()
             if self.limit_test.active:
@@ -476,6 +486,7 @@ class Service:
                     "last_command": copy.deepcopy(self.last_command), "events": copy.deepcopy(self.events),
                     "app_update_pending": self.app_update_pending,
                     "charging": charging,
+                    "solar": self.solar.state(),
                     "limit_test": self.limit_test.state(),
                     "limit_trial": trial,
                     "monitoring": {"running": self.worker is not None and self.worker.is_alive(),

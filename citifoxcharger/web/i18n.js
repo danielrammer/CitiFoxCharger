@@ -128,6 +128,10 @@ Object.assign(messages,{
  "Estimated charge level · * SMARTFOX energy":"Geschätzter Ladestand · * SMARTFOX-Energie"
 });
 rules.unshift(
+ [/^Three-phase policy selected\. Waiting for vehicle command access: about (\d+) s\.$/,"3 Phasen vorgewählt. Warte auf Fahrzeugfreigabe: noch ca. {0} s."],
+ [/^Sunrise (.+) · Sunset (.+)$/,"Sonnenaufgang {0} · Sonnenuntergang {1}"],
+ [/^Phase switching: about (\d+) s remaining, then checking charging permission\.$/,"Phasenumschaltung: noch ca. {0} s, danach Freigabeprüfung."],
+ [/^Three phases reported\. Checking stable permission: about (\d+) s\.$/,"3 Phasen gemeldet. Freigabeprüfung: noch ca. {0} s."],
  [/^Estimate\* · (.*)$/, "Schätzung* · {0}"],
  [/^Start attempted\. Waiting for charging power; next check in about (\d+) seconds\.$/,"Start versucht. Warte auf Ladeleistung; nächste Prüfung in ca. {0} Sekunden."],
  [/^Manual charging to (\d+) %; measured energy is monitored\.$/,"Manuelles Laden bis {0} %; gemessene Ladeenergie wird überwacht."],
@@ -162,6 +166,33 @@ function german(value,depth=0){
  return value;
 }
 const storedText=new WeakMap(),storedAttributes=new WeakMap();
+Object.assign(messages,{
+ "Preparing three phases. Start time unknown; waiting for SMARTFOX.": "3 Phasen vorbereiten. Startzeit noch unbekannt; warte auf SMARTFOX.",
+ "Three-phase policy selected. Waiting for vehicle command access; start time unknown.": "3 Phasen vorgewählt. Warte auf Fahrzeugfreigabe; Startzeit noch unbekannt.",
+ "Vehicle Start accepted; M+ confirmed. Waiting for charging power.": "Fahrzeugstart angenommen; M+ bestätigt. Warte auf Ladeleistung.",
+ "The original SMARTFOX phase settings are still being restored.": "Die ursprüngliche SMARTFOX-Phasenwahl wird noch wiederhergestellt.",
+ "Restoring the original SMARTFOX phase settings is pending. Check the connection.": "Wiederherstellung der ursprünglichen SMARTFOX-Phasenwahl ausstehend. Verbindung prüfen.",
+ "Start preparation was interrupted. Original phase settings are being restored; no new Start was sent.": "Startvorbereitung unterbrochen. Ursprüngliche Phasenwahl wird wiederhergestellt; kein neuer Start gesendet.",
+ "Three-phase preparation was not confirmed within ten minutes. No M+ release was sent.": "3-Phasen-Vorbereitung nach zehn Minuten nicht bestätigt. M+ wurde nicht freigegeben.",
+ "Vehicle start access did not become available in time. No M+ release was sent.": "Fahrzeugstart war nicht rechtzeitig verfügbar. M+ wurde nicht freigegeben.",
+ "Charger mode changed during phase preparation. No vehicle Start was sent.": "Lademodus während der Phasenvorbereitung geändert. Kein Fahrzeugstart gesendet.",
+ "Vehicle start access is unavailable. Original phase settings are being restored.": "Fahrzeugstart nicht verfügbar. Ursprüngliche Phasenwahl wird wiederhergestellt.",
+ "Vehicle Start was not confirmed accepted. No M+ release was sent; check MySkoda.": "Annahme des Fahrzeugstarts nicht bestätigt. M+ nicht freigegeben; MyŠkoda prüfen.",
+ "M+ release is unconfirmed. Target monitoring remains active; check SMARTFOX.": "M+-Freigabe unbestätigt. Zielüberwachung bleibt aktiv; SMARTFOX prüfen.",
+ "Start preparation could not be confirmed. Original phase settings are being restored; check SMARTFOX and MySkoda.": "Startvorbereitung unbestätigt. Ursprüngliche Phasenwahl wird wiederhergestellt; SMARTFOX und MyŠkoda prüfen.",
+ "Observing the interrupted start after restart. No repeated vehicle Start; Stop remains available.": "Unterbrochener Start wird nach Neustart geprüft. Kein erneuter Fahrzeugstart; Stoppen bleibt möglich.",
+ "Vehicle identity changed. Manual monitoring was not transferred.": "Fahrzeugzuordnung geändert. Manuelle Überwachung wurde nicht übertragen.",
+ "Wait for the original SMARTFOX phase settings to be restored before exiting.": "Vor dem Beenden die Wiederherstellung der ursprünglichen SMARTFOX-Phasenwahl abwarten."
+});
+Object.assign(messages,{
+ "Solar phase preparation": "Solare Phasenvorwahl",
+ "Local solar location has not been configured.": "Ort für die lokale Sonnenberechnung noch nicht eingerichtet.",
+ "Solar phase policy could not be confirmed; manual charging remains available.": "Solare Phasenvorwahl unbestätigt; manuelles Laden bleibt verfügbar.",
+ "Three phases preselected for the night; switching may still occur at charging start.": "Nachts sind 3 Phasen vorgewählt; eine Umschaltung beim Ladestart bleibt möglich.",
+ "Restoring the normal daytime phase policy.": "Die normale Phasenwahl für den Tag wird wiederhergestellt.",
+ "Normal phase policy. Manual charging can be requested at any time.": "Normale Phasenwahl. Manuelles Laden kann jederzeit angefordert werden.",
+ "Saved phase preparation is invalid. Check the SMARTFOX phase settings before starting again.": "Gespeicherte Phasenvorbereitung ungültig. Vor einem neuen Start SMARTFOX-Phasenwahl prüfen."
+});
 function translated(value){return language==="de"?german(value):value;}
 function updateText(node){
  const value=node.nodeValue,old=storedText.get(node),source=old&&value===old.output?old.source:value;

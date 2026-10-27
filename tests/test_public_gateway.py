@@ -174,7 +174,7 @@ class GatewayHttpsTests(unittest.TestCase):
                      '/api/key', '/api/key/clear', '/api/skoda/command', '/api/smartfox/command',
                      '/api/charging/limit-test/set', '/api/charging/limit-test/end',
                      '/api/charging/limit-test/start-trial', '/api/charging/release-limit-guard',
-                     '/api/charging/confirm-restored-limit', '/api/charging/restore-limit', '/api/future'):
+                     '/api/charging/confirm-restored-limit', '/api/charging/restore-limit', '/api/solar/location', '/api/future'):
             with self.subTest(path=path):
                 self.assertEqual(self.call(path, {})[0], 403)
         self.assertEqual(self.call('/api/app/update/status')[0], 403)

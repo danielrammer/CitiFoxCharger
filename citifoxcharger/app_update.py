@@ -54,7 +54,7 @@ class AppUpdater:
             if current['phase'] not in ('idle','complete','failed'):
                 return current
             if (service.stopping or (getattr(service,"limit_trial",None) and service.limit_trial.active)
-                    or (service.charging.active and not service.charging.state()['can_shutdown'])):
+                    or not service.charging.state()['can_shutdown']):
                 raise ValueError('Stop charging and wait for confirmation before updating.')
             if service.secrets.key and not service.secrets.persisted:
                 raise ValueError('First save the API key with Windows encryption in Settings.')

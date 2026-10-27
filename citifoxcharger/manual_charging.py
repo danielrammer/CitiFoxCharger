@@ -11,6 +11,7 @@ from . import charge_energy
 from .modbus import utcnow
 from .skoda import IntegrationError, timestamp
 from .smartfox_web import SmartfoxControlError
+from .phase_preparation import PhasePreparation
 
 STRATEGY = 'smartfox_energy'
 
@@ -19,6 +20,7 @@ class ManualCharging:
     def __init__(self, session):
         self.session = session
         self.service = session.service
+        self.phases = PhasePreparation(self)
 
     @property
     def selected(self):
@@ -37,6 +39,8 @@ class ManualCharging:
         car = s.cache.get('skoda', {})
         if s.stopping or s.app_update_pending:
             return 'The app is restarting or updating.'
+        if not self.session.active and self.phases.pending_restore:
+            return 'The original SMARTFOX phase settings are still being restored.'
         if self.session.active and (not self.selected or value.get('stop_requested')):
             return 'Finish the current session or pending stop first.'
         if not self.local_ready():
@@ -71,6 +75,8 @@ class ManualCharging:
                 seconds = c.get('phase_switch_seconds')
                 wait = max(wait, seconds if type(seconds) is int else 120)
             result['start_eta_seconds'] = wait if self.session.value.get('manual_phase') != 'charging' else 0
+            if self.phases.pending_restore:
+                result['can_shutdown'] = False
         return result
 
     def start(self, target, request_id):
@@ -98,11 +104,19 @@ class ManualCharging:
             raise IntegrationError('target_reached', 'The selected target is already reached.')
         now = time.time()
         c = s.cache['smartfox']['charger']
+        try:
+            phase_preparation = self.phases.begin(c)
+        except SmartfoxControlError:
+            # Preselection is an optimization. A missing settings form must
+            # not remove the existing, verified mode/Start charging path.
+            phase_preparation = None
+            s.event('Phase preselection unavailable. Using the existing SMARTFOX manual-start path.')
         meter = charge_energy.begin(car['soc'], timestamp(car['captured_at']), now, c['power_kw'])
         session.save(replace=True, strategy=STRATEGY, status='starting', manual_phase='preparing',
                      vin=s.config.value['skoda']['vin'], target_percent=target, request_id=request_id,
                      started_at=utcnow(), last_start_epoch=now, energy_meter=meter,
                      start_attempts=0, power_cycle_attempts=0, next_start_epoch=now, preparation_deadline=now+3900,
+                     phase_preparation=phase_preparation,
                      message='Start attempted. Preparing M+; waiting for charging power.')
         self.tick()
         return session.state()
@@ -141,6 +155,9 @@ class ManualCharging:
         value = session.value
         if not self.selected or not session.active or value.get('stop_requested') or s.stopping:
             return
+        if value.get('vin') != s.config.value['skoda']['vin']:
+            session.save(status='error', message='Vehicle identity changed. Manual monitoring was not transferred.')
+            return
         if self.check_target():
             return
         session.observe_start_power()
@@ -171,6 +188,11 @@ class ManualCharging:
         if meter['estimated_soc'] >= value['target_percent']:
             self.stop('estimated_target', f"Estimated target {value['target_percent']} % reached using measured charging energy.")
             return
+        if self.phases.tick(c):
+            return
+        # Preparation may have released M+ and refreshed the local report.
+        c = s.cache['smartfox']['charger']
+        value = session.value
         # Hold M+ through schedules and phase switching. An explicit mode choice
         # in CitiFox ends this controller before changing the wallbox mode.
         if c.get('mode') == 'OFF' and value.get('manual_phase') != 'preparing':
@@ -191,6 +213,8 @@ class ManualCharging:
                 self.stop('phase_wait', 'Phase switching did not finish within ten minutes.')
             return
         if c['power_kw'] > .1:
+            if self.phases.record.get('observe_only'):
+                self.phases.save(observe_only=False)
             capture = timestamp(c['read_at'])
             since = value.get('resume_power_since') if c['power_kw'] >= .5 else None
             since = since if since is not None else capture
@@ -222,6 +246,9 @@ class ManualCharging:
             self.stop('start_timeout', 'No charging power confirmed. Manual charging needs attention.')
             return
         if now < next_start or now-ready_since < settle or not c.get('ready_for_start'):
+            return
+        if self.phases.record.get('observe_only'):
+            session.save(status='paused', message='Observing the interrupted start after restart. No repeated vehicle Start; Stop remains available.')
             return
         attempts = value.get('power_cycle_attempts', 0 if last_power else value.get('start_attempts', 0))
         if attempts >= 3:

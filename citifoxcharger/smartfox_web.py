@@ -119,6 +119,61 @@ class SmartfoxWeb:
             raise ValueError("Only M+ and A+ are supported here.")
         return self.set_charger_mode(config, mode)
 
+    def read_phase_settings(self, config):
+        """Installed vendor form: independent A/A+ and M/M+ phase policies.
+
+        These are configuration policies, not proof of a completed physical switch.
+        Never evaluate vendor JavaScript or accept arbitrary register addresses.
+        """
+        self.read(config)  # Existing firmware gate, before trusting a settings form.
+        body = self.request(config['host'], '/carChargerModal.shtml', config['timeout_seconds'])
+        text = body.decode('utf-8', errors='replace')
+        if not re.search(r"id:'chargerType',register:'42600',value:'9'", text):
+            raise SmartfoxControlError('Charger 1 phase control requires the verified SMARTFOX Pro Charger profile.')
+        result = {}
+        for group, variable, field, register in (
+                ('auto_mode', 'phaseSwitchModeA', 'carChargerPhaseSwitchModeA', '42628'),
+                ('manual_mode', 'phaseSwitchModeM', 'carChargerPhaseSwitchModeM', '42845')):
+            marker = f"id:'{field}',register:'{register}',value:{variable}[0]"
+            match = re.search(r'\b'+variable+r"=JSON\.parse\('([0-9,\[\] ]+)'\)", text)
+            if marker not in text or match is None:
+                raise SmartfoxControlError('The SMARTFOX phase settings form does not match the verified profile.')
+            try:
+                values = json.loads(match[1])
+            except ValueError:
+                raise SmartfoxControlError('Invalid SMARTFOX phase settings.') from None
+            if not isinstance(values, list) or len(values) != 5 or any(type(v) is not int or v not in (0, 1, 2) for v in values):
+                raise SmartfoxControlError('Invalid SMARTFOX phase settings.')
+            result[group] = values[0]
+        current = re.search(r"id:'chargerMaxCurrent',register:'42603',value:'([0-9.]+)'", text)
+        if current is None or not 6 <= float(current[1]) <= 32:
+            raise SmartfoxControlError('The configured charger current limit could not be verified.')
+        result['max_current_a'] = float(current[1])
+        return result
+
+    def set_phase_settings(self, config, *, auto_mode=None, manual_mode=None):
+        """Narrow vendor-web setting write, followed by a fresh form readback.
+
+        setccx.cgi also serves separate vendor forms; only named phase fields
+        are sent. Maximum current, timers, M+ energy and other devices are untouched.
+        """
+        requested = {key: value for key, value in (('auto_mode', auto_mode), ('manual_mode', manual_mode)) if value is not None}
+        if not requested or any(type(v) is not int or v not in (0, 1, 2) for v in requested.values()):
+            raise ValueError('Phase selection must be automatic, single-phase or three-phase.')
+        before = self.read_phase_settings(config)
+        changed = {key: value for key, value in requested.items() if before[key] != value}
+        if not changed:
+            return before
+        if not self.allow_control:
+            raise SmartfoxControlError('Local SMARTFOX phase control is not authorized.')
+        registers = {'auto_mode': '42628', 'manual_mode': '42845'}
+        query = '&'.join(registers[key]+'='+str(value) for key, value in changed.items())
+        self.request(config['host'], '/setccx.cgi?'+query, config['timeout_seconds'])
+        after = self.read_phase_settings(config)
+        if any(after[key] != requested.get(key, before[key]) for key in ('auto_mode', 'manual_mode', 'max_current_a')):
+            raise SmartfoxControlError('SMARTFOX phase configuration was not confirmed; check the charger settings.')
+        return after
+
     def set_charger_mode(self, config, mode):
         if mode not in ("OFF", "A+", "M+"):
             raise ValueError("Only Off, A+ and M+ are supported here.")

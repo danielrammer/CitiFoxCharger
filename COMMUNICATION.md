@@ -1,6 +1,6 @@
 # Communication and data flow
 
-This describes **CitiFoxCharger 1.10.9**, checked against source on **27 October 2026**. Host/address symbols below are generic placeholders, not installation values; the configured device address and active register profile are authoritative. No VIN or API key is included. New manual sessions without readable vehicle limits use the energy controller in [MANUAL-CHARGING.md](MANUAL-CHARGING.md), which also includes its state diagram and uncertainty policy.
+This describes **CitiFoxCharger 1.11.0**, checked against source on **27 October 2026**. Host/address symbols below are generic placeholders, not installation values; the configured device address and active register profile are authoritative. No VIN or API key is included. New manual sessions without readable vehicle limits use the energy controller in [MANUAL-CHARGING.md](MANUAL-CHARGING.md), which also includes its state diagram and uncertainty policy.
 
 ## System overview
 
@@ -87,6 +87,8 @@ Base URL: **`http://SMARTFOX_IP`** (configurable private device address).
 | Charger 1: Off | `GET /setswcc.cgi?num=0&mode=3&value=100` |
 | Charger 1: A+ | `GET /setswcc.cgi?num=0&mode=2&value=100` |
 | Charger 1: M+ | `GET /setswcc.cgi?num=0&mode=4&value=100` |
+| Charger 1 phase policy (A/A+) | `GET /setccx.cgi?42628={policy}` |
+| Charger 1 phase policy (M/M+) | `GET /setccx.cgi?42845={policy}` |
 | Analogue heater 1: Off | `GET /setswaout.cgi?mode=0` |
 | Analogue heater 1: Automatic | `GET /setswaout.cgi?mode=2` |
 | Analogue heater 1: Manual | `GET /setswaout.cgi?mode=1&power={existing_manual_percent}` |
@@ -245,3 +247,11 @@ The main Stop route `/api/charging/stop` also stops the trial, independently of 
 ## Current charging display
 
 SMARTFOX charge-point kW appears prominently on the left with one decimal place. The battery displays vehicle SOC or the active energy-based estimate marked `*`; the lightning symbol appears only when charging is recognized. The long bar shows the selected target. The footer retains the actual last vehicle SOC and capture timestamp, and explains `*` separately. Approximate HH:MM remaining time and arrival time use the same existing energy/power assumptions; they are not cloud-provided forecasts. UI polling, Refresh Car and header page reload are separate actions; none is a verified vehicle wake-up operation.
+
+## Phase and solar preparation (1.11.0)
+
+`GET /carChargerModal.shtml` supplies the installed manufacturer's phase-policy arrays and field-to-register mapping. Policies are 0 automatic, 1 single-phase and 2 three-phase; these numeric query names are vendor-web fields, **not permission for Modbus writes**. The adapter gates firmware and Charger 1 type, validates the mapping, writes only requested phase fields, and checks fresh readback including an unchanged maximum current limit. No native M+ energy/time limit is edited.
+
+A reversible hardware check confirmed both A/A+ policy writes and restoration while leaving M/M+ and the 16 A maximum unchanged. Idle A+ stayed physically indicated as single-phase for three minutes. The start controller therefore distinguishes policy selection from physical readiness and does not wait forever for an idle-only switch. The initial prepared sequence is phase selection, budgeted vehicle Start, then M+; target metering and stopping are unchanged.
+
+`POST /api/solar/location` accepts only local-profile latitude/longitude under the existing session/CSRF checks. LAN access is supported; public gateway access is denied. Status exposes calculated sunrise/sunset and policy status only, not coordinates. Solar preparation uses local calculation and local SMARTFOX reads/writes; it sends no vehicle commands or external forecast requests.

@@ -1284,19 +1284,22 @@ class ChargingTests(unittest.TestCase):
         self.assertEqual(result["status"],"unconfirmed")
         self.assertEqual(self.effects,["heater2-manual"])
 
-    def test_idle_a_is_normalized_to_a_plus(self):
-        self.web.mode = "A"
-        self.service.next_due["smartfox"] = 0
-        self.service.charging.next_attempt = 0
-        self.service.status()
-        self.assertEqual(self.effects, ["A+"])
+    def test_idle_session_respects_external_charger_mode(self):
+        for mode in ('A', 'M+', 'OFF'):
+            with self.subTest(mode=mode):
+                self.web.mode = mode
+                self.service.next_due['smartfox'] = 0
+                self.service.charging.next_attempt = 0
+                self.service.status()
+                self.assertEqual(self.effects, [])
+                self.assertEqual(self.web.mode, mode)
 
     def test_normalization_never_writes_without_opt_in(self):
         self.web.mode, self.web.allow_control = "A", False
         self.service.next_due["smartfox"] = 0
         self.service.charging.next_attempt = 0
         result = self.service.status()
-        self.assertTrue(result["charging"]["normalization_pending"])
+        self.assertFalse(result["charging"]["normalization_pending"])
         self.assertEqual(self.effects, [])
 
     def test_vin_bound_session_never_controls_another_car(self):

@@ -79,3 +79,9 @@ assert.equal(node('force').textContent,'↻ Retry start');
 run(`mutating=true;updateControls();`);
 assert.equal(node('force').disabled,true,'pending requests disable Start immediately');
 console.log('PASS: manual-session Start lock, live target adjustment, Stop, A+ takeover and explicit retry.');
+
+run(`renderSolar({configured:true,sunrise_at:'2026-10-27T06:00:00Z',sunset_at:'2026-10-27T17:00:00Z',night:true,three_phase_selected:true})`);
+assert.match(node('solar-times').textContent,/^Sunrise .* · Sunset /);
+assert.match(node('solar-policy').textContent,/preselected.*switching may still occur/);
+run(`renderSolar({configured:true,night:false,three_phase_selected:false})`);
+assert.match(node('solar-policy').textContent,/Manual charging can be requested at any time/);

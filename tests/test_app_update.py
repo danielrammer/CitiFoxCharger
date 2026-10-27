@@ -22,7 +22,7 @@ class AppUpdateTests(unittest.TestCase):
         self.updater=AppUpdater(self.path,self.path,8765,self.spawn)
         self.service=SimpleNamespace(lock=threading.RLock(),stopping=False,app_update_pending=False,
             secrets=SimpleNamespace(key='',persisted=False),
-            charging=SimpleNamespace(active=False,state=lambda:{'can_shutdown':False}))
+            charging=SimpleNamespace(active=False,state=lambda:{'can_shutdown':not self.service.charging.active}))
 
     def test_detached_job_is_single_and_uses_argument_list_with_same_profile(self):
         first=self.updater.launch(self.service)
@@ -66,6 +66,11 @@ class AppUpdateTests(unittest.TestCase):
         self.assertNotIn('SECRET',json.dumps(self.updater.state()))
         self.updater.path.write_text(json.dumps({'job_id':'../invalid','phase':'checking'}))
         self.assertEqual(self.updater.state()['phase'],'idle')
+
+    def test_inactive_session_with_pending_phase_restoration_blocks_update(self):
+        self.service.charging.state=lambda:{'can_shutdown':False}
+        with self.assertRaises(ValueError):self.updater.launch(self.service)
+        self.spawn.assert_not_called()
 
     def job_fixture(self):
         self.updater.write(JOB,'queued')

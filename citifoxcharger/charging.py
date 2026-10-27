@@ -26,6 +26,9 @@ class ChargingSession:
                 if not isinstance(data, dict) or type(data.get("target_percent")) is not int or not 1 <= data["target_percent"] <= 100:
                     raise ValueError()
                 self.value = data
+                preparation = self.value.get('phase_preparation')
+                if isinstance(preparation, dict) and preparation.get('phase') not in ('done', 'cancelled'):
+                    preparation['interrupted'] = True
                 restored = {'complete':'The previous charging session completed.',
                             'closed':'The previous monitoring session was explicitly closed.',
                             'error':'The previous session needs attention. Please check the vehicle and Smartfox.'}
@@ -505,6 +508,8 @@ class ChargingSession:
         return False
 
     def tick(self):
+        if self.value.get('vin') in (None, self.service.config.value['skoda']['vin']):
+            self.manual.phases.cleanup(final=not self.active or bool(self.value.get('stop_requested')))
         native = getattr(self.service, "vehicle_limit", None)
         if native and native.tick():
             return
@@ -541,21 +546,9 @@ class ChargingSession:
             return
         self.next_attempt = time.monotonic() + (2 if self.value.get("phase_start_pending") else 10)
         if not self.active:
-            if self.normal_mode == "OFF":
-                self.value["normalization_pending"] = False
-                return
-            charger = self.service.cache.get("smartfox", {}).get("charger", {})
-            if charger.get("available") and charger.get("mode") != "A+":
-                if charger.get("control_available"):
-                    try:
-                        self.web.set_mode(self.service.config.value["smartfox"], "A+")
-                        self.value["normalization_pending"] = False
-                    except SmartfoxControlError:
-                        self.value["normalization_pending"] = True
-                else:
-                    self.value["normalization_pending"] = True
-            else:
-                self.value["normalization_pending"] = False
+            # finish_stop restores A+ once. An inactive session must not keep
+            # overriding subsequent changes made directly in SMARTFOX.
+            self.value['normalization_pending'] = False
             return
         car = self.service.cache.get("skoda", {})
         if self.value.get("vin") and self.value["vin"] != self.service.config.value["skoda"]["vin"]:

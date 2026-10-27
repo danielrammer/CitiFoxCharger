@@ -1,6 +1,6 @@
 # Windows tablet operation
 
-Current application: **1.10.9**, documentation checked **27 October 2026**.
+Current application: **1.11.0**, documentation checked **27 October 2026**.
 
 ## Installation and display
 
@@ -68,3 +68,7 @@ node tests/test_public_ui.js
 ```
 
 The Python gateway tests use disposable native certificates on Windows; no OpenSSL CLI or trust-store changes are needed. Real Apache integration tests require Linux and are skipped on Windows. See [TEST-REPORT.md](TEST-REPORT.md) for actual dated results.
+
+## Solar preparation
+
+Sunrise/sunset are calculated locally from the optional location in the active data profile's `solar-preparation.json`. The dashboard shows the times only in Settings. This is a phase-policy preselection, not a guarantee that the idle wallbox physically switches before charging. Manual Start remains available during daytime and prepares phases on demand. The protected setup route `/api/solar/location` accepts latitude/longitude; no scheduled night-time fields or forecast API key are used. Keep the Windows date and time zone correct. Never commit the location file or a private deployment example.

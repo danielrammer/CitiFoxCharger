@@ -1,3 +1,15 @@
+# Phase preparation and local solar policy — 1.11.0
+
+Validation on 27 October 2026: **511 offline tests passed in 153.519 seconds, with 3 Linux/Apache-only skips**. JavaScript syntax and the display, certificate-download and public-role checks passed. Coverage includes ordered phase preparation → vehicle Start → M+, queued command access, restart recovery without replaying Start, restoration, idle mode choices, local solar calculations and protected location setup. Target estimation and stop thresholds are unchanged.
+
+Fake-adapter browser checks verified the phase countdown in German and English, Start disabled during a manual session, and target adjustment available. Sunrise/sunset appear only in Settings, without time inputs. The overview fits 800×1280, 640×1024 and 1280×800 without scrolling; the checked phone width has no horizontal overflow. Screenshots remain outside Git and are labelled simulated.
+
+A supervised, idle hardware check changed only the automatic phase policy and restored its original value. Fresh vendor-form readback confirmed the selected policy and unchanged manual policy/current limit. The idle charger continued to report one physical phase: selecting three phases does not guarantee a completed physical switch before Start. No vehicle Start was sent by this validation. The complete new sequence and sustained charging power require a real charging test after installation; reliable 7.3 kW is not yet established.
+
+Location and restoration records stay in the private Windows profile. Documentation uses installation placeholders; this is not a new audit or purge of earlier Git history.
+
+## Previous validation
+
 # Manual Start button and steady battery percentage — 1.10.10
 
 Validation on 27 October 2026: the three Node display/download/public-permission checks, JavaScript syntax and whitespace checks passed. Regression coverage verifies that an active manual session disables Start while target adjustment and Stop remain available; idle A+ takeover, completed-session Start and explicit legacy retries remain available. No backend charging or estimation logic changed.
