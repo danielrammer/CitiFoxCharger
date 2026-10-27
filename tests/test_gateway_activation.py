@@ -4,6 +4,7 @@ import json
 import os
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 import test_public_gateway as gateway_tests
 
 if os.name == 'posix':
@@ -38,6 +39,18 @@ class ActivationPreflightTests(unittest.TestCase):
         self.assertFalse(activation.proxy_is_active(holding))
         for directive in (b'    ProxyPass / https://tablet/\n', b'  proxypassmatch ^/ https://tablet/\n'):
             self.assertTrue(activation.proxy_is_active(holding + directive))
+
+    def test_recovery_starts_an_inactive_shared_service_after_validation(self):
+        with patch.object(activation, 'service_active', return_value=False), patch.object(activation, 'command') as command:
+            activation.reload_apache(recover=True)
+        self.assertEqual(command.call_args_list[0].args, ('/usr/bin/httpd', '-t'))
+        self.assertEqual(command.call_args_list[-1].args, ('/usr/bin/systemctl', 'start', 'httpd'))
+
+    def test_readiness_wait_retries_before_accepting_a_finished_reload(self):
+        checks = iter((False, False, True))
+        with patch.object(activation.time, 'sleep') as sleep:
+            activation.wait_ready(lambda: next(checks))
+        self.assertEqual(sleep.call_count, 2)
 
     def test_preflight_accepts_restricted_policy_without_switching_any_devices(self):
         result = activation.validate_public(self.call, self.headers)

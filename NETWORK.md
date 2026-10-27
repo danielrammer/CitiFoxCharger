@@ -229,10 +229,13 @@ If the tablet has not loaded its gateway profile, it stops before changing proxy
 configuration. Otherwise it asks for the existing **public** password locally.
 
 It saves root-only backups of the affected Apache config, hosts file and proxy CA,
-adds the fixed tablet alias and verifies the candidate Apache proxy on a listener
-bound only to loopback. Missing/wrong login and strict upstream TLS are checked
-before replacing the public holding site. Errors restore the original files and
-gracefully reload Apache. After activation it rechecks the public role boundaries,
+adds the fixed tablet alias and verifies the candidate Apache proxy in a separate
+process with a listener bound only to loopback. This does not reload the shared
+production Apache service. After final activation, the script explicitly waits for
+the asynchronous production reload to serve the new gateway configuration. Missing/wrong login and strict upstream TLS are checked
+before replacing the public holding site. Errors restore the original holding configuration and reload Apache, or start
+it if it has stopped. A newly staged public CA remains available so an in-flight
+reload cannot lose its certificate dependency. After activation it rechecks the public role boundaries,
 tablet LAN and Maya. This is local validation; confirm external HTTPS separately
 using mobile data with Wi-Fi disabled.
 

@@ -106,3 +106,25 @@ LAN access using the tablet's current public CA with hostname checks enabled.
 No charging command or public-server activation was sent. The protected gateway
 profile configuration still needs transfer from omdev into the active tablet
 profile before the server agent enables forwarding and performs the public test.
+
+
+## Gateway profile and activation recovery — 2026-10-27
+
+The tablet now reports 1.10.7 (cf266eaa) after the user copied the gateway profile.
+The live activation preflight passed: trusted tablet TLS, passwordless LAN,
+restricted public permissions, Origin, browser session and CSRF checks. No real
+device switching command was issued.
+
+The first production validation attempt failed because the shared Apache reload
+was asynchronous: the script rolled back and removed its staged CA before Apache
+finished reading it. Apache then exited with AH01895/AH02311. Original configs were
+restored, and the user started httpd again; Maya and the CitiFox holding site were
+independently confirmed reachable with their original authentication realms.
+
+The activation helper now runs validation in a separate loopback-only Apache
+process, never as a temporary listener/include in the shared service. It waits for
+actual readiness after the final production reload. Rollback starts an inactive
+service when needed and retains a newly staged public CA to avoid removing an
+in-flight dependency. Failed isolated validation does not reload an unchanged
+production service. Production activation remains pending a successful rerun and
+external mobile-data validation.

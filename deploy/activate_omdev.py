@@ -3,6 +3,7 @@ import argparse
 import base64
 import fcntl
 import getpass
+import grp
 import hashlib
 import hmac
 import http.client
@@ -16,6 +17,8 @@ import ssl
 import subprocess
 import sys
 import time
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -52,9 +55,71 @@ def write(path, data, mode=0o644):
     path.chmod(mode)
 
 
-def reload_apache():
+def service_active():
+    return subprocess.run(['/usr/bin/systemctl', 'is-active', '--quiet', 'httpd'],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+
+def reload_apache(recover=False):
     command('/usr/bin/httpd', '-t')
-    command('/usr/bin/systemctl', 'reload', 'httpd')
+    command('/usr/bin/systemctl', 'start' if recover and not service_active() else 'reload', 'httpd')
+
+
+def wait_ready(check, process=None, timeout=40):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if process is not None:
+            ensure(process.poll() is None, 'Isolated Apache validation exited; production Apache was not reloaded.')
+        try:
+            if check():
+                return
+        except (OSError, http.client.HTTPException):
+            pass
+        time.sleep(.2)
+    raise ValueError('Timed out waiting for the expected Apache configuration to become ready.')
+
+
+def validation_configuration(candidate, port, runtime):
+    modules = ('mpm_event', 'unixd', 'authn_core', 'authn_file', 'authz_core', 'authz_user',
+               'auth_basic', 'proxy', 'proxy_http', 'ssl', 'headers', 'rewrite', 'log_config')
+    text = '\n'.join('LoadModule '+name+'_module /usr/lib/httpd/modules/mod_'+name+'.so' for name in modules)
+    user = 'http' if os.geteuid() == 0 else pwd.getpwuid(os.geteuid()).pw_name
+    group = 'http' if os.geteuid() == 0 else grp.getgrgid(os.getegid()).gr_name
+    text += (f'\nServerRoot "{runtime}"\nDefaultRuntimeDir "{runtime}"\nPidFile "{runtime}/httpd.pid"\n'
+             f'User {user}\nGroup {group}\nServerName localhost\nListen 127.0.0.1:{port}\n'
+             f'ErrorLog "{runtime}/main-error.log"\nLogLevel warn\n')
+    candidate = candidate.replace('*:443', f'127.0.0.1:{port}')
+    candidate = candidate.replace('/var/log/httpd/citifox_access_log', str(runtime/'access.log'))
+    candidate = candidate.replace('/var/log/httpd/citifox_error_log', str(runtime/'error.log'))
+    return text + candidate
+
+
+@contextmanager
+def isolated_apache(candidate, ready, backup=None):
+    # No listener or validation include is added to the shared production service.
+    with tempfile.TemporaryDirectory(prefix='citifox-validation-', dir='/run' if os.geteuid() == 0 else None) as directory:
+        runtime = Path(directory)
+        runtime.chmod(0o755)
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0)); port = probe.getsockname()[1]
+        config = runtime/'httpd.conf'
+        write(config, validation_configuration(candidate, port, runtime))
+        command('/usr/bin/httpd', '-t', '-f', str(config))
+        with (runtime/'process.log').open('w') as output:
+            process = subprocess.Popen(['/usr/bin/httpd', '-X', '-f', str(config)], stdout=output, stderr=output)
+            try:
+                wait_ready(lambda: ready(port), process=process)
+                yield port
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    try: process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        process.kill(); process.wait(timeout=5)
+                if backup:
+                    for name in ('main-error.log', 'error.log', 'process.log'):
+                        if (runtime/name).exists():
+                            write(backup/('validation-'+name), (runtime/name).read_bytes(), 0o600)
 
 
 def request(address, port, path, headers=None, data=None, *, tls=None, server_name=None):
@@ -129,7 +194,7 @@ def main():
     with Path('/run/lock/citifox-activation.lock').open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         ensure(VHOST.exists(), 'Expected prepared CitiFox vhost is missing.')
-        before = snapshot((MAIN, HOSTS, VHOST, CA, VALIDATION))
+        before = snapshot((HOSTS, VHOST, CA))
         backup = Path('/var/backups') / ('citifox-activation-' + time.strftime('%Y%m%d-%H%M%S'))
         backup.mkdir(mode=0o700)
         for path, original in before.items():
@@ -138,12 +203,14 @@ def main():
         if args.disable:
             write(VHOST, (ROOT/'deploy/citifox-tls-closed.conf').read_bytes())
             try:
-                reload_apache()
+                reload_apache(recover=True)
+                wait_ready(lambda: request('127.0.0.1', 443, '/', {'Host': DOMAIN}, server_name=DOMAIN)[2].get('X-CitiFox-Gateway-State') == 'holding')
             except Exception:
-                restore(before); reload_apache(); raise
+                restore(before); reload_apache(recover=True); raise
             (TRANSFER/'ACTIVATED').unlink(missing_ok=True)
             print('Public application access DISABLED. Tablet monitoring, LAN and Maya were not restarted.')
             return
+        ensure(service_active(), 'Restore the existing shared Apache service before activation.')
         ensure(not VALIDATION.exists(), 'A validation vhost already exists; inspect before proceeding.')
         ensure(not proxy_is_active(before[VHOST][0]), 'Public proxy is already active; inspect instead of overwriting it.')
         configuration = json.loads((TRANSFER/'public-gateway.json').read_text())
@@ -190,32 +257,35 @@ def main():
         alias = '\n192.168.0.95 citifoxcharger\n' if not any('citifoxcharger' in line.split('#', 1)[0].lower().split()[1:] for line in hosts.splitlines()) else ''
         candidate = (ROOT/'deploy/citifox-tls-closed.conf').read_text()
         candidate = candidate.replace('</VirtualHost>', (ROOT/'deploy/citifox-proxy.inc.example').read_text()+'\n</VirtualHost>')
-        with socket.socket() as probe:
-            probe.bind(('127.0.0.1', 0)); port = probe.getsockname()[1]
-        test_config = f'Listen 127.0.0.1:{port}\n' + candidate.replace('*:443', f'127.0.0.1:{port}')
+        candidate = candidate.replace('X-CitiFox-Gateway-State "holding"', 'X-CitiFox-Gateway-State "active"')
+        basic = 'Basic ' + base64.b64encode(('dnl:'+password).encode()).decode()
+        def local_call(test_port):
+            return lambda path, headers=None, data=None: request('127.0.0.1', test_port, path, headers, data, server_name=DOMAIN)
+        public = {'Host': DOMAIN, 'Origin': ORIGIN, 'Content-Type': 'application/json', 'Authorization': basic}
+        original_holding = local_call(443)('/', public)
+        ensure(original_holding[0] == 200, 'Existing authenticated holding site could not be verified.')
+
+        public_changed = False
         try:
             write(CA, (TRANSFER/'tablet-current-ca.pem').read_bytes())
             write(HOSTS, hosts + alias, before[HOSTS][1])
             addresses = {item[4][0] for item in socket.getaddrinfo('citifoxcharger', 8766)}
             ensure(addresses == {TABLET}, 'Tablet alias did not resolve exclusively to the configured tablet IP.')
-            write(VALIDATION, test_config)
-            write(MAIN, before[MAIN][0] + b'\nInclude conf/extra/citifox-validation.conf\n', before[MAIN][1])
-            reload_apache()
-            basic = 'Basic ' + base64.b64encode(('dnl:'+password).encode()).decode()
-            def local_call(test_port):
-                return lambda path, headers=None, data=None: request('127.0.0.1', test_port, path, headers, data, server_name=DOMAIN)
-            public = {'Host': DOMAIN, 'Origin': ORIGIN, 'Content-Type': 'application/json', 'Authorization': basic}
-            test = local_call(port)
-            for path in ('/', '/app.js', '/api/session', '/api/status', '/api/diagnostics'):
-                ensure(test(path, {**public, 'Authorization': ''})[0] == 401, 'Missing public login was accepted.')
-                wrong = 'Basic ' + base64.b64encode(b'dnl:invalid-public-test-password').decode()
-                ensure(test(path, {**public, 'Authorization': wrong})[0] == 401, 'Wrong public login was accepted.')
-            validate_public(test, public)
-            print('PASS: loopback Apache password protection and strict upstream TLS. Enabling public vhost.')
+            def ready(port):
+                code, _, headers = local_call(port)('/', {'Host': DOMAIN})
+                return code == 401 and headers.get('X-CitiFox-Gateway-State') == 'active'
+            with isolated_apache(candidate, ready, backup) as port:
+                test = local_call(port)
+                for path in ('/', '/app.js', '/api/session', '/api/status', '/api/diagnostics'):
+                    ensure(test(path, {**public, 'Authorization': ''})[0] == 401, 'Missing public login was accepted.')
+                    wrong = 'Basic ' + base64.b64encode(b'dnl:invalid-public-test-password').decode()
+                    ensure(test(path, {**public, 'Authorization': wrong})[0] == 401, 'Wrong public login was accepted.')
+                validate_public(test, public)
+            print('PASS: isolated Apache password protection and strict upstream TLS. Enabling public vhost.')
+            public_changed = True
             write(VHOST, candidate, before[VHOST][1])
-            write(MAIN, before[MAIN][0], before[MAIN][1])
-            VALIDATION.unlink()
             reload_apache()
+            wait_ready(lambda: local_call(443)('/health', public)[0] == 200)
             validate_public(local_call(443), public)
             ensure(local_call(443)('/', {'Host': DOMAIN})[0] == 401, 'Live public login guard failed.')
             ensure(upstream('/health', lan)[0] == 200, 'LAN endpoint stopped responding.')
@@ -228,9 +298,15 @@ def main():
             print('ACTIVATED: https://' + DOMAIN + '/. Maya and tablet LAN preserved. External HTTPS still requires a mobile-data test.')
             print('Rollback: sudo python ' + str(Path(__file__).resolve()) + ' --disable')
         except Exception:
-            restore(before)
-            reload_apache()
-            print('Activation failed. Original configuration restored; public forwarding remains closed.')
+            # Keep CA dependencies available until the shared service has finished
+            # loading the restored holding configuration. Graceful reload is asynchronous.
+            restore({path: saved for path, saved in before.items() if path != CA})
+            if public_changed or not service_active():
+                reload_apache(recover=True)
+                wait_ready(lambda: local_call(443)('/', public)[:2] == original_holding[:2])
+            if before[CA] is not None:
+                restore({CA: before[CA]})
+            print('Activation failed. Original holding site and shared Apache service restored. Public CA left staged if newly installed.')
             raise
 
 
