@@ -151,6 +151,10 @@ rules.unshift(
  [/^Estimated: (.+) to target · Reached around (.+)$/,"Ca. {0} bis zum Ladeziel · Erreicht um {1}"],
  [/^Last vehicle report: (.+) · (.+)$/,"Letzte Fahrzeugmeldung: {0} · {1}"]
 );
+Object.assign(messages,{
+ "Refresh Car":"Auto aktualisieren",
+ "Fetch available data from Škoda; vehicle timestamp may remain unchanged.":"Verfügbare Daten bei Škoda abrufen; der Zeitpunkt der Fahrzeugmeldung kann unverändert bleiben."
+});
 function german(value,depth=0){
  if(messages[value]!==undefined)return messages[value];
  if(depth<4){for(const [pattern,target]of rules){const match=pattern.exec(value);if(match)return target.replace(/\{(\d+)\}/g,(_,i)=>german(match[Number(i)+1]??"",depth+1));}

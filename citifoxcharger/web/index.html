@@ -19,7 +19,7 @@
     <div class="target-control"><div class="target-heading"><label id="target-label" for="target">Force charge to</label><output id="target-value" for="target">80 %</output></div><input id="target" type="range" min="1" max="100" value="80" step="1" aria-label="Target battery level in percent"><div class="range-labels"><span>1 %</span><span>100 %</span></div><p id="charge-eta" class="charge-eta" title="Estimate using 32.3 kWh usable capacity, assumed 90% efficiency and constant power. Temperature and schedules may change it.">Calculating remaining time …</p></div>
     <div class="actions"><button id="force" class="button primary" disabled>Start charging</button><button id="stop" class="button secondary" disabled>■ Stop</button></div>
     <p id="operation-hint" class="operation-hint" hidden></p><div id="session-status" class="session-status" role="status" hidden></div>
-    <div class="card-bottom"><span class="data-timestamps"><span id="car-time">Waiting for vehicle data …</span><span id="car-read"></span></span><button id="refresh" aria-label="Refresh display" title="Refresh display">↻</button></div>
+    <div class="card-bottom"><span class="data-timestamps"><span id="car-time">Waiting for vehicle data …</span><span id="car-read"></span></span><button id="refresh" aria-label="Refresh Car" title="Fetch available data from Škoda; vehicle timestamp may remain unchanged."><span aria-hidden="true">↻</span><span>Refresh Car</span></button></div>
   </article>
   <p id="normal-mode-note" class="normal-mode">Normal mode <strong>A+</strong> · Schedules are preserved.</p>
   <p id="monitoring-note" class="normal-mode" role="status" hidden></p>

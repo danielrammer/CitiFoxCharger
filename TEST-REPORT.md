@@ -1,3 +1,11 @@
+# Vehicle refresh label and phone summary — 1.10.9
+
+Validation on 27 October 2026: JS syntax, whitespace and the existing three Node display/download/public-permission checks passed. The vehicle-data request button now has a visible Refresh Car / Auto aktualisieren label and a tooltip explaining that it fetches available Škoda data without guaranteeing a newer vehicle timestamp. The request handler and backend refresh/cooldown/quota behavior are unchanged.
+
+Simulated browser QA verified power and battery side by side at 320, 360, 390 and 428px phone widths without horizontal overflow; the charging animation uses a separate row only while charging. The overview still fits without scrolling at 800×1280, 640×1024 and 1280×800. Both DE/EN labels were checked, and no browser warnings/errors occurred. Screenshots are labelled simulated and kept outside Git. Charging, energy estimation, gateway behavior and all device commands are unchanged.
+
+## Previous release
+
 # Charging font balance — 1.10.8
 
 Validation on 27 October 2026: JS syntax, Git whitespace and the three existing Node display/download/public-permission checks passed. The main charging-power value is slightly smaller and has one decimal place; the SOC inside the battery is larger. No charging, power measurement, estimation, gateway or other UI behavior changed.
