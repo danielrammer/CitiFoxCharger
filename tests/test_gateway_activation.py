@@ -1,0 +1,72 @@
+"""Exercise activation preflight over real TLS against simulated tablet methods."""
+import importlib.util
+import json
+import os
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+import test_public_gateway as gateway_tests
+
+if os.name == 'posix':
+    spec = importlib.util.spec_from_file_location('gateway_activation', Path(__file__).resolve().parents[1]/'deploy/activate_omdev.py')
+    activation = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(activation)
+
+
+
+@unittest.skipUnless(os.name == 'posix', 'omdev activation requires Linux')
+class ActivationPreflightTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        gateway_tests.GatewayHttpsTests.setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        gateway_tests.GatewayHttpsTests.tearDownClass()
+
+    def setUp(self):
+        self.tablet = gateway_tests.GatewayHttpsTests()
+        self.tablet.setUp()
+        self.addCleanup(self.tablet.tearDown)
+        self.headers = {'Host': 'citifox.example.test', 'Origin': 'https://citifox.example.test',
+                        'X-CitiFox-Gateway': gateway_tests.TOKEN}
+
+    def call(self, path, headers=None, data=None):
+        return self.tablet.call(path, data, extra=headers)
+
+    def test_shipped_holding_vhost_is_not_an_active_proxy(self):
+        holding = (Path(__file__).resolve().parents[1]/'deploy/citifox-tls-closed.conf').read_bytes()
+        self.assertFalse(activation.proxy_is_active(holding))
+        for directive in (b'    ProxyPass / https://tablet/\n', b'  proxypassmatch ^/ https://tablet/\n'):
+            self.assertTrue(activation.proxy_is_active(holding + directive))
+
+    def test_recovery_starts_an_inactive_shared_service_after_validation(self):
+        with patch.object(activation, 'service_active', return_value=False), patch.object(activation, 'command') as command:
+            activation.reload_apache(recover=True)
+        self.assertEqual(command.call_args_list[0].args, ('/usr/bin/httpd', '-t'))
+        self.assertEqual(command.call_args_list[-1].args, ('/usr/bin/systemctl', 'start', 'httpd'))
+
+    def test_readiness_wait_retries_before_accepting_a_finished_reload(self):
+        checks = iter((False, False, True))
+        with patch.object(activation.time, 'sleep') as sleep:
+            activation.wait_ready(lambda: next(checks))
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_preflight_accepts_restricted_policy_without_switching_any_devices(self):
+        result = activation.validate_public(self.call, self.headers)
+        self.assertTrue(result['Cookie'].startswith('lz_public_session='))
+        for method in ('refresh_now', 'start_manual_charging', 'stop_charge', 'change_target',
+                       'set_heater_mode', 'set_charger_mode'):
+            getattr(self.tablet.service, method).assert_not_called()
+        self.tablet.updater.launch.assert_not_called()
+
+    def test_preflight_rejects_admin_or_update_permissions(self):
+        for field in ('local_admin', 'can_update', 'can_limit_test'):
+            def incorrect(path, headers=None, data=None):
+                code, body, returned = self.call(path, headers, data)
+                if path == '/api/config' and code == 200:
+                    value = json.loads(body); value['access'][field] = True
+                    body = json.dumps(value).encode()
+                return code, body, returned
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'permission boundaries'):
+                activation.validate_public(incorrect, self.headers)

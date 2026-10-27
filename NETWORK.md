@@ -194,3 +194,56 @@ the tablet; its LAN dashboard and monitoring continue. Deleting the tablet's
 `public-gateway.json` during a later safe restart also removes gateway trust, but is
 not required for immediate shutdown of public access. Do not stop Apache because
 that would also interrupt Maya.
+
+
+### Assisted final activation on omdev
+
+The existing protected transfer file is outside Git at
+`/home/dnl/Work/CitiFoxCharger/gateway-transfer/public-gateway.json`.
+Copy it to the **active tablet data profile**, directly beside `network.json`.
+Do not place it in the program folder or the `network` certificate subdirectory.
+Existing installations normally use `%LOCALAPPDATA%\Ladezentrale`; newer profiles
+use `%LOCALAPPDATA%\CitiFoxCharger`. Respect any explicitly configured data directory.
+Use a secure file transfer or a trusted removable drive. Do not paste the assertion
+digest into chat. A Windows client can alternatively retrieve the file over SCP
+from `dnl@192.168.0.98`; verify the server's SSH host fingerprint independently.
+
+The tablet loads this configuration on startup. Use the existing guarded
+`Restart.cmd` from the installed program folder; do not bypass a refusal or force
+process termination. This loads the gateway policy without issuing a charging
+start. It must continue to use the same profile and single monitor.
+
+After the current public tablet CA has been staged as
+`gateway-transfer/tablet-current-ca.pem`, run locally on omdev:
+
+```bash
+sudo python /home/dnl/Work/CitiFoxCharger/source/deploy/activate_omdev.py
+```
+
+The script reads the existing gateway assertion only in memory, validates its
+match with the transferred configuration, checks the live tablet TLS and unchanged
+passwordless LAN policy, and verifies public role/origin/session/CSRF boundaries.
+It never issues normal charging, target, heater or refresh commands. Negative POST
+checks use payloads that cannot perform process/configuration operations.
+If the tablet has not loaded its gateway profile, it stops before changing proxy
+configuration. Otherwise it asks for the existing **public** password locally.
+
+It saves root-only backups of the affected Apache config, hosts file and proxy CA,
+adds the fixed tablet alias and verifies the candidate Apache proxy in a separate
+process with a listener bound only to loopback. This does not reload the shared
+production Apache service. After final activation, the script explicitly waits for
+the asynchronous production reload to serve the new gateway configuration. Missing/wrong login and strict upstream TLS are checked
+before replacing the public holding site. Errors restore the original holding configuration and reload Apache, or start
+it if it has stopped. A newly staged public CA remains available so an in-flight
+reload cannot lose its certificate dependency. After activation it rechecks the public role boundaries,
+tablet LAN and Maya. This is local validation; confirm external HTTPS separately
+using mobile data with Wi-Fi disabled.
+
+To disconnect only public application access, without contacting the tablet:
+
+```bash
+sudo python /home/dnl/Work/CitiFoxCharger/source/deploy/activate_omdev.py --disable
+```
+
+This restores the authenticated holding vhost while preserving Maya, ACME renewal
+and tablet monitoring. Do not stop the shared Apache service.

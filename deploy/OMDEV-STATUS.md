@@ -106,3 +106,53 @@ LAN access using the tablet's current public CA with hostname checks enabled.
 No charging command or public-server activation was sent. The protected gateway
 profile configuration still needs transfer from omdev into the active tablet
 profile before the server agent enables forwarding and performs the public test.
+
+
+## Gateway profile and activation recovery — 2026-10-27
+
+The tablet now reports 1.10.7 (cf266eaa) after the user copied the gateway profile.
+The live activation preflight passed: trusted tablet TLS, passwordless LAN,
+restricted public permissions, Origin, browser session and CSRF checks. No real
+device switching command was issued.
+
+The first production validation attempt failed because the shared Apache reload
+was asynchronous: the script rolled back and removed its staged CA before Apache
+finished reading it. Apache then exited with AH01895/AH02311. Original configs were
+restored, and the user started httpd again; Maya and the CitiFox holding site were
+independently confirmed reachable with their original authentication realms.
+
+The activation helper now runs validation in a separate loopback-only Apache
+process, never as a temporary listener/include in the shared service. It waits for
+actual readiness after the final production reload. Rollback starts an inactive
+service when needed and retains a newly staged public CA to avoid removing an
+in-flight dependency. Failed isolated validation does not reload an unchanged
+production service. Production activation remains pending a successful rerun and
+external mobile-data validation.
+
+## Public proxy activated — 2026-10-27
+
+The user reran the corrected activation helper and confirmed working access. The
+ACTIVATED marker is present. Independent read-only checks from omdev confirm:
+
+- Public HTTPS validates using the normal system trust store. The active proxy
+  serves the CitiFox domain; `/`, `/app.js`, `/api/session`, `/api/status` and
+  `/api/diagnostics` all reject missing login with HTTP 401 and the CitiFox realm.
+- Apache's upstream policy has `SSLProxyVerify require`, peer-name checking and
+  expiry checking enabled. The private tablet CA is scoped to the CitiFox proxy.
+- Maya retains its original HTTP 401 and Maya Player realm. The tablet's strict
+  HTTPS health check returns HTTP 200, version 1.10.7. Apache and the existing
+  certificate-renewal timer remain active.
+- The activation marker is written only after correct-password public reads,
+  permission/origin/session/CSRF restrictions, missing/wrong login rejection,
+  unchanged passwordless tablet LAN and Maya checks pass.
+
+No production charging, target, heater or refresh command was issued by the
+activation helper. The application backend and device monitoring remain on the
+tablet. An external HTTPS test remains outstanding: use mobile data with Wi-Fi
+disabled and confirm login, valid certificate and ordinary dashboard reads.
+
+To disable only public application access and retain the tablet and Maya:
+
+```bash
+sudo python /home/dnl/Work/CitiFoxCharger/source/deploy/activate_omdev.py --disable
+```
