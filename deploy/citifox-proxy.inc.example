@@ -1,0 +1,33 @@
+# Insert INSIDE the CitiFox HTTPS vhost only, replacing its holding DocumentRoot.
+# This file alone is NOT deployable: gateway-header.conf must contain a unique local assertion.
+# Keep the <Location /> Basic authentication from citifox-tls-closed.conf.
+ProxyRequests Off
+ProxyPreserveHost Off
+ProxyAddHeaders Off
+SSLProxyEngine On
+SSLProxyVerify require
+SSLProxyVerifyDepth 2
+SSLProxyCheckPeerName On
+SSLProxyCheckPeerExpire On
+SSLProxyCACertificateFile /etc/httpd/citifox/tablet-ca.pem
+RequestHeader unset Forwarded
+RequestHeader unset X-Forwarded-For
+RequestHeader unset X-Forwarded-Host
+RequestHeader unset X-Forwarded-Proto
+RequestHeader unset X-Real-IP
+RequestHeader unset Authorization
+RequestHeader unset X-CitiFox-Gateway
+RequestHeader unset X-CitiFox-Public-Host
+RequestHeader set X-CitiFox-Public-Host "citifox.ancora.cyou"
+Include /etc/httpd/citifox/gateway-header.conf
+# gateway-header.conf: RequestHeader set X-CitiFox-Gateway "<random-local-64-hex>"
+# Keep Origin, Sec-Fetch-* and X-CSRF-Token intact; do not rewrite them.
+# Required fixed /etc/hosts entry: 192.168.0.95 citifoxcharger
+# Apache checks the certificate CN CitiFoxCharger; independently verify its IP SAN too.
+# The authenticated public authority above is fixed, never copied from an untrusted header.
+ProxyPass / https://citifoxcharger:8766/ connectiontimeout=5 timeout=60
+ProxyPassReverse / https://citifoxcharger:8766/
+# Fail closed at the gateway too; the tablet independently enforces the same policy.
+<LocationMatch "^/(?!$|app\.js$|i18n\.js$|style\.css$|icon\.png$|logo\.png$|charging-car\.png$|health$|api/(?:session|config|status|diagnostics(?:/download)?|refresh|charging/(?:start|stop|target)|smartfox/(?:heater|charger-mode))$)">
+    Require all denied
+</LocationMatch>

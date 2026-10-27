@@ -78,4 +78,119 @@ Public access is not enabled by the current home-network setup. A separate gatew
 
 From Settings, authenticated home-network sessions can view/download `GET /api/diagnostics`, start `POST /api/app/update` and follow `GET /api/app/update/status`. This is also enabled in explicitly configured passwordless mode: every reachable home-network device can trigger an update. Update confirmation appears before submitting; existing charging guards, encrypted-key requirement, expected-repository/fast-forward checks, private-host/origin/session/CSRF checks and backend restart verification remain. Standalone backend restart/exit and key/device configuration stay local-only. Diagnostics use cached allowlisted data and never trigger a vehicle request or charging command. The first upgrade to 1.8.11 must still be launched on the tablet because earlier backends reject remote updates.
 
-Since 1.10.4, the download stays on the Settings page, uses the existing browser session and reports failed requests below the button. A successful response is handed to browser downloads as a CER file; this is not a certificate-trust installation or proof that the browser saved the file. If the download fails, report the displayed message and the exact app address. Public reverse proxies must explicitly permit this read-only endpoint as well as the existing authenticated session; it must not bypass authentication or origin checks.
+Since 1.10.4, the download stays on the Settings page, uses the existing browser session and reports failed requests below the button. A successful response is handed to browser downloads as a CER file; this is not a certificate-trust installation or proof that the browser saved the file. If the download fails, report the displayed message and the exact app address. Certificate downloads remain available through local/LAN access. The restricted public gateway below excludes this certificate-download endpoint and hides its button.
+
+## Public gateway (explicit opt-in)
+
+The gateway and the tablet have separate responsibilities. Apache on omdev terminates
+public HTTPS and requires the local `dnl` Basic password on **every** public
+resource, including static assets, session bootstrap, diagnostics and API routes.
+The existing tablet HTTPS listener continues to use its current LAN access policy.
+Only the tablet owns the Service, monitor, adapters, vehicle quota and charging state.
+Never launch `run.py` or a production backend on omdev.
+
+The tablet additionally reads `public-gateway.json` from its **active data profile**:
+
+```json
+{
+  "origin": "https://citifox.ancora.cyou",
+  "proxy_ip": "192.168.0.98",
+  "token_sha256": "<SHA-256 of a randomly generated 32-byte hexadecimal assertion>"
+}
+```
+
+Generate the assertion locally with a cryptographic random generator. Store its raw
+value only in the root-protected Apache include `/etc/httpd/citifox/gateway-header.conf`.
+The tablet receives only its SHA-256 digest. Neither value belongs in Git, chat,
+command arguments or request logs. The configuration is optional; malformed or absent
+configuration leaves public requests denied while preserving existing LAN access.
+Restart the tablet using its guarded update/lifecycle process after installing code
+and this profile file. Do not force a restart while the existing lifecycle guard blocks it.
+
+For each public request the tablet requires **all three**: the actual TCP peer must
+be the configured private proxy IP, Host must match the exact configured public
+hostname, and `X-CitiFox-Gateway` must match the assertion digest. Apache replaces any
+client-supplied assertion after checking the password. This narrowly scoped assertion
+attests to the gateway's login decision; it never grants local administration.
+`Forwarded` and `X-Forwarded-*` do not grant permissions or change client identity.
+Reserve omdev's IP; do not expose the tablet ports through router forwarding.
+
+The original public authority and Origin are preserved for the tablet checks. With
+Apache, `ProxyPreserveHost Off` makes TLS verify the tablet certificate CN instead
+of incorrectly expecting the public domain on the tablet certificate. The proxy
+sets `X-CitiFox-Public-Host` to the **fixed configured public hostname**, after
+rejecting any other incoming Host, and replaces any client-supplied header. The
+tablet accepts it only with the verified gateway assertion, exact TCP peer and
+exact transport Host `citifoxcharger:<actual listener port>`. Other forwarded
+headers remain irrelevant. The tablet still checks exact public HTTPS Origin,
+fetch metadata, browser session and CSRF. Public cookies
+use `lz_public_session` with Secure, HttpOnly and SameSite=Strict; public CSRF and
+session tokens are separate from LAN/local tokens. Public access allows status,
+sanitized diagnostics, refresh, normal charging start/stop/target and existing heater
+and charger modes. Updates (including update status), backend quit/restart, device/key
+configuration, arbitrary commands and all experimental limit-test/guard overrides
+are denied. The UI hides unavailable controls. LAN permissions are unchanged.
+
+### Apache deployment on omdev
+
+Reuse the existing Apache and Certbot installation; do not add a competing listener
+on ports 80/443. Back up the main config and every changed vhost with root-only
+permissions. Include CitiFox **after** the existing Maya vhost so the existing default
+host and Maya certificate are preserved. The checked-in templates under `deploy/`
+contain no credentials. `citifox-closed.conf` serves only ACME HTTP challenges and a
+fixed redirect. `citifox-tls-closed.conf` provides a password-protected holding page
+without any upstream connection. Unknown public application routes remain denied by
+both the gateway allowlist and tablet policy after activation.
+
+1. Check authoritative and recursive A/AAAA DNS. A must resolve to the router's WAN
+   address; remove or correctly route a stale AAAA. Verify the router forwards only
+   80/443 to omdev, never 8765/8766 to the tablet. A LAN request to the WAN address
+   proves only NAT loopback, not external reachability.
+2. Install the HTTP-only vhost and challenge directory. Run `httpd -t` before a
+   graceful reload. Obtain the certificate using Certbot webroot; this preserves Maya.
+3. Set the gateway password locally in a visible terminal. Store only a bcrypt
+   password hash in `/etc/httpd/citifox/users.htpasswd` (root:http, mode 0640).
+   Do not put a password in an argument, environment variable, chat or log.
+4. Install the HTTPS holding vhost. Verify missing/wrong login yields 401 for `/`,
+   `/app.js`, `/api/session`, `/api/status` and `/api/diagnostics`. Verify the correct
+   password locally, without printing credentials or session tokens.
+5. Copy **only** `CitiFoxCharger-Home-Network.cer` from the tablet. Compare its SHA-256
+   fingerprint with the tablet's own displayed fingerprint over an independent
+   trusted channel. Convert DER to PEM if needed. Verify the upstream chain, expiry
+   and IP SAN for `192.168.0.95` with this CA. Apache 2.4 name checking uses DNS SANs
+   and CNs, so the template uses the existing certificate CN `CitiFoxCharger` as
+   its upstream name. Back up `/etc/hosts`, check for conflicts, and add the fixed
+   alias `192.168.0.95 citifoxcharger`. Use `ProxyPreserveHost Off` plus the
+   fixed authenticated public-authority header, as explained above. Confirm the live leaf
+   has that CN as well as the correct IP SAN before activation. Never use `-k`, `verify=False`,
+   `SSLProxyVerify none`, or disable peer-name checks. Never copy tablet private keys.
+6. Install the application changes and the profile gateway digest on the tablet via
+   its normal guarded update process. Prove the assertion works with Host/Origin
+   intact and that direct LAN remains passwordless. Use **simulated adapters only**
+   for switching tests; production validation is read-only.
+7. Insert `citifox-proxy.inc.example` into the password-protected TLS vhost only after
+   the above checks. Its secret include is generated locally, outside Git. Keep
+   Basic authentication covering the entire vhost. Check Origin/session/CSRF rejection,
+   route denial and correct-password normal read access again before declaring ready.
+8. Ensure `httpd.service` and the existing `maya-cert-renew.timer` remain enabled.
+   That timer invokes `certbot renew` for **all** certificate lineages. The existing
+   deploy hook validates Apache and gracefully reloads it. Run a lineage-specific
+   Certbot renewal dry run. Do not start another conflicting renewal job.
+9. Finish with a real mobile-data test (Wi-Fi disabled), including valid browser
+   certificate trust, missing/wrong/correct login and ordinary reads. Record whether
+   this was actually completed; do not infer it from LAN or NAT-loopback results.
+
+Access logs must omit Authorization, Cookie, CSRF, gateway assertions, query strings
+and bodies. The templates log only address, time, HTTP method, status and byte count.
+The ACME HTTP challenge is a public static token, not an application/API bypass.
+
+### Disable only public access
+
+Restore `/etc/httpd/conf/extra/citifox-tls-closed.conf` to the authenticated holding
+vhost (remove the ProxyPass and gateway include), validate with `httpd -t`, then
+`systemctl reload httpd`. Keep the CitiFox HTTP challenge vhost for renewal and keep
+Maya's vhost untouched. This disconnects public access without contacting or restarting
+the tablet; its LAN dashboard and monitoring continue. Deleting the tablet's
+`public-gateway.json` during a later safe restart also removes gateway trust, but is
+not required for immediate shutdown of public access. Do not stop Apache because
+that would also interrupt Maya.

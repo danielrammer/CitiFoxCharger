@@ -6,6 +6,8 @@ config.json
 rate-limits.json
 vehicle-cache.json
 network.json
+public-gateway.json
+gateway-secrets/
 network/
 CitiFoxCharger-Home-Network.cer
 *.tmp
