@@ -1,3 +1,13 @@
+# Exclusive ownership and local automatic charging - 1.12.0
+
+The final complete suite passed: 521 offline tests in 59.735 seconds, with three platform-specific skips. The new policy tests cover midnight boundaries, repeat prevention across restart, manual Stop suppression, automatic window-end Stop, manual-session independence and invalid/corrupt configuration. JavaScript display/public-role checks and syntax checks passed. Final focused energy/public-gateway/policy checks also passed. Simulated browser interaction confirmed both switches and the settings fields; the overview fits a 1280x720 viewport without vertical scrolling.
+
+The main page now contains exclusive-ownership and automatic-charge checkboxes; the local time window is configured in Settings. Exclusive ownership retains Off outside a monitored session, including after target completion. The previously demonstrated return-to-A+ escape is closed only while exclusive ownership is enabled. Disabling it releases independent SMARTFOX control again.
+
+No production vehicle charging test was performed. Real percentage accuracy, uninterrupted charging and reliable physical phase switching remain unverified. Local policy enforcement requires the backend and SMARTFOX connection to remain available; it is not a hardware interlock.
+
+## Previous validation
+
 # Phase preparation and local solar policy — 1.11.0
 
 Validation on 27 October 2026: **511 offline tests passed in 153.519 seconds, with 3 Linux/Apache-only skips**. JavaScript syntax and the display, certificate-download and public-role checks passed. Coverage includes ordered phase preparation → vehicle Start → M+, queued command access, restart recovery without replaying Start, restoration, idle mode choices, local solar calculations and protected location setup. Target estimation and stop thresholds are unchanged.

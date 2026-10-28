@@ -53,7 +53,8 @@ class ChargingSession:
 
     @property
     def normal_mode(self):
-        return "OFF" if self.value.get("stop_guard") or self.value.get("user_charger_mode") == "OFF" else "A+"
+        policy = getattr(self.service, "charging_policy", None)
+        return "OFF" if (policy and policy.value["only"]) or self.value.get("stop_guard") or self.value.get("user_charger_mode") == "OFF" else "A+"
 
     @property
     def normal_name(self):

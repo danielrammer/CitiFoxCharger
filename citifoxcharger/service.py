@@ -14,6 +14,7 @@ from .vehicle_limit import VehicleLimit
 from .limit_test import LimitTest
 from .limit_trial import LimitTrial
 from .solar_preparation import SolarPreparation
+from .charging_policy import ChargingPolicy
 
 
 class Service:
@@ -44,6 +45,7 @@ class Service:
         self.limit_test = LimitTest(self)
         self.limit_trial = LimitTrial(self)
         self.solar = SolarPreparation(self)
+        self.charging_policy = ChargingPolicy(self)
 
     def restore_vehicle_cache(self):
         try:
@@ -467,7 +469,8 @@ class Service:
                 self.charging.tick()
                 self.limit_trial.tick()
                 self.solar.tick()
-            self.power.update((self.charging.active or self.limit_trial.active) and not self.worker_stop.is_set() and not self.stopping)
+                self.charging_policy.tick()
+            self.power.update((self.charging.active or self.limit_trial.active or self.charging_policy.value["only"]) and not self.worker_stop.is_set() and not self.stopping)
             charging = self.charging.state()
             if self.limit_test.active:
                 reason = "End the vehicle-limit test in Settings first. Charging starts and mode changes are blocked during isolation."
@@ -487,6 +490,7 @@ class Service:
                     "app_update_pending": self.app_update_pending,
                     "charging": charging,
                     "solar": self.solar.state(),
+                    "charging_policy": self.charging_policy.state(),
                     "limit_test": self.limit_test.state(),
                     "limit_trial": trial,
                     "monitoring": {"running": self.worker is not None and self.worker.is_alive(),
@@ -499,6 +503,7 @@ class Service:
             self.require_no_limit_test()
             if self.vehicle_limit.busy:
                 raise IntegrationError("limit_pending", "Vehicle limit verification or restoration is pending.")
+            self.charging_policy.save(target=target)
             self.update("skoda")  # Reuse the due read before selecting the strategy.
             native_session = self.charging.active and bool(self.charging.value.get("vehicle_limit"))
             if native_session or (not self.charging.active and self.vehicle_limit.available() and self.vehicle_limit.readable()):
@@ -510,7 +515,7 @@ class Service:
             try:
                 return self.charging.manual.start(target, request_id)
             finally:
-                self.power.update(self.charging.active and not self.worker_stop.is_set())
+                self.power.update((self.charging.active or self.charging_policy.value["only"]) and not self.worker_stop.is_set())
 
     def manual_start_refresh_available(self):
         if (self.charging.active or self.vehicle_limit.busy or self.can_command("start", True)
@@ -530,7 +535,7 @@ class Service:
             try:
                 return self.charging.start(target, request_id, allow_stale)
             finally:
-                self.power.update(self.charging.active and not self.worker_stop.is_set())
+                self.power.update((self.charging.active or self.charging_policy.value["only"]) and not self.worker_stop.is_set())
 
     def force_charge_native(self, target, request_id, allow_stale=False):
         with self.lock:
@@ -541,7 +546,7 @@ class Service:
             try:
                 return self.vehicle_limit.begin(target, request_id, allow_stale)
             finally:
-                self.power.update(self.charging.active and not self.worker_stop.is_set())
+                self.power.update((self.charging.active or self.charging_policy.value["only"]) and not self.worker_stop.is_set())
 
     def refresh_now(self):
         with self.lock:
@@ -566,6 +571,7 @@ class Service:
 
     def stop_charge(self, request_id):
         with self.lock:
+            self.charging_policy.suppress_window()
             if self.limit_trial.active:
                 return self.limit_trial.stop("manual")
             if self.stopping:raise IntegrationError("blocked","The app is restarting or stopping.")
@@ -584,6 +590,7 @@ class Service:
             if self.stopping:
                 raise IntegrationError("blocked", "The app is restarting or stopping.")
             result = self.charging.change_target(target)
+            self.charging_policy.save(target=target)
             self.event(f"Manual charge target changed to {target}%.")
             return result
 
@@ -620,6 +627,8 @@ class Service:
                 raise ValueError("Only Off, A+ and M+ are supported here.")
             if self.stopping or self.web is None:
                 raise IntegrationError("blocked","Charger control is currently unavailable.")
+            if mode == "A+" and self.charging_policy.value["only"]:
+                raise ValueError("Disable CitiFox only before releasing A+.")
             if mode != "OFF":
                 self.require_no_limit_test()
             if mode == "OFF" and self.limit_trial.active:

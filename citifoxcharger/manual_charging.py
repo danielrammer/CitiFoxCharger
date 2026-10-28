@@ -113,6 +113,7 @@ class ManualCharging:
             s.event('Phase preselection unavailable. Using the existing SMARTFOX manual-start path.')
         meter = charge_energy.begin(car['soc'], timestamp(car['captured_at']), now, c['power_kw'])
         session.save(replace=True, strategy=STRATEGY, status='starting', manual_phase='preparing',
+                     automatic_window=s.charging_policy.window() if s.charging_policy.busy else None,
                      vin=s.config.value['skoda']['vin'], target_percent=target, request_id=request_id,
                      started_at=utcnow(), last_start_epoch=now, energy_meter=meter,
                      start_attempts=0, power_cycle_attempts=0, next_start_epoch=now, preparation_deadline=now+3900,
@@ -172,7 +173,7 @@ class ManualCharging:
                 meter['upper_soc'] = charge_energy.upper(meter, now)
                 session.save(energy_meter=meter, status='paused',
                              message='SMARTFOX measurements delayed. Manual charging continues with increased uncertainty.')
-                if meter['upper_soc'] >= value['target_percent']+5:
+                if meter['upper_soc'] >= (min(value['target_percent']+5, 99) if value['target_percent'] < 100 else 100):
                     self.stop('uncertainty_limit', 'Possible charge level reached target plus 5 points. Charging stopped; actual SOC unconfirmed.')
             return
         meter = copy.deepcopy(value['energy_meter'])
@@ -182,7 +183,7 @@ class ManualCharging:
         if not meter['valid']:
             self.stop('energy_data_missing', 'SMARTFOX measurements have a gap. Charging stopped; target unconfirmed.')
             return
-        if meter['upper_soc'] >= value['target_percent']+5:
+        if meter['upper_soc'] >= (min(value['target_percent']+5, 99) if value['target_percent'] < 100 else 100):
             self.stop('uncertainty_limit', 'Possible charge level reached target plus 5 points. Charging stopped; actual SOC unconfirmed.')
             return
         if meter['estimated_soc'] >= value['target_percent']:

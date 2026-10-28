@@ -273,7 +273,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         remote_actions = {"/api/app/update","/api/refresh","/api/charging/start","/api/charging/stop","/api/charging/target","/api/charging/restore-limit","/api/charging/confirm-restored-limit","/api/charging/release-limit-guard",
                           "/api/charging/limit-test/set","/api/charging/limit-test/end","/api/charging/limit-test/start-trial",
-                          "/api/smartfox/heater","/api/smartfox/charger-mode","/api/solar/location"}
+                          "/api/smartfox/heater","/api/smartfox/charger-mode","/api/solar/location","/api/charging/policy"}
         if self.server.network_auth and urlsplit(self.path).path not in remote_actions:
             self.reply(403,{"error":"Configure device access and the backend directly on the tablet."})
             return
@@ -314,6 +314,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, {"message": "CitiFoxCharger is stopping. No charging monitoring remains active."})
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
                 return
+            elif path == "/api/charging/policy":
+                with service.lock:
+                    result = service.charging_policy.configure(data)
             elif path == "/api/config":
                 service.save_config(data)
                 result = {"message": "Configuration saved."}

@@ -24,3 +24,6 @@ CitiFoxCharger-Diagnostics.json
 CitiFoxCharger-Diagnose.json
 /[Dd]iagnos*.json
 CitiFoxCharger-Heimnetz.cer
+
+charging-policy.json
+solar-preparation.json

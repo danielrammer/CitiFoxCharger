@@ -84,6 +84,8 @@ class GatewayHttpsTests(unittest.TestCase):
             change_target=Mock(return_value={'message': 'simulated target'}),
             set_charger_mode=Mock(return_value={'status': 'confirmed'}),
             set_heater_mode=Mock(return_value={'status': 'confirmed'}))
+        self.service.configure_policy = Mock(return_value={'only':True})
+        self.service.charging_policy = SimpleNamespace(configure=self.service.configure_policy)
         self.updater = SimpleNamespace(state=lambda: {'phase': 'idle'}, launch=Mock())
         gateway = PublicGateway(VALUE)
         # TLS integration fixture only: the production validator rejects loopback proxy IPs.
@@ -184,7 +186,8 @@ class GatewayHttpsTests(unittest.TestCase):
 
     def test_public_operations_use_existing_tablet_service_simulated_only(self):
         request_id = 'simulated-request-0001'
-        cases = [('/api/refresh', {}, 'refresh_now'),
+        cases = [('/api/charging/policy', {'only': True, 'automatic': False, 'start':'22:00', 'end':'05:00', 'target':83}, 'configure_policy'),
+                 ('/api/refresh', {}, 'refresh_now'),
                  ('/api/charging/start', {'request_id': request_id, 'target_percent': 80}, 'start_manual_charging'),
                  ('/api/charging/stop', {'request_id': request_id}, 'stop_charge'),
                  ('/api/charging/target', {'target_percent': 75}, 'change_target'),

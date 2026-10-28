@@ -11,7 +11,7 @@ HEADER = 'X-CitiFox-Gateway'
 PUBLIC_READS = frozenset(('/api/config', '/api/status', '/api/diagnostics',
                           '/api/diagnostics/download'))
 PUBLIC_ACTIONS = frozenset(('/api/refresh', '/api/charging/start', '/api/charging/stop',
-                            '/api/charging/target', '/api/smartfox/heater',
+                            '/api/charging/target', '/api/charging/policy', '/api/smartfox/heater',
                             '/api/smartfox/charger-mode'))
 
 
