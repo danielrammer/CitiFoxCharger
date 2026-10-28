@@ -229,6 +229,7 @@ async function refresh(){if(refreshing||appStopped||appUpdating)return;refreshin
 function renderAccess(result){
  localAdmin=result.access?.local_admin!==false;
  publicAccess=result.access?.public_access===true;
+ $("home-network-panel").hidden=publicAccess;
  $("ownership-controls").hidden=publicAccess;
  $("charging-policy-form").hidden=publicAccess;
  limitTestAllowed=result.access?.can_limit_test!==false;

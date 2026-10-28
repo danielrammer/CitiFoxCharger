@@ -16,7 +16,7 @@ function fixture(){
 }
 const publicUi=fixture();
 publicUi.run('renderAccess({access:{local_admin:false,public_access:true,can_update:false,can_limit_test:false},key:{},network:{enabled:true,url:"https://192.168.0.95:8766/"}})');
-for(const id of ['app-update-panel','key-form','config-form','device-link','network-url','network-certificate-download','ownership-controls','charging-policy-form'])assert.equal(publicUi.node(id).hidden,true,id);
+for(const id of ['app-update-panel','key-form','config-form','device-link','network-url','network-certificate-download','ownership-controls','charging-policy-form','home-network-panel'])assert.equal(publicUi.node(id).hidden,true,id);
 assert.equal(publicUi.node('location-label').textContent,'Public access');
 publicUi.run('latest={charging:{can_release_native_guard:true,can_start_manual:true,can_shutdown:true,can_stop:true},skoda:{soc:50,available:true},limit_test:{active:false}};updateControls()');
 assert.equal(publicUi.node('force').disabled,true);
@@ -39,3 +39,5 @@ lan.run('renderChargingPolicy({only:false,automatic:false,start:"22:00",end:"05:
 assert.equal(lan.node('ownership-controls').hidden,false);
 assert.equal(lan.node('charging-policy-form').hidden,false);
 assert.equal(lan.node('policy-status').hidden,true);
+
+assert.equal(lan.node('home-network-panel').hidden,false);

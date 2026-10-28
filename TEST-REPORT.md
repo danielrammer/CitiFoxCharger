@@ -1,3 +1,9 @@
+# Public settings cleanup - 1.12.3
+
+The home-network setup card is hidden through public access and remains visible locally/on the LAN. The public/LAN UI regression check and JavaScript syntax check pass. No permissions or charging behavior change.
+
+## Previous validation
+
 # Simplified settings diagnostics - 1.12.2
 
 The SMARTFOX/Skoda connection-detail block and PDU table are hidden. Their DOM IDs remain for the existing status renderer. Show diagnostics, JSON download and recent actions remain available. Existing JS display/public-access checks pass. No charging/backend behavior changes.
