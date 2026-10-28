@@ -195,6 +195,7 @@ Object.assign(messages,{
 });
 Object.assign(messages,{
  "CitiFox only":"Nur CitiFox",
+ "Diagnostics":"Diagnose",
  "Automatic charging":"Automatik-Laden",
  "Automatic charging window":"Automatik-Ladezeit",
  "From":"Von", "Until":"Bis", "Save window":"Zeitraum speichern",

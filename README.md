@@ -1,4 +1,4 @@
-# CitiFoxCharger · 1.12.1
+# CitiFoxCharger · 1.12.2
 
 A Windows tablet dashboard for a **Škoda Citigo e iV** and **SMARTFOX Pro 2 / Charger Pro**. Charging targets, home energy and heating controls in one German/English interface.
 

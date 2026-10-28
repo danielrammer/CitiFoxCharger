@@ -1,3 +1,9 @@
+# Simplified settings diagnostics - 1.12.2
+
+The SMARTFOX/Skoda connection-detail block and PDU table are hidden. Their DOM IDs remain for the existing status renderer. Show diagnostics, JSON download and recent actions remain available. Existing JS display/public-access checks pass. No charging/backend behavior changes.
+
+## Previous validation
+
 # Charging switch presentation and public visibility - 1.12.1
 
 This release changes frontend presentation and visibility only. German uses Nur CitiFox / Automatik-Laden; English uses CitiFox only / Automatic charging. Both languages, including the time-window form, were verified in the simulated browser. The switches are styled touch controls with keyboard focus indication.
