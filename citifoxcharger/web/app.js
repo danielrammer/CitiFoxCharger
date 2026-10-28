@@ -229,6 +229,8 @@ async function refresh(){if(refreshing||appStopped||appUpdating)return;refreshin
 function renderAccess(result){
  localAdmin=result.access?.local_admin!==false;
  publicAccess=result.access?.public_access===true;
+ $("ownership-controls").hidden=publicAccess;
+ $("charging-policy-form").hidden=publicAccess;
  limitTestAllowed=result.access?.can_limit_test!==false;
  updateAllowed=result.access?.can_update===true||localAdmin;$("app-update-panel").hidden=!updateAllowed;
  updateKeyReady=!result.key?.configured||result.key?.persisted===true;
@@ -275,7 +277,7 @@ document.querySelectorAll("[data-tab]").forEach(button=>button.addEventListener(
 for(const [device,id] of [["heater","heater"],["heater2","heater2"],["hot_water","hot-water"]])$(id+"-mode").addEventListener("change",event=>{const mode=event.target.value;mutation(async()=>{toast("Checking the Smartfox mode change.");const result=await api("/api/smartfox/heater",{device,mode,request_id:crypto.randomUUID()});if(result.status!=="confirmed")throw new Error(result.message);toast(result.message);});});
 $("station-mode").addEventListener("change",event=>{const mode=event.target.value,active=activeStates.has(latest?.charging?.status);mutation(async()=>{if(mode==="M+"&&!active){const body={target_percent:Number($("target").value),request_id:crypto.randomUUID(),allow_stale:true};targetEditing=false;const result=await api("/api/charging/start",body);toast(result.message);}else{const result=await api("/api/smartfox/charger-mode",{mode,request_id:crypto.randomUUID()});if(result.status!=="confirmed")throw new Error(result.message);toast(result.message);}});});
 $("target").addEventListener("input",()=>{targetEditing=true;try{localStorage.setItem("charging-target",$("target").value);}catch{}updateControls();});
-$("target").addEventListener("change",()=>{if(!activeStates.has(latest?.charging?.status)){targetEditing=false;if(latest?.charging_policy)mutation(saveChargingPolicy);return;}const target=Number($("target").value);mutation(async()=>{try{await api("/api/charging/target",{target_percent:target});toast(`Charge target ${target}% saved.`);}finally{targetEditing=false;}});});
+$("target").addEventListener("change",()=>{if(!activeStates.has(latest?.charging?.status)){targetEditing=false;if(latest?.charging_policy&&!publicAccess)mutation(saveChargingPolicy);return;}const target=Number($("target").value);mutation(async()=>{try{await api("/api/charging/target",{target_percent:target});toast(`Charge target ${target}% saved.`);}finally{targetEditing=false;}});});
 $("refresh").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/refresh",{});render(result.status);toast(result.message);}));
 $("quit-app").addEventListener("click",()=>mutation(async()=>{const result=await api("/api/app/quit",{});appStopped=true;clearInterval(refreshTimer);toast(result.message);$("connection-summary").textContent="App stopped";updateControls();}));
  $("force").addEventListener("click",()=>{if($("force").disabled)return;if(latest?.limit_test?.active){openTrialDialog();return;}if(latest?.charging?.can_release_native_guard){releaseLimitGuard();return;}mutation(async()=>{const body={target_percent:Number($("target").value),request_id:crypto.randomUUID(),allow_stale:true};targetEditing=false;toast("Preparing Smartfox. Vehicle start follows only after charging permission is confirmed.");const result=await api("/api/charging/start",body);if(result.message)toast(result.message);});});
@@ -394,14 +396,18 @@ $("confirm-restored-limit").addEventListener("click",()=>{const target=latest?.c
 let scheduleEditing=false;
 function renderChargingPolicy(policy){
  if(!policy)return;
+ $("ownership-controls").hidden=publicAccess;
+ $("charging-policy-form").hidden=publicAccess;
  $("citifox-only").checked=policy.only;
  $("automatic-charging").checked=policy.automatic;
- $("automatic-charging").disabled=!policy.only||mutating;
- $("citifox-only").disabled=mutating;
+ $("automatic-charging").disabled=publicAccess||!policy.only||mutating;
+ $("citifox-only").disabled=publicAccess||mutating;
  for(const [id,key] of [["schedule-start","start"],["schedule-end","end"]])if(!scheduleEditing&&document.activeElement!==$(id))$(id).value=policy[key];
- $("policy-status").textContent=policy.message||(policy.only?`CitiFox only - ${policy.automatic?policy.start+" - "+policy.end:"SMARTFOX Aus ausserhalb einer Ladung"}`:"");
+ $("policy-status").textContent=policy.message||"";
+ $("policy-status").hidden=!policy.message;
 }
 async function saveChargingPolicy(){
+ if(publicAccess)return;
  const only=$("citifox-only").checked;
  await api("/api/charging/policy",{only,automatic:only&&$("automatic-charging").checked,start:$("schedule-start").value,end:$("schedule-end").value,target:Number($("target").value)});
  scheduleEditing=false;

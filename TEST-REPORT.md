@@ -1,3 +1,13 @@
+# Charging switch presentation and public visibility - 1.12.1
+
+This release changes frontend presentation and visibility only. German uses Nur CitiFox / Automatik-Laden; English uses CitiFox only / Automatic charging. Both languages, including the time-window form, were verified in the simulated browser. The switches are styled touch controls with keyboard focus indication.
+
+Public access hides the ownership switches and time-window form. Idle target changes through public access no longer call the unavailable policy operation. Inert-DOM regression checks cover visibility and disabled state, and the existing display/download tests passed. No backend permission changes were made.
+
+Simulated overview checks found no vertical overflow at 800x1280, 800x1100, 640x1024, 640x900 and 1280x800; active phase preparation also fits at 640x900. A 390px phone has no horizontal overflow. The energy circles and four consumer controls remain visible. This does not prove fit at every Windows scaling/browser setting. Charging behavior is unchanged; no real car commands were sent.
+
+## Previous validation
+
 # Exclusive ownership and local automatic charging - 1.12.0
 
 The final complete suite passed: 521 offline tests in 59.735 seconds, with three platform-specific skips. The new policy tests cover midnight boundaries, repeat prevention across restart, manual Stop suppression, automatic window-end Stop, manual-session independence and invalid/corrupt configuration. JavaScript display/public-role checks and syntax checks passed. Final focused energy/public-gateway/policy checks also passed. Simulated browser interaction confirmed both switches and the settings fields; the overview fits a 1280x720 viewport without vertical scrolling.

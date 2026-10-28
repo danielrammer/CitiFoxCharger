@@ -193,6 +193,18 @@ Object.assign(messages,{
  "Normal phase policy. Manual charging can be requested at any time.": "Normale Phasenwahl. Manuelles Laden kann jederzeit angefordert werden.",
  "Saved phase preparation is invalid. Check the SMARTFOX phase settings before starting again.": "Gespeicherte Phasenvorbereitung ungültig. Vor einem neuen Start SMARTFOX-Phasenwahl prüfen."
 });
+Object.assign(messages,{
+ "CitiFox only":"Nur CitiFox",
+ "Automatic charging":"Automatik-Laden",
+ "Automatic charging window":"Automatik-Ladezeit",
+ "From":"Von", "Until":"Bis", "Save window":"Zeitraum speichern",
+ "Uses the target on the main page. Charging ends at the target or window end. After Stop, no automatic restart in the same window.":"Verwendet das Ladeziel der Hauptseite. Die Ladung endet am Ziel oder zum Ende des Zeitraums. Nach Stoppen kein automatischer Neustart im selben Zeitraum.",
+ "Automatic charging started; the selected target is monitored.":"Automatik-Laden gestartet; das eingestellte Ziel wird überwacht.",
+ "Automatic charging is waiting for vehicle readiness or access.":"Automatik-Laden wartet auf Ladebereitschaft oder Fahrzeugzugang.",
+ "Automatic start could not be completed. Check charging diagnostics; no automatic repeat in this window.":"Automatischer Start nicht abgeschlossen. Bitte Diagnose prüfen; keine automatische Wiederholung in diesem Zeitraum.",
+ "CitiFox only: charger Off is unconfirmed. Check SMARTFOX.":"Nur CitiFox: Ladestation-Aus unbestätigt. Bitte SMARTFOX prüfen.",
+ "Window ended. Local stop requested; vehicle confirmation pending.":"Zeitraum beendet. Lokaler Stopp angefordert; Fahrzeugbestätigung steht aus."
+});
 function translated(value){return language==="de"?german(value):value;}
 function updateText(node){
  const value=node.nodeValue,old=storedText.get(node),source=old&&value===old.output?old.source:value;
