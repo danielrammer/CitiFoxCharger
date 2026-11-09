@@ -68,8 +68,46 @@ Settings show the calculated sunrise/sunset and whether a night policy is select
 
 ## Exclusive ownership and automatic window
 
-The overview provides **CitiFox only** and **Automatic charging** switches. Automatic charging requires exclusive ownership. Configure the local daily start/end time in Settings; an overnight window such as 22:00–05:00 is supported. The overview target is saved in the backend and used by automatic starts. Equal start/end times are rejected.
+The overview provides **CitiFox only** and **Automatic charging** switches. Automatic charging requires exclusive ownership. Configure the local daily start/end time in Settings; an overnight window such as 22:00â€“05:00 is supported. The overview target is saved in the backend and used by automatic starts. Equal start/end times are rejected.
 
-With exclusive ownership, an idle charger is kept Off and every completed/failed/manual stop returns to Off. SMARTFOX schedule changes are counteracted by local Off enforcement. The existing monitored charging controller is the only path to M+. Automatic charging makes one attempt per window, persisted before starting. Stop, target completion, errors and restarts do not restart that window. A manual charge remains possible outside the window. At window end an automatic session is stopped; an explicitly manual session is unaffected. Disabling exclusive ownership releases A+ when idle and restores the possibility of independent SMARTFOX scheduled charging.
+With exclusive ownership, an idle charger is kept Off and every completed/failed/manual stop returns to Off. SMARTFOX schedule changes are counteracted by local Off enforcement. The existing monitored charging controller is the only path to M+. Automatic charging opens one monitored session per window, persisted before starting. A verified physical cable disconnect can pause that session for reconnection, as described below. Deliberate Stop or Off, target completion and safety/device errors do not open another session in the same window. A manual charge remains possible outside the window. At window end an automatic session is stopped; an explicitly manual session is unaffected. Disabling exclusive ownership releases A+ when idle and restores the possibility of independent SMARTFOX scheduled charging.
 
 This is software enforcement while the backend runs, not physical isolation or a change to SMARTFOX schedules. The backend must remain running with access to SMARTFOX. A sleep, crash or connectivity loss can prevent enforcement. Percentage accuracy still depends on delayed vehicle data and the energy model; the model ceiling below a 100% target is capped at 99%, but does not prove an actual battery bound. Real charging validation remains required.
+
+
+### Reconnecting during an automatic window
+
+Since 1.12.4, a fresh SMARTFOX **No vehicle** report (status 0, 1 or 255), with
+valid telemetry and zero power, pauses an active automatic energy-monitored
+session. CitiFox secures the wallbox Off, cancels/restores its in-progress phase
+preparation and waits for the cable to be reconnected. A fault, missing
+permission or an unverified/missing device sample does not qualify as a physical
+unplug event.
+
+After reconnection, at least two distinct fresh reports spanning ten seconds must
+confirm a connected vehicle with no charging power, verified local Off and no
+phase switching. Exclusive ownership and Automatic charging must still be enabled,
+the same local charging window must still be open, vehicle identity/access must
+still match, and prior phase-setting restoration must have completed. CitiFox then
+uses the existing phase-preparation/start path to resume. Existing command cooldowns,
+quota limits and bounded retries remain in effect. No additional polling worker or
+charger/vehicle schedule is created.
+
+The session identity, original start time, target, cumulative energy, SOC anchor,
+measurement history and uncertainty remain intact. Fresh zero-power samples during
+the pause add no energy; unmeasured gaps retain the existing uncertainty accounting
+and target-plus-five fallback. A newer vehicle capture can re-anchor SOC as before.
+A backend restart while waiting retains this intent; an interrupted/uncertain
+vehicle Start still uses the existing no-replay safeguards.
+
+**Manual Stop or explicit Off cancels this continuation for the rest of the
+current window.** Automatic charging can open a new session in the next eligible
+window after ordinary stop confirmation and readiness checks. Reaching the measured
+or estimated target, a safety/device failure, disabling Automatic charging or
+leaving the time window also prevents reconnection from starting the car. Manual
+charging outside the automatic policy retains its previous disconnect/stop behavior.
+Diagnostics identify the waiting state as `manual_phase: disconnected`; the dashboard
+reports the pause, readiness check and continuation in English/German.
+
+Validation uses simulated SMARTFOX/cloud adapters only. The code does not claim a
+successful physical unplug/reconnect test on this tablet or vehicle.

@@ -159,6 +159,14 @@ Object.assign(messages,{
  "Refresh Car":"Auto aktualisieren",
  "Fetch available data from Škoda; vehicle timestamp may remain unchanged.":"Verfügbare Daten bei Škoda abrufen; der Zeitpunkt der Fahrzeugmeldung kann unverändert bleiben."
 });
+Object.assign(messages,{
+ "Automatic charging paused. Waiting for the cable to be reconnected.":"Automatikladen pausiert. Warte auf das Wiedereinstecken des Ladekabels.",
+ "Vehicle reconnected. Checking readiness before automatic charging resumes.":"Auto wieder verbunden. Ladebereitschaft wird vor dem Fortsetzen geprüft.",
+ "Vehicle reconnected. Resuming the existing automatic charge and energy monitoring.":"Auto wieder verbunden. Bestehendes Automatikladen und Energieüberwachung werden fortgesetzt.",
+ "Wallbox Off is unconfirmed. Automatic reconnection was cancelled.":"Wallbox-Aus unbestätigt. Automatische Wiederaufnahme wurde abgebrochen.",
+ "SMARTFOX energy measurements are missing. Automatic reconnection was cancelled.":"SMARTFOX-Energiemessungen fehlen. Automatische Wiederaufnahme wurde abgebrochen.",
+ "SMARTFOX reports an error or missing authorization. Automatic reconnection was cancelled.":"SMARTFOX meldet einen Fehler oder fehlende Freigabe. Automatische Wiederaufnahme wurde abgebrochen."
+});
 function german(value,depth=0){
  if(messages[value]!==undefined)return messages[value];
  if(depth<4){for(const [pattern,target]of rules){const match=pattern.exec(value);if(match)return target.replace(/\{(\d+)\}/g,(_,i)=>german(match[Number(i)+1]??"",depth+1));}

@@ -1,5 +1,42 @@
 # Public settings cleanup - 1.12.3
 
+## 1.12.4 automatic reconnection review — 2026-11-09
+
+Prepared against main 79e667c9 (1.12.3), independently confirmed as the running
+tablet version through its strictly verified HTTPS health endpoint. The original
+policy allows one automatic session per local window; a disconnect previously
+ended the session while its window stayed claimed, matching the reported failure
+to restart after reconnecting. Historical device telemetry for that incident was
+not available, so this is a reproduced code path, not proof of its exact cause.
+
+The change keeps that same automatic energy-monitored session alive in a secured
+Off/disconnected state, then resumes through the existing phase/start path after
+fresh connected samples spanning ten seconds. Energy/SOC history and uncertainty
+are preserved. Manual Stop or Off suppresses the current window; the next window
+can start normally after stop/readiness confirmation. Targets, window exit,
+disabling Automatic charging, device/permission faults and unmeasured-energy
+uncertainty continue to block automatic continuation. Existing schedules,
+capacity/efficiency parameters, quota/cooldown rules and polling workers are unchanged.
+
+Validation on Linux: **540 tests, 26 explicit skips, zero failures/errors**.
+This includes 19 new simulated reconnection cases covering repeated cable cycles,
+manual Stop/Off, next-window eligibility, target/uncertainty stops, stale/duplicate
+readings, faults, backend recovery, preserved phase settings/energy and no extra
+device reads while waiting on a fresh Off sample. All three Node UI/display/download
+checks and JavaScript syntax/diff checks passed.
+
+The unfiltered Linux run hits one existing Windows-DPAPI-only test error in
+`test_restart_requires_persisted_key_and_resumes_same_target_without_start`.
+The identical failure was confirmed on a clean unchanged main checkout. The final
+Linux-compatible run explicitly skipped that test along with existing platform
+skips; its assertions were not weakened or changed. Native Windows validation
+still remains before release.
+
+No production vehicle/heater/SMARTFOX switching or tablet update was performed.
+The actual tablet still runs 1.12.3. A physical automatic unplug/reconnect test
+and native Windows review remain outstanding; this is not a deployed hardware fix.
+
+
 The home-network setup card is hidden through public access and remains visible locally/on the LAN. The public/LAN UI regression check and JavaScript syntax check pass. No permissions or charging behavior change.
 
 ## Previous validation

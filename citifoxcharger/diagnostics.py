@@ -99,7 +99,7 @@ def report(status, live=False):
                         dates=('started_at','completed_at','completed_vehicle_capture','stop_requested_at','stop_trigger_at','stop_trigger_captured_at','stop_trigger_read_at','target_probe_capture','target_probe_scheduled_at','freshness_probe_capture','freshness_probe_scheduled_at','start_confirmed_at'),
                         enums={'status': ACTIVE | {'idle','complete','closed','error'},
                                'strategy':('smartfox_energy',),
-                               'manual_phase':('preparing','waiting_power','phase_switching','charging'),
+                               'manual_phase':('preparing','waiting_power','phase_switching','charging','disconnected'),
                                'stop_cause':('target','estimated_target','uncertainty_limit','energy_data_missing','charger_unavailable','start_timeout','start_rejected','missing_initial_soc','missing_soc','phase_wait','request_quota','vehicle_limit_start','vehicle_limit_lost'),
                                'start_confirmation_source':('smartfox_power',)}),
             'energy_estimate': selected(session.get('energy_estimate') or session.get('energy_meter'),

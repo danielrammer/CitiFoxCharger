@@ -1,4 +1,4 @@
-# CitiFoxCharger · 1.12.3
+# CitiFoxCharger · 1.12.4
 
 A Windows tablet dashboard for a **Škoda Citigo e iV** and **SMARTFOX Pro 2 / Charger Pro**. Charging targets, home energy and heating controls in one German/English interface.
 
@@ -23,6 +23,8 @@ flowchart LR
     Monitor -->|"Target / Stop"| Off["SMARTFOX Off → vehicle Stop"]
     Off -->|"Stop confirmed"| Auto["Return to A+"]
 ```
+
+Automatic charging resumes the same monitored session after a verified cable disconnect/reconnect within its enabled time window. A deliberate Stop or Off holds until the next window. See [automatic-window behavior](MANUAL-CHARGING.md#exclusive-ownership-and-automatic-window).
 
 Targets use an energy-based SOC estimate corrected by vehicle reports. **An exact battery limit is not guaranteed.** The backend must keep running; the display may turn off.
 
