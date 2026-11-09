@@ -12,6 +12,7 @@ from .modbus import utcnow
 from .skoda import IntegrationError, timestamp
 from .smartfox_web import SmartfoxControlError
 from .phase_preparation import PhasePreparation
+from .charging_window import AUTOMATIC_RETRY_SECONDS
 
 STRATEGY = 'smartfox_energy'
 RECONNECT_SETTLE_SECONDS = 10
@@ -124,6 +125,11 @@ class ManualCharging:
         return session.state()
 
     def stop(self, cause, message):
+        if self.automatic_window_open() and cause not in ('target', 'estimated_target'):
+            if (not self.session.value.get('stop_requested')
+                    and self.session.value.get('manual_phase') not in ('disconnected', 'automatic_wait')):
+                self.service.charging_policy.record_abort()
+            self.session.save(automatic_resume_after=time.time()+AUTOMATIC_RETRY_SECONDS)
         self.session.automatic_stop(message, cause=cause)
 
     def tick(self):
@@ -155,14 +161,51 @@ class ManualCharging:
     def automatic_window_open(self):
         policy = self.service.charging_policy
         window = self.session.value.get('automatic_window')
-        return bool(window and policy.value['only'] and policy.value['automatic'] and policy.window() == window)
+        return bool(window and policy.value['only'] and policy.value['automatic'] and policy.window() == window
+                    and not policy.is_blocked(window) and self.session.value.get('manual_stop_window') != window)
 
-    def pause_for_reconnect(self, charger):
-        """Keep one automatic session and its energy history through a physical unplug.
+    def retry_automatic(self):
+        """Rearm a stopped automatic monitor only after its existing stop guard clears."""
+        session, s, now = self.session, self.service, time.time()
+        value = session.value
+        deadline = value.get('automatic_resume_after')
+        if (not self.selected or session.active or not self.automatic_window_open()
+                or not charge_energy.finite(deadline) or value.get('ended_by_user')
+                or value.get('stop_cause') in ('target', 'estimated_target')
+                or value.get('vin') != s.config.value['skoda']['vin']
+                or value.get('stop_guard') or not value.get('vehicle_stop_confirmed')
+                or not value.get('auto_restored') or self.reason()):
+            return False
+        charger = s.cache.get('smartfox', {}).get('charger', {})
+        if charger.get('mode') != 'OFF' or charger.get('power_kw', 50) > .1 or charger.get('phase_switching'):
+            return False
+        meter = copy.deepcopy(value.get('energy_meter', {}))
+        car = s.cache.get('skoda', {})
+        if not meter.get('valid'):
+            return False
+        charge_energy.observe(meter, timestamp(charger.get('read_at')), charger['power_kw'],
+                              car.get('soc'), timestamp(car.get('captured_at')))
+        session.save(energy_meter=meter)
+        target = value['target_percent']
+        if (type(car.get('soc')) is int and car['soc'] >= target
+                or meter['estimated_soc'] >= target
+                or meter['upper_soc'] >= (min(target+5, 99) if target < 100 else 100)):
+            return False
+        session.save(status='interrupted', manual_phase='automatic_wait',
+                     automatic_resume_after=max(deadline, now+AUTOMATIC_RETRY_SECONDS),
+                     next_start_epoch=max(deadline, now+AUTOMATIC_RETRY_SECONDS),
+                     automatic_disconnected_at=charger['read_at'],
+                     automatic_counted_start_epoch=value.get('last_start_epoch'),
+                     automatic_generation=value.get('automatic_generation', 0)+1,
+                     stop_requested=False, stop_guard=False, vehicle_stop_confirmed=False,
+                     auto_restored=False, stop_cause=None, stop_reason=None,
+                     stop_requested_epoch=None, stop_intent_epoch=None, stop_id=None,
+                     reconnect_ready_since=None,
+                     message='Automatic charging paused. Waiting three minutes before the next attempt.')
+        return True
 
-        Only a fresh, explicit no-vehicle report with zero power opens this path.
-        Wallbox faults, missing authorization and external Off retain normal stops.
-        """
+    def pause_automatic(self, charger):
+        """Keep the same automatic session through unplugging or a zero-power pause."""
         session, s, now = self.session, self.service, time.time()
         capture = timestamp(charger.get('read_at'))
         fresh = (charger.get('available') and charger.get('telemetry_available') is True
@@ -170,14 +213,28 @@ class ManualCharging:
                  and charge_energy.finite(charger.get('power_kw')) and 0 <= charger['power_kw'] <= 50)
         unplugged = (fresh and charger.get('status_code') in (0, 1, 255)
                      and charger.get('info_code') != 14 and charger['power_kw'] <= .1)
-        waiting = session.value.get('manual_phase') == 'disconnected'
+        attempt_failed = (session.value.get('manual_phase') == 'waiting_power'
+                          and session.value.get('start_attempts', 0) > 0
+                          and session.value.get('last_start_epoch') != session.value.get('automatic_counted_start_epoch')
+                          and now-session.value.get('last_start_epoch', now) >= AUTOMATIC_RETRY_SECONDS)
+        interrupted = (fresh and charger['power_kw'] <= .1 and not charger.get('phase_switching')
+                       and self.local_ready(charger)
+                       and (session.value.get('last_power_epoch') is not None
+                            or attempt_failed
+                            or (charger.get('mode') == 'OFF' and session.value.get('manual_phase') != 'preparing')))
+        waiting = session.value.get('manual_phase') in ('disconnected', 'automatic_wait')
+        blocked = False
         if not waiting:
-            if (not unplugged or not self.automatic_window_open()
-                    or (charger.get('mode') == 'OFF' and session.value.get('manual_phase') != 'preparing')):
+            if not (unplugged or interrupted) or not self.automatic_window_open():
                 return False
-            session.save(status='interrupted', manual_phase='disconnected',
+            blocked = s.charging_policy.record_abort()
+            deadline = now if attempt_failed else now+AUTOMATIC_RETRY_SECONDS
+            session.save(status='interrupted', manual_phase='disconnected' if unplugged else 'automatic_wait',
+                         automatic_resume_after=deadline,
+                         next_start_epoch=deadline,
+                         automatic_counted_start_epoch=session.value.get('last_start_epoch'),
                          automatic_disconnected_at=charger['read_at'], reconnect_ready_since=None,
-                         message='Automatic charging paused. Waiting for the cable to be reconnected.')
+                         message='Automatic charging paused. Waiting three minutes before the next attempt.')
             if self.phases.record and self.phases.record.get('phase') != 'invalid':
                 self.phases.save(phase='cancelled')
 
@@ -187,9 +244,13 @@ class ManualCharging:
             if not fresh or charger.get('mode') != 'OFF':
                 s.cache.setdefault('smartfox', {})['charger'] = session.web.set_charger_mode(s.config.value['smartfox'], 'OFF')
         except SmartfoxControlError:
-            self.stop('charger_unavailable', 'Wallbox Off is unconfirmed. Automatic reconnection was cancelled.')
+            self.stop('charger_unavailable', 'Wallbox Off is unconfirmed. Waiting for safe automatic recovery.')
             return True
         self.phases.cleanup(final=True)
+        if blocked:
+            session.automatic_stop('Three automatic aborts within one hour. Automatic restart is suspended until the next time window.',
+                                   cause='automatic_retry_limit')
+            return True
 
         meter = copy.deepcopy(session.value['energy_meter'])
         car = s.cache.get('skoda', {})
@@ -199,7 +260,7 @@ class ManualCharging:
             meter['upper_soc'] = charge_energy.upper(meter, now)
         session.save(energy_meter=meter)
         if not meter['valid']:
-            self.stop('energy_data_missing', 'SMARTFOX energy measurements are missing. Automatic reconnection was cancelled.')
+            self.stop('energy_data_missing', 'SMARTFOX energy measurements are missing. Waiting for safe automatic recovery.')
             return True
         if meter['upper_soc'] >= (min(session.value['target_percent']+5, 99) if session.value['target_percent'] < 100 else 100):
             self.stop('uncertainty_limit', 'Possible charge level reached target plus 5 points. Charging stopped; actual SOC unconfirmed.')
@@ -208,7 +269,7 @@ class ManualCharging:
             self.stop('estimated_target', f"Estimated target {session.value['target_percent']} % reached using measured charging energy.")
             return True
         if fresh and (charger.get('status_code') == 4 or charger.get('info_code') == 14):
-            self.stop('charger_unavailable', 'SMARTFOX reports an error or missing authorization. Automatic reconnection was cancelled.')
+            self.stop('charger_unavailable', 'SMARTFOX reports an error or missing authorization. Automatic charging will retry when ready.')
             return True
 
         held = s.cache['smartfox']['charger']
@@ -216,17 +277,17 @@ class ManualCharging:
                  and charger.get('mode') == 'OFF'
                  and self.local_ready(held) and held.get('mode') == 'OFF' and held['power_kw'] <= .1
                  and charger['power_kw'] <= .1 and not charger.get('phase_switching')
-                 and not self.phases.pending_restore and not self.reason()
+                 and not self.phases.pending_restore and not self.reason() and s.can_manual_command()
                  and capture > (timestamp(session.value.get('automatic_disconnected_at')) or now))
         if not ready:
             session.save(reconnect_ready_since=None,
-                         message='Automatic charging paused. Waiting for the cable to be reconnected.')
+                         message='Automatic charging is waiting for vehicle readiness or access.')
             return True
         since = session.value.get('reconnect_ready_since')
         if not charge_energy.finite(since) or capture < since:
             since = capture
-        session.save(reconnect_ready_since=since, message='Vehicle reconnected. Checking readiness before automatic charging resumes.')
-        if capture-since < RECONNECT_SETTLE_SECONDS:
+        session.save(reconnect_ready_since=since, message='Automatic charging paused. Waiting three minutes before the next attempt.')
+        if capture-since < RECONNECT_SETTLE_SECONDS or now < session.value['automatic_resume_after']:
             return True
 
         try:
@@ -238,7 +299,7 @@ class ManualCharging:
                      last_power_epoch=None, resume_power_since=None, power_cycle_attempts=0,
                      ready_since_epoch=None, ready_delay_seconds=3, phase_since_epoch=None,
                      next_start_epoch=now, preparation_deadline=now+3900, reconnect_ready_since=None,
-                     message='Vehicle reconnected. Resuming the existing automatic charge and energy monitoring.')
+                     message='Resuming automatic charging with the existing target and energy monitoring.')
         return True
 
     def _tick(self):
@@ -256,7 +317,7 @@ class ManualCharging:
             return
         session.observe_start_power()
         c = s.cache.get('smartfox', {}).get('charger', {})
-        if self.pause_for_reconnect(c):
+        if self.pause_automatic(c):
             return
         if not self.local_ready(c):
             # Missing measurements widen uncertainty instead of stopping early.

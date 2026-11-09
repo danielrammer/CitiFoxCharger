@@ -70,44 +70,60 @@ Settings show the calculated sunrise/sunset and whether a night policy is select
 
 The overview provides **CitiFox only** and **Automatic charging** switches. Automatic charging requires exclusive ownership. Configure the local daily start/end time in Settings; an overnight window such as 22:00–05:00 is supported. The overview target is saved in the backend and used by automatic starts. Equal start/end times are rejected.
 
-With exclusive ownership, an idle charger is kept Off and every completed/failed/manual stop returns to Off. SMARTFOX schedule changes are counteracted by local Off enforcement. The existing monitored charging controller is the only path to M+. Automatic charging opens one monitored session per window, persisted before starting. A verified physical cable disconnect can pause that session for reconnection, as described below. Deliberate Stop or Off, target completion and safety/device errors do not open another session in the same window. A manual charge remains possible outside the window. At window end an automatic session is stopped; an explicitly manual session is unaffected. Disabling exclusive ownership releases A+ when idle and restores the possibility of independent SMARTFOX scheduled charging.
+With exclusive ownership, an idle charger is kept Off and every completed/failed/manual stop returns to Off. SMARTFOX schedule changes are counteracted by local Off enforcement. The existing monitored charging controller is the only path to M+. Automatic authorization remains active throughout the enabled window. Interruptions and failed attempts are retried after at least three minutes when readiness and monitoring checks allow it. Deliberate Stop or Off suppresses automatic restart until the next window; reaching the target ends charging. A manual charge remains possible outside the window. At window end an automatic session is stopped; an explicitly manual session is unaffected. Disabling exclusive ownership releases A+ when idle and restores the possibility of independent SMARTFOX scheduled charging.
 
 This is software enforcement while the backend runs, not physical isolation or a change to SMARTFOX schedules. The backend must remain running with access to SMARTFOX. A sleep, crash or connectivity loss can prevent enforcement. Percentage accuracy still depends on delayed vehicle data and the energy model; the model ceiling below a 100% target is capped at 99%, but does not prove an actual battery bound. Real charging validation remains required.
 
 
-### Reconnecting during an automatic window
+### Automatic restart after an interruption
 
-Since 1.12.4, a fresh SMARTFOX **No vehicle** report (status 0, 1 or 255), with
-valid telemetry and zero power, pauses an active automatic energy-monitored
-session. CitiFox secures the wallbox Off, cancels/restores its in-progress phase
-preparation and waits for the cable to be reconnected. A fault, missing
-permission or an unverified/missing device sample does not qualify as a physical
-unplug event.
+Since 1.12.4, an enabled automatic window keeps trying to charge toward its target
+after interruptions and failed attempts. It is not limited to one attempt per
+window or to a cable disconnect/reconnect. A zero-power interruption after charging,
+an observed external Off, or an unplug pauses the same energy-monitored session,
+secures the wallbox Off and starts a persisted **three-minute** wait.
 
-After reconnection, at least two distinct fresh reports spanning ten seconds must
-confirm a connected vehicle with no charging power, verified local Off and no
-phase switching. Exclusive ownership and Automatic charging must still be enabled,
-the same local charging window must still be open, vehicle identity/access must
-still match, and prior phase-setting restoration must have completed. CitiFox then
-uses the existing phase-preparation/start path to resume. Existing command cooldowns,
-quota limits and bounded retries remain in effect. No additional polling worker or
-charger/vehicle schedule is created.
+Restart requires fresh connected zero-power reports, confirmed local Off, settled
+readiness, no phase switching, restored prior phase settings, valid vehicle access
+and the same still-enabled automatic window. API cooldowns and quota restrictions
+can extend the wait. The existing phase-preparation/Start path performs each new
+attempt; this adds no polling worker, charging schedule or unmonitored M+ path.
+Each interrupted or unsuccessful automatic attempt counts once, including failed
+initial preparation. **Three automatic aborts within a rolling hour suspend further
+automatic starts for the rest of the current window.** A continuing cable absence
+or a later fault during the same pause does not count again. Reaching the target,
+manual Stop and the scheduled window end are not automatic aborts.
 
-The session identity, original start time, target, cumulative energy, SOC anchor,
-measurement history and uncertainty remain intact. Fresh zero-power samples during
-the pause add no energy; unmeasured gaps retain the existing uncertainty accounting
-and target-plus-five fallback. A newer vehicle capture can re-anchor SOC as before.
-A backend restart while waiting retains this intent; an interrupted/uncertain
-vehicle Start still uses the existing no-replay safeguards.
+The abort timestamps and blocked window persist across backend restart. Toggling
+Automatic charging does not clear the block, and it does not expire partway through
+the same window. The next scheduled window is eligible again, subject to the usual
+readiness checks; only aborts within the most recent hour count toward its limit.
+The normal status area explains when the limit has blocked automatic recovery.
 
-**Manual Stop or explicit Off cancels this continuation for the rest of the
-current window.** Automatic charging can open a new session in the next eligible
-window after ordinary stop confirmation and readiness checks. Reaching the measured
-or estimated target, a safety/device failure, disabling Automatic charging or
-leaving the time window also prevents reconnection from starting the car. Manual
-charging outside the automatic policy retains its previous disconnect/stop behavior.
-Diagnostics identify the waiting state as `manual_phase: disconnected`; the dashboard
-reports the pause, readiness check and continuation in English/German.
+Device/permission failures and unsuccessful phase preparation retain the existing
+local-first stop and vehicle-stop confirmation. A later automatic recovery may
+rearm the monitor only after that guard is confirmed complete, phase restoration
+is resolved and fresh energy/SOC checks permit continuation. It then waits three
+minutes before attempting a new start. An unconfirmed stop, invalid energy meter,
+reached target, unresolved uncertainty bound, continuing device fault or missing
+access cannot be bypassed by the timer. If an initial attempt fails before a monitor
+is created, its saved retry intent permits another attempt after three minutes.
+Old claimed windows without explicit retry intent remain closed after upgrade.
 
-Validation uses simulated SMARTFOX/cloud adapters only. The code does not claim a
-successful physical unplug/reconnect test on this tablet or vehicle.
+The original session, target, cumulative energy, SOC anchor/history and uncertainty
+are retained across automatic recovery. Fresh zero-power samples add no energy;
+unmeasured gaps retain the original uncertainty accounting and target-plus-five
+fallback. Newer vehicle captures can re-anchor SOC as before. Generation-specific
+stop IDs prevent a later recovery cycle from reusing an earlier cached Stop result.
+
+**Manual Stop or explicit Off in CitiFox suspends automatic restart until the next
+time window**, including after a backend restart. This is recorded separately from
+an internal window-end stop. Disabling Automatic charging prevents further starts;
+re-enabling it can resume an eligible internal stop after the normal delay. Outside
+the window or after the measured/estimated target is reached, no automatic restart
+is requested. Independent manual charging keeps its previous bounded retry behavior.
+
+The UI reports the wait and manual suppression in English/German. Diagnostics
+identify `manual_phase: disconnected` or `automatic_wait`, the retry deadline and
+recovery generation. Validation uses simulated SMARTFOX/cloud adapters only; a
+successful physical interruption/restart test on this tablet/vehicle is not claimed.

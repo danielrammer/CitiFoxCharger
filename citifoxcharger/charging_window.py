@@ -2,6 +2,8 @@
 from datetime import datetime, time
 import re
 
+AUTOMATIC_RETRY_SECONDS = 180
+
 
 def parse_time(value):
     if not isinstance(value, str) or not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d', value):

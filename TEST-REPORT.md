@@ -1,41 +1,42 @@
-# Public settings cleanup - 1.12.3
-
-## 1.12.4 automatic reconnection review — 2026-11-09
+# Automatic restart — 1.12.4 (reviewed 2026-11-09)
 
 Prepared against main 79e667c9 (1.12.3), independently confirmed as the running
-tablet version through its strictly verified HTTPS health endpoint. The original
-policy allows one automatic session per local window; a disconnect previously
-ended the session while its window stayed claimed, matching the reported failure
-to restart after reconnecting. Historical device telemetry for that incident was
-not available, so this is a reproduced code path, not proof of its exact cause.
+tablet version through its strictly verified HTTPS health endpoint. Automatic
+charging previously claimed an entire window for one attempt. The new behavior
+keeps retrying during the enabled window after a persisted three-minute wait,
+including ordinary zero-power interruptions, unplugging, initial preparation
+failures and recovered device faults. Manual Stop/Off explicitly suppresses the
+current window; internal stop requests are distinguished from manual ones. Three
+automatic aborts within a rolling hour block further automatic starts for the rest
+of the current window. The count and block persist across restart, toggling the
+automatic switch does not reset them, and the next window is eligible again.
+One continuing interruption is counted once even if readiness changes while paused.
 
-The change keeps that same automatic energy-monitored session alive in a secured
-Off/disconnected state, then resumes through the existing phase/start path after
-fresh connected samples spanning ten seconds. Energy/SOC history and uncertainty
-are preserved. Manual Stop or Off suppresses the current window; the next window
-can start normally after stop/readiness confirmation. Targets, window exit,
-disabling Automatic charging, device/permission faults and unmeasured-energy
-uncertainty continue to block automatic continuation. Existing schedules,
-capacity/efficiency parameters, quota/cooldown rules and polling workers are unchanged.
+The same energy-monitored session and its SOC/energy uncertainty remain in use.
+Prior stop confirmation, phase restoration, target/uncertainty guards, API cooldowns
+and quota restrictions remain mandatory. Later recovery cycles use distinct Stop
+IDs, and the timer never clears an unconfirmed stop guard. No second backend,
+polling worker, vehicle schedule, calibration or charging-model parameter is added.
 
-Validation on Linux: **540 tests, 26 explicit skips, zero failures/errors**.
-This includes 19 new simulated reconnection cases covering repeated cable cycles,
-manual Stop/Off, next-window eligibility, target/uncertainty stops, stale/duplicate
-readings, faults, backend recovery, preserved phase settings/energy and no extra
-device reads while waiting on a fresh Off sample. All three Node UI/display/download
-checks and JavaScript syntax/diff checks passed.
+Final Linux validation: **556 tests, 26 explicit skips, zero failures/errors**
+(22.538 seconds). The 35 new simulated cases cover interrupted/failed starts,
+three-minute spacing, rolling-hour cutoff and restart persistence, next-window
+eligibility, no double-counting during one pause, manual Stop/Off, targets,
+energy/phase preservation and unconfirmed stop/cooldown restrictions. All three
+Node display/download/public-permission checks, JavaScript syntax and Git
+whitespace checks passed.
 
-The unfiltered Linux run hits one existing Windows-DPAPI-only test error in
-`test_restart_requires_persisted_key_and_resumes_same_target_without_start`.
-The identical failure was confirmed on a clean unchanged main checkout. The final
-Linux-compatible run explicitly skipped that test along with existing platform
-skips; its assertions were not weakened or changed. Native Windows validation
-still remains before release.
+The existing Windows-DPAPI-only test failure was independently reproduced on
+unchanged main; the Linux-compatible suite explicitly skips it without weakening
+its assertions. Native Windows validation remains required.
 
 No production vehicle/heater/SMARTFOX switching or tablet update was performed.
-The actual tablet still runs 1.12.3. A physical automatic unplug/reconnect test
-and native Windows review remain outstanding; this is not a deployed hardware fix.
+The actual tablet still runs 1.12.3. Native Windows review and a physical automatic
+restart test remain outstanding; this is not a deployed hardware fix.
 
+## Previous validation
+
+# Public settings cleanup - 1.12.3
 
 The home-network setup card is hidden through public access and remains visible locally/on the LAN. The public/LAN UI regression check and JavaScript syntax check pass. No permissions or charging behavior change.
 

@@ -1,4 +1,4 @@
-"""Automatic cable reconnection uses one monitor and simulated devices only."""
+"""Automatic recovery uses one monitor and simulated devices only."""
 import copy
 import unittest
 from unittest.mock import patch
@@ -42,8 +42,11 @@ class AutomaticReconnectTests(unittest.TestCase):
 
     def reconnect(self):
         self.f.local_state = 2
-        for _ in range(5):
+        before = self.starts
+        for _ in range(40):
             self.f.tick()
+            if self.starts > before:
+                break
 
     def test_reconnect_resumes_same_session_and_preserves_estimated_energy(self):
         original_id = self.s.charging.value['request_id']
@@ -57,6 +60,7 @@ class AutomaticReconnectTests(unittest.TestCase):
         for _ in range(120):
             self.f.tick()
         self.assertEqual(self.starts, 1)
+        self.assertEqual(len(self.s.charging_policy.value['automatic_aborts']), 1)
         self.assertEqual(self.s.charging.value['energy_meter']['total_kwh'], meter['total_kwh'])
         self.assertEqual(self.s.charging.value['energy_meter']['estimated_soc'], meter['estimated_soc'])
         self.reconnect()
@@ -163,6 +167,7 @@ class AutomaticReconnectTests(unittest.TestCase):
         self.assertEqual(self.starts, 1)
         self.assertEqual(self.s.charging.value.get('stop_cause'), 'charger_unavailable')
         self.assertEqual(self.f.case.web.mode, 'OFF')
+        self.assertEqual(len(self.s.charging_policy.value['automatic_aborts']), 1)
 
     def test_target_report_while_unplugged_completes_instead_of_restarting(self):
         self.unplug()
@@ -201,14 +206,13 @@ class AutomaticReconnectTests(unittest.TestCase):
         self.reconnect()
         self.assertEqual(self.starts, 1)
 
-    def test_external_off_is_not_overridden_by_a_simultaneous_unplug(self):
+    def test_external_off_can_resume_after_delay_without_a_manual_stop(self):
         self.f.case.web.mode = 'OFF'
         self.unplug()
-        self.assertTrue(self.s.charging.value.get('stop_requested'))
-        self.assertEqual(self.s.charging.value.get('stop_cause'), 'charger_unavailable')
+        self.assertFalse(self.s.charging.value.get('stop_requested'))
         self.reconnect()
-        self.assertEqual(self.starts, 1)
-        self.assertEqual(self.f.case.web.mode, 'OFF')
+        self.assertEqual(self.starts, 2)
+        self.assertEqual(self.f.case.web.mode, 'M+')
 
     def test_long_unknown_measurement_gap_does_not_reset_uncertainty(self):
         self.unplug()
@@ -237,6 +241,149 @@ class AutomaticReconnectTests(unittest.TestCase):
             for _ in range(4):self.s.charging.tick()
         read.assert_not_called()
         self.assertEqual(self.starts, 1)
+
+    def test_zero_power_pause_retries_after_three_minutes_without_unplugging(self):
+        original = copy.deepcopy(self.s.charging.value['energy_meter'])
+        self.f.power = 0
+        self.f.tick()
+        self.assertEqual(self.s.charging.value['manual_phase'], 'automatic_wait')
+        self.assertEqual(self.f.case.web.mode, 'OFF')
+        for _ in range(17):self.f.tick()
+        self.assertEqual(self.starts, 1)
+        for _ in range(5):self.f.tick()
+        self.assertEqual(self.starts, 2)
+        self.assertGreaterEqual(self.s.charging.value['energy_meter']['total_kwh'], original['total_kwh'])
+
+    def recover_fault(self):
+        self.f.local_state, self.f.power = 2, 0
+        self.f.tick()
+        self.s.cache['skoda'].update(state='READY_FOR_CHARGING', stale=False,
+            captured_at=datetime.fromtimestamp(self.f.now, timezone.utc).isoformat())
+        self.s.charging.tick()
+        self.assertFalse(self.s.charging.active)
+        self.s.charging_policy.next_attempt = 0
+        self.s.charging_policy.tick()
+
+    def test_recovered_device_fault_retries_after_confirmed_stop_and_delay(self):
+        identity = self.s.charging.value['request_id']
+        self.f.power, self.f.local_state = 0, 4
+        self.f.tick()
+        self.assertTrue(self.s.charging.value.get('stop_requested'))
+        self.assertEqual(self.f.case.effects.count('stop'), 1)
+        self.recover_fault()
+        self.assertTrue(self.s.charging.active)
+        self.assertEqual(self.s.charging.value['automatic_generation'], 1)
+        for _ in range(17):self.f.tick()
+        self.assertEqual(self.starts, 1)
+        for _ in range(5):self.f.tick()
+        self.assertEqual(self.starts, 2)
+        self.assertEqual(self.s.charging.value['request_id'], identity)
+        self.f.power = 7.2
+        self.f.tick(); self.f.tick()
+        self.f.power, self.f.local_state = 0, 4
+        self.f.tick()
+        self.assertEqual(self.f.case.effects.count('stop'), 2)
+
+    def test_recovery_never_clears_an_unconfirmed_stop_guard(self):
+        self.f.power, self.f.local_state = 0, 4
+        self.f.tick()
+        self.f.local_state = 2
+        self.f.tick(200)
+        self.s.charging_policy.next_attempt = 0
+        self.s.charging_policy.tick()
+        self.assertTrue(self.s.charging.value.get('stop_guard'))
+        self.assertTrue(self.s.charging.value.get('stop_requested'))
+        self.assertEqual(self.starts, 1)
+
+    def test_manual_stop_overrides_an_armed_recovery_and_survives_restart(self):
+        self.f.power = 0
+        self.f.tick()
+        before = list(self.s.charging_policy.value['automatic_aborts'])
+        self.s.stop_charge('manual-stop-after-pause-0001')
+        self.assertEqual(self.s.charging_policy.value['automatic_aborts'], before)
+        self.assertEqual(self.s.charging.value.get('manual_stop_window'), WINDOW)
+        self.s.charging = ChargingSession(self.s, self.f.case.web)
+        self.recover_fault()
+        for _ in range(22):self.f.tick()
+        self.s.charging_policy.next_attempt = 0
+        self.s.charging_policy.tick()
+        self.assertEqual(self.starts, 1)
+        self.assertEqual(self.f.case.web.mode, 'OFF')
+
+    def test_fault_recovery_is_not_rearmed_after_target_completion(self):
+        self.unplug()
+        self.s.cache['skoda'].update(soc=80, captured_at=datetime.fromtimestamp(self.f.now, timezone.utc).isoformat())
+        self.f.tick()
+        self.recover_fault()
+        for _ in range(22):self.f.tick()
+        self.s.charging_policy.next_attempt = 0
+        self.s.charging_policy.tick()
+        self.assertEqual(self.starts, 1)
+        self.assertEqual(self.f.case.web.mode, 'OFF')
+
+    def test_three_automatic_aborts_block_further_restarts_without_resetting_energy(self):
+        original_command = self.s.command
+        starts_at = []
+        def command(action, *args, **kwargs):
+            if action == 'start':starts_at.append(self.f.now)
+            return original_command(action, *args, **kwargs)
+        self.s.command = command
+        identity = self.s.charging.value['request_id']
+        energy = self.s.charging.value['energy_meter']['total_kwh']
+        self.f.power = 0
+        for _ in range(185):
+            self.f.tick()
+            self.s.cache['skoda'].update(state='READY_FOR_CHARGING', stale=False,
+                captured_at=datetime.fromtimestamp(self.f.now, timezone.utc).isoformat())
+            self.s.charging_policy.next_attempt = 0
+            self.s.charging_policy.tick()
+        self.assertEqual(self.starts, 3)
+        self.assertEqual(len(self.s.charging_policy.value['automatic_aborts']), 3)
+        self.assertTrue(self.s.charging_policy.is_blocked())
+        self.assertTrue(all(right-left >= 180 for left, right in zip(starts_at, starts_at[1:])))
+        self.assertEqual(self.s.charging.value['request_id'], identity)
+        self.assertGreaterEqual(self.s.charging.value['energy_meter']['total_kwh'], energy)
+        self.assertNotEqual(self.s.charging.value.get('manual_stop_window'), WINDOW)
+        self.s.charging_policy = ChargingPolicy(self.s)
+        self.s.charging = ChargingSession(self.s, self.f.case.web)
+        for _ in range(25):
+            self.f.tick()
+            self.s.charging_policy.next_attempt = 0
+            self.s.charging_policy.tick()
+        self.assertEqual(self.starts, 3)
+        self.assertEqual(self.f.case.web.mode, 'OFF')
+        self.assertTrue(self.s.charging_policy.state()['blocked'])
+
+    def test_api_cooldown_is_not_bypassed_by_the_automatic_timer(self):
+        self.f.power = 0
+        self.f.tick()
+        self.s.car.blocked_until = self.f.now+600
+        for _ in range(35):self.f.tick()
+        self.assertEqual(self.starts, 1)
+        self.assertEqual(self.f.case.web.mode, 'OFF')
+        self.s.car.blocked_until = self.f.now
+        self.reconnect()
+        self.assertEqual(self.starts, 2)
+
+    def test_window_end_is_not_misclassified_as_a_manual_stop_in_the_next_window(self):
+        self.window.return_value = '2026-11-10T22:00'
+        self.s.charging_policy.next_attempt = 0
+        self.s.charging_policy.tick()
+        self.assertTrue(self.s.charging.value.get('stop_requested'))
+        self.assertNotEqual(self.s.charging.value.get('manual_stop_window'), '2026-11-10T22:00')
+
+    def test_reenabling_automatic_can_resume_an_internal_stop_after_delay(self):
+        self.s.charging_policy.save(automatic=False)
+        self.s.charging_policy.next_attempt = 0
+        self.s.charging_policy.tick()
+        self.assertTrue(self.s.charging.value.get('stop_requested'))
+        self.assertNotEqual(self.s.charging.value.get('manual_stop_window'), WINDOW)
+        self.s.charging_policy.save(automatic=True)
+        self.recover_fault()
+        for _ in range(17):self.f.tick()
+        self.assertEqual(self.starts, 1)
+        for _ in range(5):self.f.tick()
+        self.assertEqual(self.starts, 2)
 
 
 class PhaseAutomaticReconnectTests(unittest.TestCase):
@@ -267,7 +414,7 @@ class PhaseAutomaticReconnectTests(unittest.TestCase):
         self.assertEqual(self.f.settings['manual_mode'], 0)
         meter = copy.deepcopy(self.s.charging.value['energy_meter'])
         self.f.local_state = 2
-        self.f.tick(); self.f.tick()
+        for _ in range(18):self.f.tick()
         self.assertEqual(self.f.case.effects.count('start'), 1)
         self.assertEqual(self.s.charging.value['manual_phase'], 'preparing')
         for _ in range(6):self.f.tick()

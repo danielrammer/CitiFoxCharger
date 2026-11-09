@@ -378,6 +378,11 @@ class ChargingSession:
             self.save(message=f"Stop requested. Return to {self.normal_name} is not confirmed yet.")
         return self.state()
 
+    def automatic_stop_request_id(self):
+        result = "limit-stop-" + self.value.get("request_id", "recovered-session") + "-" + str(self.value.get("stop_failures", 0))
+        generation = self.value.get('automatic_generation', 0)
+        return result + (f'-cycle-{generation}' if generation else '')
+
     def automatic_stop(self, reason, cause="target"):
         """A blocked cloud command must never bypass the independent local stop."""
         car = self.service.cache.get("skoda", {})
@@ -394,7 +399,7 @@ class ChargingSession:
                   stop_trigger_quota_remaining=quota,
                   stop_trigger_cooldown_seconds=max(0, math.ceil(adapter.blocked_until-clock)),
                   stop_trigger_quota_reset_seconds=max(0, math.ceil(adapter.quota_reset_at-clock)))
-        request_id = "limit-stop-" + self.value.get("request_id", "recovered-session") + "-" + str(self.value.get("stop_failures", 0))
+        request_id = self.automatic_stop_request_id()
         try:
             self.stop(request_id, automatic=True)
         except IntegrationError:
@@ -404,7 +409,7 @@ class ChargingSession:
 
     @property
     def safety_stopped(self):
-        return self.value.get("stop_cause") in ("missing_soc","missing_initial_soc","phase_wait","request_quota","vehicle_limit_start","vehicle_limit_lost", "energy_data_missing", "uncertainty_limit", "charger_unavailable", "start_timeout", "start_rejected")
+        return self.value.get("stop_cause") in ("missing_soc","missing_initial_soc","phase_wait","request_quota","vehicle_limit_start","vehicle_limit_lost", "energy_data_missing", "uncertainty_limit", "charger_unavailable", "start_timeout", "start_rejected", "automatic_retry_limit")
 
     def safety_stop_message(self):
         reason = {"missing_soc":"The target cannot be monitored without current vehicle data.",
@@ -418,6 +423,8 @@ class ChargingSession:
                   "charger_unavailable":"SMARTFOX charging permission was lost.",
                   "start_timeout":"No charging power could be confirmed.",
                   "start_rejected":"The vehicle rejected the start."}.get(self.value.get("stop_cause"),"")
+        if self.value.get('stop_cause') == 'automatic_retry_limit':
+            reason = 'Automatic restart limit reached.'
         return f"Target {self.value['target_percent']} % was not confirmed reached. " + reason
 
     def finish_stop(self, message):
@@ -665,7 +672,7 @@ class ChargingSession:
         if car["soc"] >= self.value["target_percent"] or self.value.get("stop_requested"):
             if self.service.can_command("stop"):
                 try:
-                    request_id = "limit-stop-" + self.value.get("request_id", "recovered-session") + "-" + str(self.value.get("stop_failures", 0))
+                    request_id = self.automatic_stop_request_id()
                     self.stop(request_id, automatic=True)
                 except IntegrationError:
                     self.next_attempt = time.monotonic() + 60

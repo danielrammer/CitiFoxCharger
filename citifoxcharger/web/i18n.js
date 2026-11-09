@@ -160,13 +160,16 @@ Object.assign(messages,{
  "Fetch available data from Škoda; vehicle timestamp may remain unchanged.":"Verfügbare Daten bei Škoda abrufen; der Zeitpunkt der Fahrzeugmeldung kann unverändert bleiben."
 });
 Object.assign(messages,{
- "Automatic charging paused. Waiting for the cable to be reconnected.":"Automatikladen pausiert. Warte auf das Wiedereinstecken des Ladekabels.",
- "Vehicle reconnected. Checking readiness before automatic charging resumes.":"Auto wieder verbunden. Ladebereitschaft wird vor dem Fortsetzen geprüft.",
- "Vehicle reconnected. Resuming the existing automatic charge and energy monitoring.":"Auto wieder verbunden. Bestehendes Automatikladen und Energieüberwachung werden fortgesetzt.",
- "Wallbox Off is unconfirmed. Automatic reconnection was cancelled.":"Wallbox-Aus unbestätigt. Automatische Wiederaufnahme wurde abgebrochen.",
- "SMARTFOX energy measurements are missing. Automatic reconnection was cancelled.":"SMARTFOX-Energiemessungen fehlen. Automatische Wiederaufnahme wurde abgebrochen.",
- "SMARTFOX reports an error or missing authorization. Automatic reconnection was cancelled.":"SMARTFOX meldet einen Fehler oder fehlende Freigabe. Automatische Wiederaufnahme wurde abgebrochen."
+ "Automatic charging paused. Waiting three minutes before the next attempt.":"Automatikladen pausiert. Drei Minuten Wartezeit vor dem nächsten Versuch.",
+ "Automatic charging is waiting for vehicle readiness or access.":"Automatikladen wartet auf Ladebereitschaft oder Freigabe.",
+ "Resuming automatic charging with the existing target and energy monitoring.":"Automatikladen mit bisherigem Ladeziel und Energieüberwachung wird fortgesetzt.",
+ "Wallbox Off is unconfirmed. Waiting for safe automatic recovery.":"Wallbox-Aus unbestätigt. Warte auf sichere automatische Wiederaufnahme.",
+ "SMARTFOX energy measurements are missing. Waiting for safe automatic recovery.":"SMARTFOX-Energiemessungen fehlen. Warte auf sichere automatische Wiederaufnahme.",
+ "SMARTFOX reports an error or missing authorization. Automatic charging will retry when ready.":"SMARTFOX meldet einen Fehler oder fehlende Freigabe. Bei Bereitschaft wird automatisch erneut versucht.",
+ "Automatic restart is suspended until the next time window.":"Automatischer Neustart bis zum nächsten Zeitfenster gesperrt.",
+ "Automatic start could not be completed. Waiting three minutes before the next eligible attempt.":"Automatischer Ladestart fehlgeschlagen. Drei Minuten Wartezeit vor dem nächsten möglichen Versuch."
 });
+
 function german(value,depth=0){
  if(messages[value]!==undefined)return messages[value];
  if(depth<4){for(const [pattern,target]of rules){const match=pattern.exec(value);if(match)return target.replace(/\{(\d+)\}/g,(_,i)=>german(match[Number(i)+1]??"",depth+1));}
@@ -205,6 +208,8 @@ Object.assign(messages,{
  "CitiFox only":"Nur CitiFox",
  "Diagnostics":"Diagnose",
  "Automatic charging":"Automatik-Laden",
+ "Three automatic aborts within one hour. Automatic restart is suspended until the next time window.":"Drei automatische Abbrüche innerhalb einer Stunde. Automatischer Neustart ist bis zum nächsten Ladezeitfenster gesperrt.",
+ "Automatic restart limit reached.":"Grenze für automatische Neustarts erreicht.",
  "Automatic charging window":"Automatik-Ladezeit",
  "From":"Von", "Until":"Bis", "Save window":"Zeitraum speichern",
  "Uses the target on the main page. Charging ends at the target or window end. After Stop, no automatic restart in the same window.":"Verwendet das Ladeziel der Hauptseite. Die Ladung endet am Ziel oder zum Ende des Zeitraums. Nach Stoppen kein automatischer Neustart im selben Zeitraum.",

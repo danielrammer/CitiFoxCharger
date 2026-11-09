@@ -24,7 +24,7 @@ flowchart LR
     Off -->|"Stop confirmed"| Auto["Return to A+"]
 ```
 
-Automatic charging resumes the same monitored session after a verified cable disconnect/reconnect within its enabled time window. A deliberate Stop or Off holds until the next window. See [automatic-window behavior](MANUAL-CHARGING.md#exclusive-ownership-and-automatic-window).
+Within an enabled automatic window, charging retries after interruptions or failed starts with at least three minutes of waiting, once the vehicle is ready. Cable reconnection is not required. Three automatic aborts within a rolling hour suspend retries until the next window. A deliberate Stop or Off also holds until the next window. See [automatic-window behavior](MANUAL-CHARGING.md#exclusive-ownership-and-automatic-window).
 
 Targets use an energy-based SOC estimate corrected by vehicle reports. **An exact battery limit is not guaranteed.** The backend must keep running; the display may turn off.
 

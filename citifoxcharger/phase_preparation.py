@@ -58,6 +58,8 @@ class PhasePreparation:
         self.save(phase='cancelled')
         self.session.save(status='paused' if observing else 'error', message=message)
         self.cleanup(final=True)
+        if self.manual.automatic_window_open():
+            self.manual.stop('phase_wait', message)
 
     def cleanup(self, final=False):
         """Restore only our own override; do not replace a different external choice."""
