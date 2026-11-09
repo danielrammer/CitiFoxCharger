@@ -9,6 +9,7 @@ from .modbus import SmartfoxAdapter, utcnow
 from .skoda import SkodaAdapter, IntegrationError, timestamp
 from .smartfox_web import SmartfoxWeb, SmartfoxControlError
 from .charging import ChargingSession
+from .charging_window import AUTOMATIC_RETRY_SECONDS
 from .power import PowerGuard
 from .vehicle_limit import VehicleLimit
 from .limit_test import LimitTest
@@ -569,9 +570,12 @@ class Service:
             self.event("Vehicle data queried again from Škoda.")
             return {"message": "Available vehicle data queried again.", "status": self.status()}
 
-    def stop_charge(self, request_id):
+    def stop_charge(self, request_id, manual=True):
         with self.lock:
-            self.charging_policy.suppress_window()
+            if manual:
+                self.charging_policy.suppress_window()
+            elif self.charging.manual.selected and self.charging.value.get('automatic_window'):
+                self.charging.save(automatic_resume_after=time.time()+AUTOMATIC_RETRY_SECONDS)
             if self.limit_trial.active:
                 return self.limit_trial.stop("manual")
             if self.stopping:raise IntegrationError("blocked","The app is restarting or stopping.")
@@ -644,6 +648,8 @@ class Service:
                 if (result["device"],result["mode"]) != ("charger",mode):
                     raise ValueError("Befehlskennung bereits anderweitig verwendet.")
                 return copy.deepcopy(result)
+            if mode == 'OFF':
+                self.charging_policy.suppress_window()
             result = {"device":"charger","mode":mode,"status":"unconfirmed","message":"Wallbox mode is unconfirmed."}
             self.heater_results[request_id] = result
             if len(self.heater_results)>100:

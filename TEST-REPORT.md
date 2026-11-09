@@ -1,3 +1,41 @@
+# Automatic restart — 1.12.4 (reviewed 2026-11-09)
+
+Prepared against main 79e667c9 (1.12.3), independently confirmed as the running
+tablet version through its strictly verified HTTPS health endpoint. Automatic
+charging previously claimed an entire window for one attempt. The new behavior
+keeps retrying during the enabled window after a persisted three-minute wait,
+including ordinary zero-power interruptions, unplugging, initial preparation
+failures and recovered device faults. Manual Stop/Off explicitly suppresses the
+current window; internal stop requests are distinguished from manual ones. Three
+automatic aborts within a rolling hour block further automatic starts for the rest
+of the current window. The count and block persist across restart, toggling the
+automatic switch does not reset them, and the next window is eligible again.
+One continuing interruption is counted once even if readiness changes while paused.
+
+The same energy-monitored session and its SOC/energy uncertainty remain in use.
+Prior stop confirmation, phase restoration, target/uncertainty guards, API cooldowns
+and quota restrictions remain mandatory. Later recovery cycles use distinct Stop
+IDs, and the timer never clears an unconfirmed stop guard. No second backend,
+polling worker, vehicle schedule, calibration or charging-model parameter is added.
+
+Final Linux validation: **556 tests, 26 explicit skips, zero failures/errors**
+(22.538 seconds). The 35 new simulated cases cover interrupted/failed starts,
+three-minute spacing, rolling-hour cutoff and restart persistence, next-window
+eligibility, no double-counting during one pause, manual Stop/Off, targets,
+energy/phase preservation and unconfirmed stop/cooldown restrictions. All three
+Node display/download/public-permission checks, JavaScript syntax and Git
+whitespace checks passed.
+
+The existing Windows-DPAPI-only test failure was independently reproduced on
+unchanged main; the Linux-compatible suite explicitly skips it without weakening
+its assertions. Native Windows validation remains required.
+
+No production vehicle/heater/SMARTFOX switching or tablet update was performed.
+The actual tablet still runs 1.12.3. Native Windows review and a physical automatic
+restart test remain outstanding; this is not a deployed hardware fix.
+
+## Previous validation
+
 # Public settings cleanup - 1.12.3
 
 The home-network setup card is hidden through public access and remains visible locally/on the LAN. The public/LAN UI regression check and JavaScript syntax check pass. No permissions or charging behavior change.
