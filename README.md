@@ -1,4 +1,4 @@
-# CitiFoxCharger · 1.12.3
+# CitiFoxCharger · 1.13.0
 
 A Windows tablet dashboard for a **Škoda Citigo e iV** and **SMARTFOX Pro 2 / Charger Pro**. Charging targets, home energy and heating controls in one German/English interface.
 
@@ -10,6 +10,7 @@ flowchart LR
     Public["Public browser"] -->|"HTTPS + login"| Gateway["Proxy · Apache"]
     Gateway -->|"Verified HTTPS"| App
     App -->|"Modbus reads + local web control"| SF["SMARTFOX"]
+    App -->|"Local API + device timer"| Shelly["Shelly · fan / light"]
     App <-->|"HTTPS + API key"| API["MyŠkoda API"]
     API <--> Car["Citigo e iV"]
 ```
@@ -25,6 +26,10 @@ flowchart LR
 ```
 
 Targets use an energy-based SOC estimate corrected by vehicle reports. **An exact battery limit is not guaranteed.** The backend must keep running; the display may turn off.
+
+## Fan and light
+
+Two small icon switches on the main page control the configured Shelly 1 Mini Gen4 devices. In Settings, select continuous On or automatic Off after 30, 60, 90 or 120 minutes for each switch (default: 60). Timers run on the Shelly. An offline device shows an unknown state and its switch is disabled. See [SHELLY.md](SHELLY.md) for setup, permissions and timer limitations.
 
 ## Start
 

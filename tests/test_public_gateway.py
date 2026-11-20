@@ -84,6 +84,7 @@ class GatewayHttpsTests(unittest.TestCase):
             change_target=Mock(return_value={'message': 'simulated target'}),
             set_charger_mode=Mock(return_value={'status': 'confirmed'}),
             set_heater_mode=Mock(return_value={'status': 'confirmed'}))
+        self.service.set_shelly = Mock(return_value={'shelly': {}})
         self.service.configure_policy = Mock(return_value={'only':True})
         self.service.charging_policy = SimpleNamespace(configure=self.service.configure_policy)
         self.updater = SimpleNamespace(state=lambda: {'phase': 'idle'}, launch=Mock())
@@ -176,11 +177,16 @@ class GatewayHttpsTests(unittest.TestCase):
                      '/api/key', '/api/key/clear', '/api/skoda/command', '/api/smartfox/command',
                      '/api/charging/limit-test/set', '/api/charging/limit-test/end',
                      '/api/charging/limit-test/start-trial', '/api/charging/release-limit-guard',
-                     '/api/charging/confirm-restored-limit', '/api/charging/restore-limit', '/api/solar/location', '/api/future'):
+                     '/api/charging/confirm-restored-limit', '/api/charging/restore-limit', '/api/solar/location',
+                     '/api/shelly/config', '/api/shelly/preferences', '/api/future'):
             with self.subTest(path=path):
                 self.assertEqual(self.call(path, {})[0], 403)
         self.assertEqual(self.call('/api/app/update/status')[0], 403)
         self.assertEqual(self.call('/api/network/certificate')[0], 403)
+        self.assertEqual(self.call('/api/shelly/config')[0], 403)
+        self.assertEqual(self.call('/api/shelly/preferences')[0], 403)
+        self.assertEqual(self.call('/api/shelly/config', lan=True)[0], 403)
+        self.assertEqual(self.call('/api/shelly/config', {}, lan=True)[0], 403)
         self.assertFalse(json.loads(self.call('/api/config')[1])['network']['certificate_available'])
         self.updater.launch.assert_not_called()
 
@@ -192,11 +198,22 @@ class GatewayHttpsTests(unittest.TestCase):
                  ('/api/charging/stop', {'request_id': request_id}, 'stop_charge'),
                  ('/api/charging/target', {'target_percent': 75}, 'change_target'),
                  ('/api/smartfox/heater', {'request_id': request_id, 'device': 'heater', 'mode': 'OFF'}, 'set_heater_mode'),
-                 ('/api/smartfox/charger-mode', {'request_id': request_id, 'mode': 'OFF'}, 'set_charger_mode')]
+                 ('/api/smartfox/charger-mode', {'request_id': request_id, 'mode': 'OFF'}, 'set_charger_mode'),
+                 ('/api/shelly/output', {'request_id': request_id, 'device': 'light', 'on': False}, 'set_shelly')]
         self.assertEqual({case[0] for case in cases}, PUBLIC_ACTIONS)
         for path, data, method in cases:
             self.assertEqual(self.call(path, data)[0], 200)
             getattr(self.service, method).assert_called_once()
+
+    def test_public_shelly_requires_origin_session_and_csrf_and_cannot_override_timer(self):
+        data = {'request_id': 'simulated-shelly-0001', 'device': 'light', 'on': True}
+        for extra in ({'Origin': 'https://evil.example'}, {'Cookie': ''}, {'X-CSRF-Token': ''}):
+            self.assertIn(self.call('/api/shelly/output', data, extra=extra)[0], (401, 403))
+        self.service.set_shelly.assert_not_called()
+        self.assertEqual(self.call('/api/shelly/output', {**data, 'minutes': 120})[0], 400)
+        self.service.set_shelly.assert_not_called()
+        self.assertEqual(self.call('/api/shelly/output', data)[0], 200)
+        self.service.set_shelly.assert_called_once_with('light', True, data['request_id'])
 
     def test_direct_lan_stays_passwordless_and_retains_permissions(self):
         for path in (*FILES, '/api/session', '/health', '/api/app/update/status'):

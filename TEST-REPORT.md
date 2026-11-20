@@ -1,3 +1,28 @@
+# Shelly fan and light — 1.13.0 (20 November 2026)
+
+Linux regression validation: **544 tests, 26 explicit platform skips, zero
+failures/errors** (22.553 seconds). This includes 21 new isolated Shelly cases
+and additional server/gateway coverage for independent outputs, native timers,
+duplicate requests across restart, ambiguous writes, persistence failures, device
+identity, private-address restrictions, offline isolation and credential boundaries.
+The existing Windows-DPAPI-only charging test failure was previously reproduced
+on unchanged main and is explicitly skipped for this Linux run; its assertions
+are unchanged. Native Windows DPAPI execution is not claimed by the Linux suite.
+
+All three Node UI/display/download checks, JavaScript syntax and whitespace checks
+passed. Simulated Chromium checks at 360×800, 800×1280 and 1280×800 confirmed no
+horizontal overflow, compact 30px icon switches, a disabled offline fan, the five
+dropdown choices, a saved 30-minute light preference, timed On and Off. No browser
+exceptions occurred. All browser-test output commands used simulated adapters.
+
+Read-only hardware preflight confirmed the light's exact Gen4 model and Off state;
+the unpowered fan was unreachable as reported. The tablet was verified on 1.12.3
+with its trusted certificate, a complete charging session and update readiness.
+Deployment and the separately authorized live light check are recorded after they
+complete. No car or heater commands are used for this feature's validation.
+
+## Previous validation
+
 # Public settings cleanup - 1.12.3
 
 The home-network setup card is hidden through public access and remains visible locally/on the LAN. The public/LAN UI regression check and JavaScript syntax check pass. No permissions or charging behavior change.

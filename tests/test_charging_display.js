@@ -7,7 +7,7 @@ function node(id){
  if(!nodes.has(id))nodes.set(id,{hidden:false,value:'85',dataset:{},textContent:'',attributes:{},
   style:{setProperty(key,value){this[key]=value;}},classList:{toggle(){}},
   setAttribute(key,value){this.attributes[key]=value;},removeAttribute(){},addEventListener(){},
-  closest(){return node(id+'-section');},querySelector(selector){return node(id+selector);}});
+  querySelectorAll(){return[];},closest(){return node(id+'-section');},querySelector(selector){return node(id+selector);}});
  return nodes.get(id);
 }
 const context=vm.createContext({document:{getElementById:node,querySelectorAll(){return[];},addEventListener(){},documentElement:node('root')},
