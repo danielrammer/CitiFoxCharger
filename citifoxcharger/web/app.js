@@ -25,6 +25,7 @@ function error(message){$("global-error").textContent=message;$("global-error").
 function toast(message){$("toast").textContent=message;$("toast").hidden=false;setTimeout(()=>$("toast").hidden=true,6000);}
 async function api(path,data){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000);try{const response=await fetch(path,{method:data===undefined?"GET":"POST",credentials:"same-origin",cache:"no-store",signal:controller.signal,headers:data===undefined?{}:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:data===undefined?undefined:JSON.stringify(data)});const result=await response.json();if(!response.ok){const problem=new Error(result.error||"Request failed.");problem.status=response.status;throw problem;}return result;}catch(e){if(e.name==="AbortError")throw new Error("No response. Check charging status before trying again.");throw e;}finally{clearTimeout(timer);}}
 function updateControls(){
+ updateShellyControls();
  if(!latest)return;
  renderLimitTest();
  $("reload-app").disabled=mutating||appUpdating;
@@ -189,6 +190,7 @@ function renderSolar(solar={}){
  $("solar-policy").textContent=!solar.configured?"Local solar location has not been configured.":solar.error?"Solar phase policy could not be confirmed; manual charging remains available.":solar.three_phase_selected?(solar.night?"Three phases preselected for the night; switching may still occur at charging start.":"Restoring the normal daytime phase policy."):"Normal phase policy. Manual charging can be requested at any time.";
 }
 function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=sf.charger||{},session=data.charging;
+ renderShelly(data.shelly);
  renderSolar(data.solar);
  renderChargingPolicy(data.charging_policy);
  renderEnergy(charger);
@@ -228,6 +230,7 @@ function render(data){latest=data;const car=data.skoda,sf=data.smartfox,charger=
 async function refresh(){if(refreshing||appStopped||appUpdating)return;refreshing=true;$("refresh").setAttribute("aria-busy","true");try{render(await api("/api/status"));$("global-error").hidden=true;}catch(e){$("force").disabled=true;$("stop").disabled=true;error(e.message||"The local app is unreachable.");}finally{refreshing=false;$("refresh").removeAttribute("aria-busy");}}
 function renderAccess(result){
  localAdmin=result.access?.local_admin!==false;
+ for(const key of ["fan","light"])$("shelly-"+key+"-form").hidden=result.access?.public_access===true;
  publicAccess=result.access?.public_access===true;
  $("home-network-panel").hidden=publicAccess;
  $("ownership-controls").hidden=publicAccess;
@@ -242,7 +245,7 @@ function renderAccess(result){
  if(!localAdmin){$("location-label").textContent="Home network access";$("key-form").hidden=true;document.querySelector(".app-control").hidden=true;$("config-form").querySelectorAll("input,select,button").forEach(element=>element.disabled=true);}
  if(publicAccess){$("location-label").textContent="Public access";$("config-form").hidden=true;$("device-link").hidden=true;link.hidden=true;}
 }
-async function loadConfig(){const result=await api("/api/config");renderAccess(result);const sf=result.config.smartfox,car=result.config.skoda;for(const [id,value]of Object.entries({host:sf.host,port:sf.port,unit:sf.unit_id,firmware:sf.firmware,"sf-poll":sf.poll_seconds,"sf-timeout":sf.timeout_seconds,profile:sf.profile,"word-order":sf.word_order,vin:car.vin,"car-poll":car.poll_seconds,"car-stale":car.stale_seconds}))$(id).value=value;$("interpretation").checked=sf.interpretation_confirmed;$("persist").disabled=!result.key.persistence_available;$("persist").checked=result.key.persisted;$("clear-key").hidden=!result.key.configured;$("key-status").textContent=result.key.warning||(result.key.configured?(result.key.persisted?"Access saved with Windows encryption.":"Access saved until the app exits."):"No key configured.");$("sf-meta").textContent=`Pro 2 · ${sf.host} · ${sf.firmware}`;$("device-link").href=`http://${sf.host}/`;}
+async function loadConfig(){const result=await api("/api/config");renderAccess(result);const sf=result.config.smartfox,car=result.config.skoda;for(const [id,value]of Object.entries({host:sf.host,port:sf.port,unit:sf.unit_id,firmware:sf.firmware,"sf-poll":sf.poll_seconds,"sf-timeout":sf.timeout_seconds,profile:sf.profile,"word-order":sf.word_order,vin:car.vin,"car-poll":car.poll_seconds,"car-stale":car.stale_seconds}))$(id).value=value;$("interpretation").checked=sf.interpretation_confirmed;$("persist").disabled=!result.key.persistence_available;$("persist").checked=result.key.persisted;$("clear-key").hidden=!result.key.configured;$("key-status").textContent=result.key.warning||(result.key.configured?(result.key.persisted?"Access saved with Windows encryption.":"Access saved until the app exits."):"No key configured.");$("sf-meta").textContent=`Pro 2 · ${sf.host} · ${sf.firmware}`;$("device-link").href=`http://${sf.host}/`;if(!publicAccess)await loadShellySettings();}
 async function mutation(fn,allowDuringUpdate=false){if(mutating||(appUpdating&&!allowDuringUpdate))return;mutating=true;updateControls();let failure=null;try{await fn();}catch(e){failure=e.message;}finally{mutating=false;await refresh();if(failure)error(failure);}}
 function updateBusy(busy){appUpdating=busy;for(const form of [$("config-form"),$("key-form")])form.querySelectorAll("input,select,button").forEach(node=>node.disabled=busy||!localAdmin);updateControls();}
 async function pollUpdate(){
@@ -418,3 +421,59 @@ $("automatic-charging").addEventListener("change",()=>mutation(saveChargingPolic
 $("charging-policy-form").addEventListener("submit",event=>{event.preventDefault();mutation(saveChargingPolicy);});
 
 for(const id of ["schedule-start","schedule-end"])$(id).addEventListener("input",()=>{scheduleEditing=true;});
+
+const shellyDevices=["fan","light"];
+function renderShelly(devices={}){
+ for(const key of shellyDevices){
+  const value=devices[key],prefix="shelly-"+key;
+  $(prefix+"-panel").hidden=value?.configured!==true;
+  $(prefix+"-toggle").checked=value?.on===true;
+  $(prefix+"-state").textContent=value?.available?(value.on?"On":"Off"):"Unknown";
+  $(prefix+"-panel").title=value?.message||"";
+  const timed=value?.available&&value.on&&Number.isFinite(value.timer_ends_at);
+  $(prefix+"-off-at").hidden=!timed;
+  if(timed)$(prefix+"-off-at").textContent=new Date(value.timer_ends_at*1000).toLocaleTimeString(CitiFoxI18n.locale(),{hour:"2-digit",minute:"2-digit"});
+ }
+}
+function updateShellyControls(){
+ for(const key of ["fan","light"]){
+  const value=latest?.shelly?.[key];
+  $("shelly-"+key+"-toggle").disabled=mutating||appStopped||!value?.configured||!value?.available||(appUpdating&&!value?.on);
+  $("shelly-"+key+"-form").querySelectorAll("input,select,button").forEach(node=>node.disabled=mutating||appUpdating||appStopped||publicAccess);
+ }
+}
+async function loadShellySettings(){
+ const result=await api(localAdmin?"/api/shelly/config":"/api/shelly/preferences");
+ for(const key of shellyDevices){
+  const config=result[key],prefix="shelly-"+key;
+  $(prefix+"-minutes").value=config.on_minutes;
+  $(prefix+"-device-settings").hidden=!localAdmin;
+  if(localAdmin){
+   $(prefix+"-enabled").checked=config.enabled;$(prefix+"-host").value=config.host;
+   $(prefix+"-password-status").textContent=config.password_configured?"Shelly password saved.":"No Shelly password saved.";
+   $(prefix+"-password").value="";$(prefix+"-clear-password").checked=false;
+  }
+ }
+}
+async function switchShelly(device,on){
+ const result=await api("/api/shelly/output",{device,on,request_id:crypto.randomUUID()});
+ if(latest)latest.shelly=result.shelly;
+ renderShelly(result.shelly);
+}
+for(const key of shellyDevices){
+ const prefix="shelly-"+key;
+ $(prefix+"-toggle").addEventListener("change",event=>{
+  const on=event.target.checked;
+  event.target.checked=latest?.shelly?.[key]?.on===true;
+  mutation(()=>switchShelly(key,on),!on);
+ });
+ $(prefix+"-form").addEventListener("submit",event=>{
+  event.preventDefault();if(publicAccess)return;
+  mutation(async()=>{
+   const data={device:key,on_minutes:Number($(prefix+"-minutes").value)};
+   if(localAdmin)Object.assign(data,{enabled:$(prefix+"-enabled").checked,host:$(prefix+"-host").value.trim(),name:key==="fan"?"Fan":"Light",password:$(prefix+"-password").value,clear_password:$(prefix+"-clear-password").checked});
+   const result=await api(localAdmin?"/api/shelly/config":"/api/shelly/preferences",data);
+   await loadShellySettings();toast(result.message);
+  });
+ });
+}

@@ -236,7 +236,16 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(403, {"error": "This operation is not available through public access."})
             return
         service = self.server.service
-        if path == "/api/config":
+        if path == '/api/shelly/config':
+            if self.server.network_auth:
+                self.reply(403, {'error': 'Configure the Shelly directly on the tablet.'})
+                return
+            with service.lock:
+                self.reply(200, service.shelly.settings(True))
+        elif path == '/api/shelly/preferences':
+            with service.lock:
+                self.reply(200, service.shelly.settings(False))
+        elif path == "/api/config":
             with service.lock:
                 self.reply(200, {"config": service.config.value, "key": service.secrets.status(),
                                  "access":{"local_admin":self.server.network_auth is None,
@@ -273,7 +282,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         remote_actions = {"/api/app/update","/api/refresh","/api/charging/start","/api/charging/stop","/api/charging/target","/api/charging/restore-limit","/api/charging/confirm-restored-limit","/api/charging/release-limit-guard",
                           "/api/charging/limit-test/set","/api/charging/limit-test/end","/api/charging/limit-test/start-trial",
-                          "/api/smartfox/heater","/api/smartfox/charger-mode","/api/solar/location","/api/charging/policy"}
+                          "/api/smartfox/heater","/api/smartfox/charger-mode","/api/solar/location","/api/charging/policy","/api/shelly/output","/api/shelly/preferences"}
         if self.server.network_auth and urlsplit(self.path).path not in remote_actions:
             self.reply(403,{"error":"Configure device access and the backend directly on the tablet."})
             return
@@ -293,6 +302,7 @@ class Handler(BaseHTTPRequestHandler):
             path = urlsplit(self.path).path
             service = self.server.service
             if (service.app_update_pending and path not in ("/api/app/update","/api/app/quit","/api/charging/stop")
+                    and not (path=='/api/shelly/output' and data.get('on') is False)
                     and not (path=="/api/smartfox/charger-mode" and data.get("mode")=="OFF")):
                 raise ValueError("An update is running. Charging starts and settings changes are temporarily blocked.")
             if path == "/api/app/update":
@@ -317,6 +327,14 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/charging/policy":
                 with service.lock:
                     result = service.charging_policy.configure(data)
+            elif path == '/api/shelly/config':
+                result = service.configure_shelly(data)
+            elif path == '/api/shelly/preferences':
+                result = service.configure_shelly_preferences(data)
+            elif path == '/api/shelly/output':
+                if set(data) != {'device', 'on', 'request_id'}:
+                    raise ValueError('Invalid Shelly command.')
+                result = service.set_shelly(data['device'], data['on'], data['request_id'])
             elif path == "/api/config":
                 service.save_config(data)
                 result = {"message": "Configuration saved."}
@@ -431,7 +449,7 @@ def make_server(port, data_dir):
     instance_lock = InstanceLock(data_dir)
     try:
         config = ConfigStore(data_dir)
-        server = LocalServer(port, Service(config, SecretStore(config.directory)))
+        server = LocalServer(port, Service(config, SecretStore(config.directory), shelly_installation=True))
         server.instance_lock = instance_lock
         try:
             network = read_network(data_dir)

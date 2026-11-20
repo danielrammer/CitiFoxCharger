@@ -15,10 +15,11 @@ from .limit_test import LimitTest
 from .limit_trial import LimitTrial
 from .solar_preparation import SolarPreparation
 from .charging_policy import ChargingPolicy
+from .shelly import ShellyOutputs
 
 
 class Service:
-    def __init__(self, config, secrets, smartfox=None, skoda=None, web=None, power=None):
+    def __init__(self, config, secrets, smartfox=None, skoda=None, web=None, power=None, *, shelly_installation=False):
         self.config, self.secrets = config, secrets
         self.sf, self.car = smartfox or SmartfoxAdapter(), skoda or SkodaAdapter()
         # User explicitly authorized the local vendor-web control on 2026-10-16.
@@ -46,6 +47,7 @@ class Service:
         self.limit_trial = LimitTrial(self)
         self.solar = SolarPreparation(self)
         self.charging_policy = ChargingPolicy(self)
+        self.shelly = ShellyOutputs(self.config.directory, installation=shelly_installation)
 
     def restore_vehicle_cache(self):
         try:
@@ -470,6 +472,7 @@ class Service:
                 self.limit_trial.tick()
                 self.solar.tick()
                 self.charging_policy.tick()
+                self.shelly.poll()
             self.power.update((self.charging.active or self.limit_trial.active or self.charging_policy.value["only"]) and not self.worker_stop.is_set() and not self.stopping)
             charging = self.charging.state()
             if self.limit_test.active:
@@ -491,11 +494,32 @@ class Service:
                     "charging": charging,
                     "solar": self.solar.state(),
                     "charging_policy": self.charging_policy.state(),
+                    "shelly": self.shelly.state(),
                     "limit_test": self.limit_test.state(),
                     "limit_trial": trial,
                     "monitoring": {"running": self.worker is not None and self.worker.is_alive(),
                                    "power": self.power.state()},
                     "server_at": utcnow(), "next_skoda_seconds": max(0, int(self.next_due.get("skoda", 0) - time.monotonic()))}
+
+    def configure_shelly(self, data):
+        with self.lock:
+            if self.stopping or self.app_update_pending:
+                raise IntegrationError('blocked', 'The app is restarting or updating.')
+            return self.shelly.configure(data)
+
+    def set_shelly(self, device, on, request_id):
+        with self.lock:
+            if self.stopping or (self.app_update_pending and on is not False):
+                raise IntegrationError('blocked', 'The app is restarting or updating.')
+            result = self.shelly.set(device, on, request_id)
+            self.event('Shelly output confirmed.')
+            return result
+
+    def configure_shelly_preferences(self, data):
+        with self.lock:
+            if self.stopping or self.app_update_pending:
+                raise IntegrationError('blocked', 'The app is restarting or updating.')
+            return self.shelly.preferences(data)
 
     def start_manual_charging(self, target, request_id, allow_stale=False):
         """Prefer verifiable vehicle limits; retain monitored Start for cars omitting them."""

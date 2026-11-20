@@ -251,6 +251,17 @@ button,a,input,select,summary{-webkit-tap-highlight-color:transparent}button,sum
 .policy-switch:has(input:focus-visible){outline:2px solid var(--green);outline-offset:2px}
 .policy-switch:has(input:disabled){opacity:.5;cursor:default}
 .ownership-controls small{grid-column:1/-1;font-size:11px;line-height:1.3}
+ .shelly-switches{display:flex;gap:16px;flex-wrap:wrap;margin:6px 0}
+.shelly-switch{display:inline-flex;align-items:center;gap:5px;margin:0;font-size:12px;cursor:pointer}
+.shelly-switch svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.shelly-switch input{position:absolute;opacity:0;width:1px;height:1px}
+.shelly-switch .switch-track{width:30px;height:18px;flex:0 0 30px}
+.shelly-switch .switch-track::after{width:12px;height:12px;top:3px;left:3px}
+.shelly-switch:has(input:checked) .switch-track{background:var(--green)}
+.shelly-switch:has(input:checked) .switch-track::after{transform:translateX(12px)}
+.shelly-switch:has(input:disabled){opacity:.5;cursor:default}
+.shelly-switch:has(input:focus-visible){outline:2px solid var(--green);outline-offset:3px}
+.shelly-switch small,.shelly-switch time{font-size:10px;color:var(--muted)}
 #overview .compact-energy{padding:12px 14px 8px}
 #overview .compact-energy .energy-flow{margin:6px auto 8px}
 #overview .compact-energy .energy-device{padding:7px 8px}

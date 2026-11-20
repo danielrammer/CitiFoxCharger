@@ -41,3 +41,21 @@ assert.equal(lan.node('charging-policy-form').hidden,false);
 assert.equal(lan.node('policy-status').hidden,true);
 
 assert.equal(lan.node('home-network-panel').hidden,false);
+
+for(const key of ['fan','light'])assert.equal(publicUi.node('shelly-'+key+'-form').hidden,true);
+publicUi.run('latest.shelly={fan:{configured:true,available:false,on:null},light:{configured:true,available:true,on:false}};renderShelly(latest.shelly);updateShellyControls()');
+assert.equal(publicUi.node('shelly-fan-toggle').disabled,true);
+assert.equal(publicUi.node('shelly-light-toggle').disabled,false);
+assert.equal(publicUi.node('shelly-light-toggle').checked,false);
+publicUi.run('latest.shelly.light.on=true;latest.shelly.light.timer_ends_at=Date.now()/1000+3600;renderShelly(latest.shelly)');
+assert.equal(publicUi.node('shelly-light-toggle').checked,true);
+assert.equal(publicUi.node('shelly-light-off-at').hidden,false);
+publicUi.run('appUpdating=true;updateShellyControls()');
+assert.equal(publicUi.node('shelly-light-toggle').disabled,false); // Off stays available.
+publicUi.run('latest.shelly.light.on=false;updateShellyControls()');
+assert.equal(publicUi.node('shelly-light-toggle').disabled,true);
+publicUi.run('appUpdating=false;latest.shelly.light.available=false;renderShelly(latest.shelly);updateShellyControls()');
+assert.equal(publicUi.node('shelly-light-off-at').hidden,true);
+assert.equal(publicUi.node('shelly-light-state').textContent,'Unknown');
+for(const key of ['fan','light'])assert.equal(lan.node('shelly-'+key+'-form').hidden,false);
+console.log('PASS: independent compact Shelly toggles; offline and update guards; public settings hidden.');

@@ -290,6 +290,25 @@ class ServerTests(unittest.TestCase):
         self.thread.join(2)
         self.temp.cleanup()
 
+    def test_shelly_preferences_and_toggle_use_simulated_independent_outputs(self):
+        from test_shelly import Device
+        from citifoxcharger.shelly import ShellyOutputs
+        devices = {'192.168.0.100': Device(), '192.168.0.85': Device()}
+        self.service.shelly = ShellyOutputs(self.service.config.directory,
+            lambda host, password: devices[host], installation=True)
+        code, body, _ = self.call('/api/shelly/preferences', {'device': 'light', 'on_minutes': 90})
+        self.assertEqual(code, 200)
+        code, body, _ = self.call('/api/shelly/output', {'device': 'light', 'on': True, 'request_id': 'simulated-light-00001'})
+        self.assertEqual(code, 200)
+        self.assertEqual(devices['192.168.0.85'].writes, [dict(id=0, on=True, toggle_after=5400)])
+        self.assertEqual(devices['192.168.0.100'].writes, [])
+        for value in (True, 15, 180):
+            self.assertEqual(self.call('/api/shelly/preferences', {'device': 'light', 'on_minutes': value})[0], 400)
+        self.assertEqual(self.call('/api/shelly/output', {'device': 'light', 'on': 'true', 'request_id': 'simulated-light-00002'})[0], 400)
+        self.service.app_update_pending = True
+        self.assertEqual(self.call('/api/shelly/output', {'device': 'light', 'on': True, 'request_id': 'simulated-light-00002'})[0], 400)
+        self.assertEqual(self.call('/api/shelly/output', {'device': 'light', 'on': False, 'request_id': 'simulated-light-00003'})[0], 200)
+
     def call(self, path, data=None, **override):
         connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
         headers = {"Host":self.host, "Content-Type":"application/json", "Origin":"http://"+self.host,

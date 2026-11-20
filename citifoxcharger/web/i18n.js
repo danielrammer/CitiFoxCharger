@@ -159,6 +159,40 @@ Object.assign(messages,{
  "Refresh Car":"Auto aktualisieren",
  "Fetch available data from Škoda; vehicle timestamp may remain unchanged.":"Verfügbare Daten bei Škoda abrufen; der Zeitpunkt der Fahrzeugmeldung kann unverändert bleiben."
 });
+Object.assign(messages,{
+ "Fan":"Ventilator",
+ "Light":"Licht",
+ "When switched on":"Beim Einschalten",
+ "Always on":"Dauerhaft ein",
+ "Shelly device access":"Shelly-Gerätezugang",
+ "Choose continuous On or 30, 60, 90 or 120 minutes.":"Bitte Dauerhaft ein oder 30, 60, 90 oder 120 Minuten wählen.",
+ "Shelly output":"Shelly-Ausgang",
+ "Enable Shelly output":"Shelly-Ausgang aktivieren",
+ "Output name":"Name des Ausgangs",
+ "Shelly IP address":"Shelly-IP-Adresse",
+ "Duration (minutes)":"Laufzeit (Minuten)",
+ "Default duration (minutes)":"Standardlaufzeit (Minuten)",
+ "On with timer":"Ein mit Ausschalttimer",
+ "Automatic off at":"Automatisch aus um",
+ "Shelly password (optional)":"Shelly-Passwort (optional)",
+ "Remove saved Shelly password":"Gespeichertes Shelly-Passwort entfernen",
+ "Save Shelly":"Shelly speichern",
+ "Shelly password saved.":"Shelly-Passwort gespeichert.",
+ "No Shelly password saved.":"Kein Shelly-Passwort gespeichert.",
+ "Leave the password blank to keep it for this address. Passwords are saved with Windows encryption. The timer runs on the Shelly, even if this app disconnects. Saving settings does not switch the output.":"Ein leeres Passwortfeld behält das Passwort für diese Adresse bei. Passwörter werden mit Windows-Verschlüsselung gespeichert. Der Timer läuft auf dem Shelly weiter, wenn die Verbindung zur App abbricht. Das Speichern schaltet den Ausgang nicht.",
+ "Shelly settings saved. No output was switched.":"Shelly-Einstellungen gespeichert. Kein Ausgang wurde geschaltet.",
+ "Shelly output confirmed.":"Shelly-Ausgang bestätigt.",
+ "Choose a duration between 1 and 1440 minutes.":"Bitte eine Laufzeit zwischen 1 und 1440 Minuten wählen.",
+ "Shelly is unreachable or returned invalid data.":"Shelly nicht erreichbar oder ungültige Antwort.",
+ "Shelly access denied. Check its password on the tablet.":"Shelly-Zugang abgelehnt. Bitte Passwort auf dem Tablet prüfen.",
+ "Check Shelly setup on the tablet.":"Bitte Shelly-Einstellungen auf dem Tablet prüfen.",
+ "Shelly status is stale.":"Shelly-Status veraltet.",
+ "Shelly reports a device fault. Check the device.":"Shelly meldet einen Gerätefehler. Bitte Gerät prüfen.",
+ "The configured device is not a Shelly 1 Mini Gen4.":"Das konfigurierte Gerät ist kein Shelly 1 Mini Gen4.",
+ "Shelly command is unconfirmed. Check the output before retrying.":"Shelly-Befehl unbestätigt. Vor einem neuen Versuch bitte Ausgang prüfen.",
+ "Shelly timer was not confirmed. Off was requested as a precaution.":"Shelly-Timer unbestätigt. Vorsorglich wurde Aus angefordert.",
+ "This Shelly command was already submitted. Check its current status.":"Dieser Shelly-Befehl wurde bereits gesendet. Bitte aktuellen Status prüfen."
+});
 function german(value,depth=0){
  if(messages[value]!==undefined)return messages[value];
  if(depth<4){for(const [pattern,target]of rules){const match=pattern.exec(value);if(match)return target.replace(/\{(\d+)\}/g,(_,i)=>german(match[Number(i)+1]??"",depth+1));}

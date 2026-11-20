@@ -27,3 +27,7 @@ CitiFoxCharger-Heimnetz.cer
 
 charging-policy.json
 solar-preparation.json
+shelly.json
+shelly-commands.json
+
+/shelly/
